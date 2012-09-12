@@ -1,3 +1,15 @@
+/* Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package contrail.stages;
 
 import java.io.IOException;
@@ -497,13 +509,18 @@ public class FindBubblesAvro extends Stage   {
         if (choices <= 1) {
           // Check if this bubble is a palindrome.
           if (!DNAUtil.isPalindrome(minorBubbles.get(0).alignedSequence)) {
-            // We have a chain, i.e A->X->B and not a bubble
-            // A->{X,Y,...}->B this shouldn't happen and probably means
-            // the graph wasn't maximally compressed.
-            throw new RuntimeException(
-                "We found a chain and not a bubble. This probably means the " +
-                "graph wasn't maximally compressed before running " +
-                "FindBubbles.");
+            // Check if we have a chain. We have a change if the major node
+            // has outdegree 1 from the forward
+            if (majorNode.degree(
+                    DNAStrand.FORWARD, EdgeDirection.OUTGOING) == 1) {
+              // We have a chain, i.e A->X->B and not a bubble
+              // A->{X,Y,...}->B this shouldn't happen and probably means
+              // the graph wasn't maximally compressed.
+              throw new RuntimeException(
+                  "We found a chain and not a bubble. This probably means " +
+                  "the graph wasn't maximally compressed before running " +
+                  "FindBubbles.");
+            }
           }
         } else {
           // marks nodes to be deleted for a particular list of minorID
@@ -513,8 +530,6 @@ public class FindBubblesAvro extends Stage   {
         // if they are palindromes.
         processPalindromes(minorBubbles, reporter);
         reporter.incrCounter("Contrail", "edgeschecked", choices);
-
-
         outputMessagesToMinor(minorBubbles, minorID, collector);
       }
 
