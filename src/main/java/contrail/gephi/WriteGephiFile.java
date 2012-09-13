@@ -2,9 +2,10 @@ package contrail.gephi;
 
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -61,7 +62,7 @@ public class WriteGephiFile extends Stage {
   private Document doc;
 
   protected Map<String, ParameterDefinition>
-  createParameterDefinitions() {
+      createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
         new HashMap<String, ParameterDefinition>();
     defs.putAll(super.createParameterDefinitions());
@@ -69,6 +70,16 @@ public class WriteGephiFile extends Stage {
       ContrailParameters.getInputOutputPathOptions()) {
       defs.put(def.getName(), def);
     }
+
+    ParameterDefinition start_node = new ParameterDefinition(
+        "start_node", "(Optional) if supplied num_hops must also be given.",
+        String.class, null);
+    ParameterDefinition num_hops = new ParameterDefinition(
+        "num_hops", "(Optional) Number of hops to take starting at start_node.",
+        Integer.class, null);
+
+    defs.put(start_node.getName(), start_node);
+    defs.put(num_hops.getName(), num_hops);
     return Collections.unmodifiableMap(defs);
   }
 
@@ -103,7 +114,7 @@ public class WriteGephiFile extends Stage {
     ++next_id;
   }
 
-  private void AddNodesToIndex(List<GraphNode> nodes) {
+  private void AddNodesToIndex(Collection<GraphNode> nodes) {
     // A node for both the forward and reverse strands.
     EdgeTerminal terminal;
     for (GraphNode node: nodes) {
@@ -128,7 +139,7 @@ public class WriteGephiFile extends Stage {
     return xml_node;
   }
 
-  public void writeGraph(List<GraphNode> nodes, String xml_file) {
+  public void writeGraph(Collection<GraphNode> nodes, String xml_file) {
     if (xml_file.startsWith("/tmp")) {
       throw new RuntimeException(
           "Don't write the file to '/tmp' gephi has problems with that.");
@@ -203,8 +214,8 @@ public class WriteGephiFile extends Stage {
 
   }
 
-  private List<GraphNode> readNodes() {
-    List<GraphNode> nodes = new ArrayList<GraphNode>();
+  private HashMap<String, GraphNode> readNodes() {
+    HashMap<String, GraphNode> nodes = new HashMap<String, GraphNode>();
     String input_path = (String) stage_options.get("inputpath");
     sLogger.info(" - input: "  + input_path);
     Schema schema = (new GraphNodeData()).getSchema();
@@ -221,7 +232,7 @@ public class WriteGephiFile extends Stage {
         GraphNodeData data = avro_stream.next();
         GraphNode node = new GraphNode(data);
 
-        nodes.add(node);
+        nodes.put(node.getNodeId(), node);
       }
     } catch (IOException exception) {
       throw new RuntimeException(
@@ -229,6 +240,39 @@ public class WriteGephiFile extends Stage {
           " Exception:" + exception.getMessage());
     }
     return nodes;
+  }
+
+  /**
+   * Find the subgraph by starting at the indicated node and walking the
+   * specified number of hops.
+   */
+  private HashMap<String, GraphNode> getSubGraph(
+      HashMap<String, GraphNode> nodes) {
+    HashMap<String, GraphNode> subGraph = new HashMap<String, GraphNode>();
+
+    // Use two lists so we can keep track of the hops.
+    HashSet<String> thisHop = new HashSet<String>();
+    HashSet<String> nextHop = new HashSet<String>();
+
+    String start_node = (String) stage_options.get("start_node");
+    int num_hops = (Integer) stage_options.get("num_hops");
+    int hop = 0;
+    thisHop.add(start_node);
+    while (hop <= num_hops && thisHop.size() > 0) {
+      // Fetch each node in thisHop.
+      for (String nodeId : thisHop) {
+        if (subGraph.containsKey(nodeId)) {
+          continue;
+        }
+        subGraph.put(nodeId, nodes.get(nodeId));
+        nextHop.addAll(nodes.get(nodeId).getNeighborIds());
+      }
+      thisHop.clear();
+      thisHop.addAll(nextHop);
+      nextHop.clear();
+      ++hop;
+    }
+    return subGraph;
   }
 
   @Override
@@ -240,14 +284,25 @@ public class WriteGephiFile extends Stage {
     String outputPath = (String) stage_options.get("outputpath");
     sLogger.info(" - output: " + outputPath);
 
-    List<GraphNode> nodes = readNodes();
+    HashMap<String, GraphNode> nodes = readNodes();
 
-    writeGraph(nodes, outputPath);
+    //TODO(jlewi): Filter the nodes to get the subgraph of interest.
+    if (stage_options.containsKey("num_hops") !=
+        stage_options.containsKey("start_node")) {
+      throw new RuntimeException(
+          "You must supply num_hops and start_node if you want to draw only " +
+          "part of the graph.");
+    }
+
+   if (stage_options.containsKey("start_node")) {
+     nodes = getSubGraph(nodes);
+   }
+    writeGraph(nodes.values(), outputPath);
     sLogger.info("Wrote: " + outputPath);
-
 
     return null;
   }
+
   public static void main(String[] args) throws Exception {
     int res = ToolRunner.run(new Configuration(), new WriteGephiFile(), args);
     System.exit(res);
