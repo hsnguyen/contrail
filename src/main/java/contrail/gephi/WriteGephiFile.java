@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import contrail.stages.ContrailParameters;
 import contrail.stages.ParameterDefinition;
@@ -60,6 +61,9 @@ public class WriteGephiFile extends Stage {
   private int next_id = 0;
 
   private Document doc;
+
+  // Hashmap mapping node attributes to their id values.
+  private HashMap<String, String> nodeAttrIdMap;
 
   protected Map<String, ParameterDefinition>
       createParameterDefinitions() {
@@ -130,16 +134,37 @@ public class WriteGephiFile extends Stage {
     return node_id_map.get(terminal);
   }
 
-  private Element CreateTerminal(EdgeTerminal terminal) {
+  private Element CreateTerminal(EdgeTerminal terminal, GraphNode node) {
     Element xml_node = doc.createElement("node");
     Integer this_node_id = IdForTerminal(terminal);
 
     xml_node.setAttribute("id", this_node_id.toString());
     xml_node.setAttribute("label", terminal.toString());
+
+    // Set all the attributes.
+    Element attributeRoot = doc.createElement("attvalues");
+    xml_node.appendChild(attributeRoot);
+    for (Entry<String, String> entry : nodeAttrIdMap.entrySet()) {
+      Element attribute = doc.createElement("attvalue");
+      attribute.setAttribute("for", entry.getValue());
+      String value;
+      if (entry.getKey().equals("out-degree")) {
+        value = Integer.toString(
+            node.degree(terminal.strand, EdgeDirection.OUTGOING));
+      } else if (entry.getKey().equals("in-degree")) {
+        value = Integer.toString(
+            node.degree(terminal.strand, EdgeDirection.INCOMING));
+      } else {
+        throw new RuntimeException(
+            "No handler for attribute:" + entry.getKey());
+      }
+      attribute.setAttribute("value", value);
+      attributeRoot.appendChild(attribute);
+    }
     return xml_node;
   }
 
-  public void writeGraph(Collection<GraphNode> nodes, String xml_file) {
+  public void writeGraph(Map<String, GraphNode> nodes, String xml_file) {
     if (xml_file.startsWith("/tmp")) {
       throw new RuntimeException(
           "Don't write the file to '/tmp' gephi has problems with that.");
@@ -157,6 +182,26 @@ public class WriteGephiFile extends Stage {
     doc.appendChild(gexf_root);
     Element root = doc.createElement("graph");
     gexf_root.appendChild(root);
+
+    nodeAttrIdMap = new HashMap<String, String>();
+    {
+      // Declare some attributes for nodes
+      Element attributes = doc.createElement("attributes");
+      root.appendChild(attributes);
+      attributes.setAttribute("class", "node");
+
+      nodeAttrIdMap.put("out-degree", "0");
+      nodeAttrIdMap.put("in-degree", "1");
+
+      for (Entry<String, String> entry : nodeAttrIdMap.entrySet()) {
+        Element attribute = doc.createElement("attribute");
+        attribute.setAttribute("id", entry.getValue());
+        attribute.setAttribute("title", entry.getKey());
+        attribute.setAttribute("type", "string");
+        attributes.appendChild(attribute);
+      }
+
+    }
     root.setAttribute("mode", "static");
     root.setAttribute("defaultedgetype", "directed");
 
@@ -171,13 +216,13 @@ public class WriteGephiFile extends Stage {
 
     // I think the id's in the gephi xml file need to be string representations
     // of integers so we assign each node an integer.
-    AddNodesToIndex(nodes);
+    AddNodesToIndex(nodes.values());
 
-    for (GraphNode node: nodes) {
+    for (GraphNode node: nodes.values()) {
       for (DNAStrand strand : DNAStrand.values()) {
         EdgeTerminal terminal = new EdgeTerminal(node.getNodeId(), strand);
 
-        Element xml_node = CreateTerminal(terminal);
+        Element xml_node = CreateTerminal(terminal, node);
         xml_nodes.appendChild(xml_node);
 
         List<EdgeTerminal> edges =
@@ -189,7 +234,7 @@ public class WriteGephiFile extends Stage {
           // we don't have GraphNode's for them.)
           if (IdForTerminal(other_terminal) == null) {
             AddTerminalToIndex(other_terminal);
-            Element new_node = CreateTerminal(other_terminal);
+            Element new_node = CreateTerminal(other_terminal, node);
             xml_nodes.appendChild(new_node);
           }
           Element xml_edge = createElementForEdge(
@@ -297,7 +342,7 @@ public class WriteGephiFile extends Stage {
    if (stage_options.containsKey("start_node")) {
      nodes = getSubGraph(nodes);
    }
-    writeGraph(nodes.values(), outputPath);
+    writeGraph(nodes, outputPath);
     sLogger.info("Wrote: " + outputPath);
 
     return null;
