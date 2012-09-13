@@ -139,7 +139,13 @@ public class WriteGephiFile extends Stage {
     Integer this_node_id = IdForTerminal(terminal);
 
     xml_node.setAttribute("id", this_node_id.toString());
-    xml_node.setAttribute("label", terminal.toString());
+
+    // We use the numeric id and the strand because the primary use
+    // is to correlate it with data in the data laboratory and this is easier
+    // to do using numbers rather than long sequences of characters.
+    xml_node.setAttribute(
+        "label", this_node_id.toString() + ":" +
+        terminal.strand.toString().substring(0, 1));
 
     // Set all the attributes.
     Element attributeRoot = doc.createElement("attvalues");
