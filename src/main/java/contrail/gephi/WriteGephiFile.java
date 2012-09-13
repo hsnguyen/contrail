@@ -160,6 +160,12 @@ public class WriteGephiFile extends Stage {
       } else if (entry.getKey().equals("in-degree")) {
         value = Integer.toString(
             node.degree(terminal.strand, EdgeDirection.INCOMING));
+      } else if (entry.getKey().equals("node-id")) {
+        value = node.getNodeId();
+      } else if (entry.getKey().equals("coverage")) {
+        value = Float.toString(node.getCoverage());
+      } else if (entry.getKey().equals("length")) {
+        value = Integer.toString(node.getSequence().size());
       } else {
         throw new RuntimeException(
             "No handler for attribute:" + entry.getKey());
@@ -196,8 +202,11 @@ public class WriteGephiFile extends Stage {
       root.appendChild(attributes);
       attributes.setAttribute("class", "node");
 
-      nodeAttrIdMap.put("out-degree", "0");
-      nodeAttrIdMap.put("in-degree", "1");
+      nodeAttrIdMap.put("node-id", "0");
+      nodeAttrIdMap.put("out-degree", "1");
+      nodeAttrIdMap.put("in-degree", "2");
+      nodeAttrIdMap.put("length", "3");
+      nodeAttrIdMap.put("coverage", "4");
 
       for (Entry<String, String> entry : nodeAttrIdMap.entrySet()) {
         Element attribute = doc.createElement("attribute");
