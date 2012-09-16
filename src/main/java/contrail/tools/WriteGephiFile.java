@@ -1,7 +1,9 @@
 package contrail.gephi;
 
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -38,7 +40,8 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 /**
- * Write a gephi XML file to represent a graph.
+ * Covert the graph into an gephi formatted XML file which can then be loaded
+ * in gephi.
  *
  * Doc about gexf format:
  * http://gexf.net/1.2draft/gexf-12draft-primer.pdf
@@ -46,8 +49,13 @@ import org.w3c.dom.Element;
  * WARNING: Gephi appears to have problems reading files in "/tmp" so
  * write the file somewhere else.
  *
- * TODO(jlewi): It would be good if we could label each node so that
- * we could see
+ * Important: The code currently assumes the graph is stored locally and not
+ * on HDFS.
+ *
+ * TODO(jlewi): We should make color vary depending on the
+ * node's length and coverage.
+ *
+ * TODO(jlewi): Enable reading from HDFS directly.
  */
 public class WriteGephiFile extends Stage {
   private static final Logger sLogger =
@@ -175,6 +183,11 @@ public class WriteGephiFile extends Stage {
       attribute.setAttribute("value", value);
       attributeRoot.appendChild(attribute);
     }
+
+    Element xmlSize = doc.createElement("size");
+    double size = Math.log10(node.getSequence().size() + 1);
+    xmlSize.setAttribute("value", Double.toString(size));
+    xml_node.appendChild(xmlSize);
     return xml_node;
   }
 
@@ -264,38 +277,60 @@ public class WriteGephiFile extends Stage {
         // edge terminates on a node which isn't in nodes?
       }
     }
-      // write the content into xml file
-      try {
-        TransformerFactory transformerFactory = TransformerFactory.newInstance();
-        Transformer transformer = transformerFactory.newTransformer();
-        DOMSource source = new DOMSource(doc);
-        StreamResult result = new StreamResult(xml_file);
-        transformer.transform(source, result);
-      } catch (Exception exception) {
-        sLogger.error("Exception:" + exception.toString());
-      }
 
+    // Write the content into xml file
+    try {
+      TransformerFactory transformerFactory = TransformerFactory.newInstance();
+      Transformer transformer = transformerFactory.newTransformer();
+      DOMSource source = new DOMSource(doc);
+      StreamResult result = new StreamResult(xml_file);
+      transformer.transform(source, result);
+    } catch (Exception exception) {
+      sLogger.error("Exception:" + exception.toString());
+    }
   }
 
   private HashMap<String, GraphNode> readNodes() {
     HashMap<String, GraphNode> nodes = new HashMap<String, GraphNode>();
-    String input_path = (String) stage_options.get("inputpath");
-    sLogger.info(" - input: "  + input_path);
+    String inputPathStr = (String) stage_options.get("inputpath");
+    sLogger.info(" - input: "  + inputPathStr);
     Schema schema = (new GraphNodeData()).getSchema();
 
+    // Check if path is a directory.
+    File inputPath = new File(inputPathStr);
+
+    ArrayList<File> inputFiles = new ArrayList<File>();
+
+    if (inputPath.isDirectory()) {
+      String[] contents =  inputPath.list();
+      for (String name : contents) {
+        if (name.endsWith("avro")) {
+          inputFiles.add(new File(inputPath, name));
+        }
+      }
+    } else {
+      inputFiles.add(inputPath);
+    }
+
+    if (inputFiles.size() == 0) {
+      throw new RuntimeException("Didn't find any graph files.");
+    }
+
     try {
-      FileInputStream in_stream = new FileInputStream(input_path);
-      SpecificDatumReader<GraphNodeData> reader =
-          new SpecificDatumReader<GraphNodeData>(GraphNodeData.class);
+      for (File inFile : inputFiles) {
+        FileInputStream in_stream = new FileInputStream(inFile);
+        SpecificDatumReader<GraphNodeData> reader =
+            new SpecificDatumReader<GraphNodeData>(GraphNodeData.class);
 
-      DataFileStream<GraphNodeData> avro_stream =
-          new DataFileStream<GraphNodeData>(in_stream, reader);
+        DataFileStream<GraphNodeData> avro_stream =
+            new DataFileStream<GraphNodeData>(in_stream, reader);
 
-      while(avro_stream.hasNext()) {
-        GraphNodeData data = avro_stream.next();
-        GraphNode node = new GraphNode(data);
+        while(avro_stream.hasNext()) {
+          GraphNodeData data = avro_stream.next();
+          GraphNode node = new GraphNode(data);
 
-        nodes.put(node.getNodeId(), node);
+          nodes.put(node.getNodeId(), node);
+        }
       }
     } catch (IOException exception) {
       throw new RuntimeException(
