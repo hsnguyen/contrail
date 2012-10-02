@@ -1,4 +1,4 @@
-package contrail.gephi;
+package contrail.tools;
 
 import java.io.File;
 import java.io.FileInputStream;
