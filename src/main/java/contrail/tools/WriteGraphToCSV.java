@@ -36,6 +36,7 @@ import org.apache.hadoop.mapred.MapReduceBase;
 import org.apache.hadoop.mapred.Mapper;
 import org.apache.hadoop.mapred.OutputCollector;
 import org.apache.hadoop.mapred.Reporter;
+import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.mapred.TextOutputFormat;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
@@ -111,7 +112,7 @@ public class WriteGraphToCSV extends Stage {
   }
 
   @Override
-  protected int run() throws Exception {
+  public RunningJob runJob() throws Exception {
     String inputPath = (String) stage_options.get("inputpath");
     String outputPath = (String) stage_options.get("outputpath");
 
@@ -152,12 +153,12 @@ public class WriteGraphToCSV extends Stage {
     }
 
     long starttime = System.currentTimeMillis();
-    JobClient.runJob(conf);
+    RunningJob job = JobClient.runJob(conf);
     long endtime = System.currentTimeMillis();
 
     float diff = (float) ((endtime - starttime) / 1000.0);
     System.out.println("Runtime: " + diff + " s");
-    return 0;
+    return job;
   }
 
   public static void main(String[] args) throws Exception {
