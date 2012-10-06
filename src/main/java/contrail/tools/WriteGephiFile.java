@@ -362,7 +362,16 @@ public class WriteGephiFile extends Stage {
         if (subGraph.containsKey(nodeId)) {
           continue;
         }
+        if (!nodes.containsKey(nodeId)) {
+          // The node isn't in the graph. This can happen if we are only
+          // displaying part of the graph.
+          // TODO(jlewi): The visualization should indicate nodes which
+          // don't have all their edges shown.
+          continue;
+        }
         subGraph.put(nodeId, nodes.get(nodeId));
+        GraphNode target = nodes.get(nodeId);
+
         nextHop.addAll(nodes.get(nodeId).getNeighborIds());
       }
       thisHop.clear();
