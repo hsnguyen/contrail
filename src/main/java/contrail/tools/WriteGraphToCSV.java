@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroInputFormat;
 import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroWrapper;
@@ -128,6 +129,7 @@ public class WriteGraphToCSV extends Stage {
     FileInputFormat.addInputPath(conf, new Path(inputPath));
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
 
+
     AvroInputFormat<GraphNodeData> input_format =
         new AvroInputFormat<GraphNodeData>();
     conf.setInputFormat(input_format.getClass());
@@ -135,12 +137,19 @@ public class WriteGraphToCSV extends Stage {
 
     conf.setMapOutputKeyClass(Text.class);
     conf.setMapOutputValueClass(NullWritable.class);
+    conf.setOutputKeyClass(Text.class);
+    conf.setOutputValueClass(NullWritable.class);
 
-    // Make it mapper only.
-    // TODO(jlewi): Should we make it have a single reduce job so we can
-    // put the data from all the graphs into a single file.
-    conf.setNumReduceTasks(0);
+    // We use a single reducer because it is convenient to have all the data
+    // in one output file to facilitate uploading to helix.
+    // TODO(jlewi): Once we have an easy way of uploading multiple files to
+    // helix we should get rid of this constraint.
+    Schema.Type.NULL;
+    Pair<CharSequence, Null> pair = new Pair<CharSequence, Null>
+    AvroJob.setMapOutputSchema(conf, pair);
+    conf.setNumReduceTasks(1);
     conf.setMapperClass(ToCSVMapper.class);
+    //conf.setReducerClass(IdentityReducer.class);
 
     // Delete the output directory if it exists already
     Path out_path = new Path(outputPath);
