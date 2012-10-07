@@ -353,6 +353,12 @@ public class WriteGephiFile extends Stage {
     HashSet<String> nextHop = new HashSet<String>();
 
     String start_node = (String) stage_options.get("start_node");
+
+    if (!nodes.containsKey(start_node)) {
+      throw new RuntimeException(
+          "The input doesn't contain the node: " + start_node);
+    }
+
     int num_hops = (Integer) stage_options.get("num_hops");
     int hop = 0;
     thisHop.add(start_node);
