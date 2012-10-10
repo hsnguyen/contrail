@@ -19,7 +19,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroInputFormat;
 import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroWrapper;
@@ -144,9 +143,9 @@ public class WriteGraphToCSV extends Stage {
     // in one output file to facilitate uploading to helix.
     // TODO(jlewi): Once we have an easy way of uploading multiple files to
     // helix we should get rid of this constraint.
-    Schema.Type.NULL;
-    Pair<CharSequence, Null> pair = new Pair<CharSequence, Null>
-    AvroJob.setMapOutputSchema(conf, pair);
+//    Schema.Type.NULL;
+//    Pair<CharSequence, Null> pair = new Pair<CharSequence, Null>
+//    AvroJob.setMapOutputSchema(conf, pair);
     conf.setNumReduceTasks(1);
     conf.setMapperClass(ToCSVMapper.class);
     //conf.setReducerClass(IdentityReducer.class);
