@@ -195,7 +195,18 @@ public class buildBambusInput {
     for (String lib : mates.keySet()) {
       HashMap<String, ArrayList<String>> libMates = mates.get(lib);
       String libName = lib.replaceAll("_", "");
-      if (libSizes.get(libName) == null) { System.err.println("No library sizes defined"); System.exit(1);}
+      if (libSizes.get(libName) == null) {
+        System.err.println("No library sizes defined for library:" + libName);
+        String knownLibraries = "";
+        for (String library : libSizes.keySet()) {
+          knownLibraries += library + ",";
+        }
+        // Strip the last column.
+        knownLibraries = knownLibraries.substring(
+            0, knownLibraries.length() - 1);
+        System.err.println("Known libraries are: " + knownLibraries);
+        System.exit(1);
+      }
       libOut.println("library " + libName + " " + libSizes.get(libName).first + " " + (int)libSizes.get(libName).second);
       ArrayList<String> left = libMates.get("left");
       ArrayList<String> right = libMates.get("right");
