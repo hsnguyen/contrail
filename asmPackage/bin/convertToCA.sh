@@ -1,10 +1,14 @@
 #!/bin/sh
+
+# You can specify the paths for AMOS and the CBCB here.
+# The script will try to locate the needed binaries using which
 AMOS=/fs/sz-user-supported/Linux-x86_64/packages/AMOS-3.0.1/bin/
+CA=/fs/szdevel/core-cbcb-software/Linux-x86_64/packages/wgs-6.1//Linux-amd64/bin/
 if [ ! -e $AMOS/bank-transact ]; then
    AMOS=`which bank-transact`
    AMOS=`dirname $AMOS`
 fi
-CA=/fs/szdevel/core-cbcb-software/Linux-x86_64/packages/wgs-6.1//Linux-amd64/bin/
+
 if [ ! -e $CA/gatekeeper ]; then
    CA=`which gatekeeper`
    CA=`dirname $CA`
@@ -36,7 +40,7 @@ else
    (time runCA -s ./parallel.spec -d . -p genome doOverlapBasedTrimming=0 ovlOverlapper=ovl bogBadMateDepth=1000 unitigger=bog stopAfter=unitigger *.frg) > runCA.log 2>&1
    GENOME=`cat $WORKDIR/4-unitigger/unitigger.err |grep "Computed genome_size" |awk -F "=" '{print $2}'`
    BASES=`$CA/gatekeeper -dumpfragments -tabular genome.gkpStore|awk '{if ($3 != 0 && $7 != 1) SUM+=$10-1; print SUM}'|tail -n 1`
-   THRESHOLD=`java -cp $JAVA_PATH estimateMateThreshold $GENOME $BASES |grep Threshold |awk '{print $2}'` 
+   THRESHOLD=`java -cp $JAVA_PATH estimateMateThreshold $GENOME $BASES |grep Threshold |awk '{print $2}'`
 echo "Using threshold $THRESHOLD"
    rm $WORKDIR/4-unitigger/unitigger.success
    (time runCA -s ./parallel.spec -d . -p genome doOverlapBasedTrimming=0 ovlOverlapper=ovl bogBadMateDepth=$THRESHOLD unitigger=bog stopAfter=utgcns *.frg) >> runCA.log 2>&1
@@ -49,14 +53,16 @@ elif [ -e $WORKDIR/$PREFIX.asm ]; then
    echo "CA finished and output files are ready";
 else
    $CA_TERMINATOR -g $WORKDIR/$PREFIX.gkpStore -t $WORKDIR/$PREFIX.tigStore 2 -o $WORKDIR/$PREFIX
-   $CA/asmOutputFasta -p $WORKDIR/$PREFIX -D -C -S < $WORKDIR/$PREFIX.asm 
+   $CA/asmOutputFasta -p $WORKDIR/$PREFIX -D -C -S < $WORKDIR/$PREFIX.asm
 fi
 
-# support both CA and mapping (allpaths or CA) 
+# support both CA and mapping (allpaths or CA)
 # if we need to map as well
 if [ $1 == 0 ]; then
+   echo java -cp $JAVA_PATH buildBambusInput $WORKDIR $UTGCTG $SUFFIX $PREFIX.libSize
    time java -cp $JAVA_PATH buildBambusInput $WORKDIR $UTGCTG $SUFFIX $PREFIX.libSize
-   time $AMOS/toAmos_new -s $PREFIX.$SUFFIX.fasta -m $PREFIX.$SUFFIX.library -c $PREFIX.$SUFFIX.contig -b $PREFIX.bnk 
+   echo $AMOS/toAmos_new -s $PREFIX.$SUFFIX.fasta -m $PREFIX.$SUFFIX.library -c $PREFIX.$SUFFIX.contig -b $PREFIX.bnk
+   time $AMOS/toAmos_new -s $PREFIX.$SUFFIX.fasta -m $PREFIX.$SUFFIX.library -c $PREFIX.$SUFFIX.contig -b $PREFIX.bnk
 else
    time $CA/gatekeeper -dumpfrg -allreads -format2 $WORKDIR/$PREFIX.gkpStore > asm.frgs
    if [ $UTGCTG == 0 ]; then
@@ -84,8 +90,8 @@ if [ -z "${RUNBAMBUS+x}" ] || [ $RUNBAMBUS == 1 ]; then
    # finally process the output
    java -cp $JAVA_PATH:. SizeFasta ${PREFIX}_output.contigs.fasta > lens
    java -cp $JAVA_PATH:. SplitFastaByLetter ${PREFIX}_output.scaffold.fasta NNN > ${PREFIX}_output.scfContigs.fasta
-   cat $PREFIX.scaff.dot |grep position |awk '{print $1}' > scfContigs 
-   java -cp $JAVA_PATH:. SubFile scfContigs lens 0 -1 true |awk '{if ($NF >= 1000) print $1" 1 "$NF" "$1}' |sort -nk1 > degContigs 
+   cat $PREFIX.scaff.dot |grep position |awk '{print $1}' > scfContigs
+   java -cp $JAVA_PATH:. SubFile scfContigs lens 0 -1 true |awk '{if ($NF >= 1000) print $1" 1 "$NF" "$1}' |sort -nk1 > degContigs
    java -cp $JAVA_PATH:. SubFasta degContigs ${PREFIX}_output.contigs.fasta > ${PREFIX}_output.degens.fasta
    mv ${PREFIX}_output.contigs.fasta ${PREFIX}_output.unitigs.fasta
    mv ${PREFIX}_output.scaffold.fasta ${PREFIX}_output.noDegens.scaffold.fasta
