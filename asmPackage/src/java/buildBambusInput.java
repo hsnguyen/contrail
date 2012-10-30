@@ -141,6 +141,8 @@ public class buildBambusInput {
 
     for (File fs : files) {
       if (fs.getName().contains("SRR")) { continue; }
+      // TODO(jeremy@lewi.us): This regular expression can match temporary
+      // files e.g files that begin and end with '#'.
       if (fs.getName().matches(".*_[12]\\..*fastq.*")) {
         prefixes.add(fs.getName().replaceAll("\\.fastq", "").replaceAll("\\.bz2", "").replaceAll("1\\.", "X.").replaceAll("2\\.", "X.").replaceAll("1$", "X").replaceAll("2$", "X"));
       }
