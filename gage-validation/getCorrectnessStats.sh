@@ -23,8 +23,11 @@ GENOMESIZE=`java -cp $JAVA_PATH SizeFasta $REF |awk '{SUM+=$NF; print SUM}'|tail
 
 echo "Contig Stats"
 java -cp $JAVA_PATH GetFastaStats -o -min 200 -genomeSize $GENOMESIZE $CONTIGS 2>/dev/null
+echo $MUMMER/nucmer --maxmatch -p $CONTIG_FILE -l 30 -banded -D 5 $REF $CONTIGS
 $MUMMER/nucmer --maxmatch -p $CONTIG_FILE -l 30 -banded -D 5 $REF $CONTIGS
+echo $MUMMER/delta-filter -o 95 -i 95 $CONTIG_FILE.delta > $CONTIG_FILE.fdelta
 $MUMMER/delta-filter -o 95 -i 95 $CONTIG_FILE.delta > $CONTIG_FILE.fdelta
+echo $MUMMER/dnadiff -d $CONTIG_FILE.fdelta
 $MUMMER/dnadiff -d $CONTIG_FILE.fdelta
 
 $SCRIPT_PATH/getMummerStats.sh $CONTIGS $SCRIPT_PATH
@@ -43,4 +46,4 @@ $MUMMER/show-tiling -c -l 1 -i 0 -V 0 $SCAFFOLD_FILE.fdelta > $SCAFFOLD_FILE.til
 echo "Scaffold Stats"
 java -cp $JAVA_PATH GetFastaStats -o -min 200 -genomeSize $GENOMESIZE $SCAFFOLDS 2> /dev/null
 echo "Corrected Scaffold Stats"
-java -cp $JAVA_PATH getScaffoldStats $SCAFFOLDS $SCAFFOLD_FILE.tiling $GENOMESIZE $SCAFFOLD_FILE.coords 2> $SCAFFOLD_FILE.err 
+java -cp $JAVA_PATH getScaffoldStats $SCAFFOLDS $SCAFFOLD_FILE.tiling $GENOMESIZE $SCAFFOLD_FILE.coords 2> $SCAFFOLD_FILE.err
