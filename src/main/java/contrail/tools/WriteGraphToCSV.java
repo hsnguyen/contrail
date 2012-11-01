@@ -144,9 +144,11 @@ public class WriteGraphToCSV extends Stage {
     // TODO(jlewi): Once we have an easy way of uploading multiple files to
     // helix we should get rid of this constraint.
 //    Schema.Type.NULL;
-//    Pair<CharSequence, Null> pair = new Pair<CharSequence, Null>
-//    AvroJob.setMapOutputSchema(conf, pair);
-    conf.setNumReduceTasks(1);
+    //Pair<CharSequence, Null> pair = new Pair<CharSequence, Null>
+    //AvroJob.setMapOutputSchema(conf, pair);
+    // This is a mapper only job. To facilitate upload to BigQuery you
+    // should probably join the part files together.
+    conf.setNumReduceTasks(0);
     conf.setMapperClass(ToCSVMapper.class);
     //conf.setReducerClass(IdentityReducer.class);
 
@@ -159,6 +161,11 @@ public class WriteGraphToCSV extends Stage {
           "because it already exists.");
       FileSystem.get(conf).delete(out_path, true);
     }
+
+    sLogger.info(
+        "You can use the following schema with big query:\n" +
+         "nodeId:string, out_degree:integer, in_degree:integer, " +
+         "length:integer, coverage:float");
 
     long starttime = System.currentTimeMillis();
     RunningJob job = JobClient.runJob(conf);
