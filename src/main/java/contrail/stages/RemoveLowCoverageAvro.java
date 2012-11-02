@@ -196,6 +196,10 @@ public class RemoveLowCoverageAvro extends Stage {
         return;
       }
 
+      if (nodeid.toString().equals("GATATTAAAGGATTTCTTCAATTTTGAATTTCATTGATTTTCATCAAATTGAAGC")) {
+        System.out.println("Don't commit: LEWI NOCOMMIT.");
+      }
+
       for(CharSequence neighbor : neighbors) {
         NeighborData result = node.removeNeighbor(neighbor.toString());
         if(result == null) {
