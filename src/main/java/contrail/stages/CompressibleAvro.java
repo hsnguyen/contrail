@@ -130,10 +130,6 @@ public class CompressibleAvro extends Stage {
 
       CompressibleMapOutput map_output = out_pair.value();
 
-      if (graph_data.getNodeId().toString().equals("zLDwNU_8EdgC")) {
-        System.out.println("NOCOMMIT");
-      }
-
       // We consider the outgoing edges from both strands.
       // Recall that RC(X) -> Y  implies RC(Y) -> X.
       for (DNAStrand strand: DNAStrand.values()) {
@@ -210,10 +206,6 @@ public class CompressibleAvro extends Stage {
       clearAnnotatedNode(annotated_node);
 
       Iterator<CompressibleMapOutput> iter = iterable.iterator();
-
-      if (node_id.toString().equals("zLDwNU_8EdgC")) {
-        System.out.println("NOCOMMIT");
-      }
 
       while (iter.hasNext()) {
         // We need to make copies because the iterable returned by hadoop
