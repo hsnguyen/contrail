@@ -21,6 +21,7 @@ import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
 import contrail.sequences.DNAStrand;
+import contrail.sequences.DNAUtil;
 import contrail.sequences.StrandsUtil;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -174,7 +175,9 @@ public class WriteGephiFile extends Stage {
       } else if (entry.getKey().equals("length")) {
         value = Integer.toString(node.getSequence().size());
       } else if (entry.getKey().equals("sequence")) {
-        value = node.getSequence().toString();
+        // Get the proper strand of the sequence.
+        value = DNAUtil.sequenceToDir(
+            node.getSequence(), terminal.strand).toString();
       }  else {
         throw new RuntimeException(
             "No handler for attribute:" + entry.getKey());
