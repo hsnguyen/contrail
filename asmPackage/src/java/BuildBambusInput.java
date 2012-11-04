@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 
-public class buildBambusInput {
+public class BuildBambusInput {
   private static class MappingInfo {
     public String readID = null;
 
@@ -106,28 +106,25 @@ public class buildBambusInput {
     return contains;
   }
 
-  public static void main(String[] args) throws Exception {
-    String resultDir = System.getProperty("user.dir") + "/";
-    if (args.length < 3) {
-      System.err.println("Please provide an asm and read directory");
-      System.exit(1);
-    }
-
-    String execPath = buildBambusInput.class.getClassLoader().getResource(buildBambusInput.class.getName().replace('.', File.separatorChar) + ".class").getPath();
-    String perlCommand = new File(execPath).getParent() + File.separatorChar + "get_singles.pl";
-
-    // First argument is the working directory.
-    String asmDir = args[0];
-    String readDir = args[1];
-    String suffix = args[2];
-    String libFile = args[3];
-    
-    // libSizes stores the sizes for each read library. The key is the
-    // prefix of the FastQ files for that library. The value is a pair
-    // which stores the lower and uppoer bound for the library size.
-    HashMap<String, Utils.Pair> libSizes = new HashMap<String, Utils.Pair>();
-    
-    // Parse the library file and extract the library sizes.
+  // libSizes stores the sizes for each read library. The key is the
+  // prefix of the FastQ files for that library. The value is a pair
+  // which stores the lower and uppoer bound for the library size.
+  private HashMap<String, Utils.Pair> libSizes;
+  
+  // A list of prefixes for the FASTQ files containing the original reads.
+  HashSet<String> prefixes;
+  
+  private String assemblyDir;
+  private String readDir;
+  
+  // An array containing a list of the readFiles;
+  private File[] readFiles;
+  
+  /**
+   * Parse the library file and extract the library sizes. 
+   */
+  private void parseLibSizes(String libFile) throws Exception {
+    libSizes = new HashMap<String, Utils.Pair>();
     BufferedReader libSizeFile = Utils.getFile(libFile, "libSize");
     String libLine = null;
     while ((libLine = libSizeFile.readLine()) != null) {
@@ -135,38 +132,19 @@ public class buildBambusInput {
       libSizes.put(splitLine[0], new Utils.Pair(Integer.parseInt(splitLine[1]), Integer.parseInt(splitLine[2])));
     }
     libSizeFile.close();
-
-    String outPrefix = null;
-    File dir = new File(asmDir);
-    if (!dir.isDirectory()) {
-      System.err.println("Error, asm directory " + asmDir + " is not a directory");
-      System.exit(1);
-    }
-
-    // Find files in the directory with the suffix passed on the command line.
-    // TODO(jlewi): Not sure what the point of this code is. My guess is
-    // it's trying to do something along the lines of ensuring files outputted
-    // by this code don't conflict with existing files.
-    for (File fs : dir.listFiles()) {
-      if (fs.getName().contains(suffix)) {
-        // TODO(jlewi): This looks like a bug. I think he meant to match
-        // and replace the value of the variable suffix not the string suffix. 
-        outPrefix = fs.getName().replaceAll("suffix", "");
-      }
-    }
-
-    dir = new File(readDir);
-    if (!dir.isDirectory()) {
-      System.err.println("Error, read directory " + readDir + " is not a directory");
-      System.exit(1);
-    }
-
+  }
+  
+  /**
+   * Find the prefixes of all the FASTQ files.
+   */
+  private void findReadPrefixes() {
     // Process the original read files.
-    File[] files = dir.listFiles();
-    HashSet<String> prefixes = new HashSet<String>();
+    File dir = new File(readDir);
+    readFiles = dir.listFiles();
+    prefixes = new HashSet<String>();
 
     // Find FASTQ files containing mate pairs and extract the filename prefix.
-    for (File fs : files) {
+    for (File fs : readFiles) {
       // TODO(jlewi): Why do we ignore files with SRR in their name?
       if (fs.getName().contains("SRR")) { continue; }
       // TODO(jeremy@lewi.us): This regular expression can match temporary
@@ -180,10 +158,70 @@ public class buildBambusInput {
                             "2$", "X"));
       }
     }
-
     System.err.println("Prefixes for files I will read are " + prefixes);
-    PrintStream out = new PrintStream(new File(resultDir + outPrefix + ".fasta"));
-    PrintStream libOut = new PrintStream(new File(resultDir + outPrefix + ".library"));
+  }
+  
+  /**
+   * Align the contigs to the reads.
+   * @param args
+   * @throws Exception
+   */
+  public void build(String[] args) throws Exception {
+    String resultDir = System.getProperty("user.dir") + "/";
+    if (args.length < 3) {
+      System.err.println("Please provide an asm and read directory");
+      System.exit(1);
+    }
+
+    String execPath = BuildBambusInput.class.getClassLoader().getResource(BuildBambusInput.class.getName().replace('.', File.separatorChar) + ".class").getPath();
+    String perlCommand = new File(execPath).getParent() + File.separatorChar + "get_singles.pl";
+
+    // First argument is the assembly directory.
+    assemblyDir = args[0];
+    // Second argument is the directory containing the original reads.
+    readDir = args[1];
+    String suffix = args[2];
+    String libFile = args[3];
+    
+    // All output files will start with outPrefix. The suffix depends on
+    // the type of file written.
+    String outPrefix = args[4];
+    
+    System.err.println("Arguments are:");
+    System.err.println("assemblyDir: " + assemblyDir);
+    System.err.println("readDir: " + readDir);
+    System.err.println("suffix: " + suffix);
+    System.err.println("libFile: " + libFile);
+    System.err.println("outprefix: " + outPrefix);
+
+    parseLibSizes(libFile);
+            
+    File dir = new File(assemblyDir);
+    if (!dir.isDirectory()) {
+      System.err.println(
+          "Error, assembly directory " + assemblyDir + " is not a directory");
+      System.exit(1);
+    }
+
+    dir = new File(readDir);
+    if (!dir.isDirectory()) {
+      System.err.println("Error, read directory " + readDir + " is not a directory");
+      System.exit(1);
+    }
+
+    findReadPrefixes();
+
+    File fastaOutputFile = new File(resultDir + outPrefix + ".fasta");
+    File libraryOutputFile = new File(resultDir + outPrefix + ".library");
+    File contigOutputFile = new File(resultDir + outPrefix + ".contig");
+    
+    System.err.println("Outputs will be written to:");
+    System.err.println("Fasta file: " + fastaOutputFile.getName());
+    System.err.println("Library file: " + libraryOutputFile.getName());
+    System.err.println("Contig Aligned file: " + contigOutputFile.getName());
+    
+    PrintStream out = new PrintStream(fastaOutputFile);
+    PrintStream libOut = new PrintStream(libraryOutputFile);
     // index of mates, assuming files are in the same pairing order.
     // The key for the hash map is the prefix for the library and identifies
     // a set of mate pairs.
@@ -194,7 +232,7 @@ public class buildBambusInput {
     // mates[prefix]["left"][i] and mates[prefix]["right"][i] should be the
     // id's of the the i'th mate pair in the library given by prefix.
     HashMap<String, HashMap<String, ArrayList<String>>> mates = new HashMap<String, HashMap<String, ArrayList<String>>>();
-    for (File fs : files) {
+    for (File fs : readFiles) {
       // first trim to 25bp
       // TODO(jlewi): It looks like the operands of the or operator are the 
       // same rendering the or meaningless.
@@ -271,8 +309,8 @@ public class buildBambusInput {
     System.err.println("Library file built");
 
     // Run the bowtie aligner
-    System.err.println("Launching bowtie aligner: " + perlCommand + " -reads " + readDir + " -assembly " + asmDir + " -suffix " + suffix + " --threads 2");
-    Process p = Runtime.getRuntime().exec("perl " + perlCommand + " -reads " + readDir + " -assembly " + asmDir + " -suffix " + suffix + " --threads 2");
+    System.err.println("Launching bowtie aligner: " + perlCommand + " -reads " + readDir + " -assembly " + assemblyDir + " -suffix " + suffix + " --threads 2");
+    Process p = Runtime.getRuntime().exec("perl " + perlCommand + " -reads " + readDir + " -assembly " + assemblyDir + " -suffix " + suffix + " --threads 2");
     p.waitFor();
     System.err.println("Bowtie finished");
     HashMap<String, ArrayList<MappingInfo>> map = new HashMap<String, ArrayList<MappingInfo>>(NUM_CTGS);
@@ -292,9 +330,9 @@ public class buildBambusInput {
     }
 
     // finally run through all the contig files and build the TIGR .contig file
-    dir = new File(asmDir);
+    dir = new File(assemblyDir);
     if (!dir.isDirectory()) {
-      System.err.println("Error, read directory " + asmDir + " is not a directory");
+      System.err.println("Error, read directory " + assemblyDir + " is not a directory");
       System.exit(1);
     }
 
@@ -308,7 +346,7 @@ public class buildBambusInput {
       }
     }
 
-    out = new PrintStream(new File(resultDir + outPrefix + ".contig"));
+    out = new PrintStream(contigOutputFile);
     BufferedReader bf = new BufferedReader(new FileReader(contigFasta));
     String line = null;
     String contigID = null;
@@ -333,10 +371,16 @@ public class buildBambusInput {
     }
 
     if (contigID != null) {
-      buildBambusInput.outputContigRecord(out, contigID, contigSequence.toString(), map.get(contigID));
+      outputContigRecord(out, contigID, contigSequence.toString(), map.get(contigID));
     }
 
     bf.close();
     out.close();
+  }
+  
+  public static void main(String[] args) throws Exception {
+    
+    BuildBambusInput builder = new BuildBambusInput();
+    builder.build(args);            
   }
 }
