@@ -23,6 +23,16 @@ public class buildBambusInput {
   private static final int NUM_READS_PER_CTG = 200;
   private static final int NUM_CTGS = 200000;
 
+  /**
+   * Read the bowtie output.
+   * 
+   * @param fileName
+   * @param prefix
+   * @param map: This is a hashmap keyed by the id of each contig. The value
+   *   is an array of MappingInfo. Each MappingInfo stores information about
+   *   a read aligned to contig given by the key.
+   * @throws Exception
+   */
   private static void readBowtieResults(String fileName, String prefix, HashMap<String, ArrayList<MappingInfo>> map) throws Exception {
     prefix = prefix.replaceAll("X.*", "");
     System.err.println("For file " + fileName + " prefix is " + prefix);
@@ -69,6 +79,8 @@ public class buildBambusInput {
         counter++;
       }
       bf.close();
+      // Print out the final record count.
+      System.err.println("Read " + counter + " mapping records from " + fileName);
     }
   }
 
@@ -104,11 +116,18 @@ public class buildBambusInput {
     String execPath = buildBambusInput.class.getClassLoader().getResource(buildBambusInput.class.getName().replace('.', File.separatorChar) + ".class").getPath();
     String perlCommand = new File(execPath).getParent() + File.separatorChar + "get_singles.pl";
 
+    // First argument is the working directory.
     String asmDir = args[0];
     String readDir = args[1];
     String suffix = args[2];
     String libFile = args[3];
+    
+    // libSizes stores the sizes for each read library. The key is the
+    // prefix of the FastQ files for that library. The value is a pair
+    // which stores the lower and uppoer bound for the library size.
     HashMap<String, Utils.Pair> libSizes = new HashMap<String, Utils.Pair>();
+    
+    // Parse the library file and extract the library sizes.
     BufferedReader libSizeFile = Utils.getFile(libFile, "libSize");
     String libLine = null;
     while ((libLine = libSizeFile.readLine()) != null) {
@@ -124,8 +143,14 @@ public class buildBambusInput {
       System.exit(1);
     }
 
+    // Find files in the directory with the suffix passed on the command line.
+    // TODO(jlewi): Not sure what the point of this code is. My guess is
+    // it's trying to do something along the lines of ensuring files outputted
+    // by this code don't conflict with existing files.
     for (File fs : dir.listFiles()) {
       if (fs.getName().contains(suffix)) {
+        // TODO(jlewi): This looks like a bug. I think he meant to match
+        // and replace the value of the variable suffix not the string suffix. 
         outPrefix = fs.getName().replaceAll("suffix", "");
       }
     }
@@ -136,25 +161,43 @@ public class buildBambusInput {
       System.exit(1);
     }
 
+    // Process the original read files.
     File[] files = dir.listFiles();
     HashSet<String> prefixes = new HashSet<String>();
 
+    // Find FASTQ files containing mate pairs and extract the filename prefix.
     for (File fs : files) {
+      // TODO(jlewi): Why do we ignore files with SRR in their name?
       if (fs.getName().contains("SRR")) { continue; }
       // TODO(jeremy@lewi.us): This regular expression can match temporary
       // files e.g files that begin and end with '#'.
       if (fs.getName().matches(".*_[12]\\..*fastq.*")) {
-        prefixes.add(fs.getName().replaceAll("\\.fastq", "").replaceAll("\\.bz2", "").replaceAll("1\\.", "X.").replaceAll("2\\.", "X.").replaceAll("1$", "X").replaceAll("2$", "X"));
+        prefixes.add(fs.getName().replaceAll("\\.fastq", "").replaceAll(
+            "\\.bz2", "").replaceAll(
+                "1\\.", "X.").replaceAll(
+                    "2\\.", "X.").replaceAll(
+                        "1$", "X").replaceAll(
+                            "2$", "X"));
       }
     }
 
     System.err.println("Prefixes for files I will read are " + prefixes);
     PrintStream out = new PrintStream(new File(resultDir + outPrefix + ".fasta"));
     PrintStream libOut = new PrintStream(new File(resultDir + outPrefix + ".library"));
-    // index of mates, assuming files are in the same pairing order
+    // index of mates, assuming files are in the same pairing order.
+    // The key for the hash map is the prefix for the library and identifies
+    // a set of mate pairs.
+    // The value is a hashmap with two keys "left" and "right". Each key
+    // stores one set of reads in the mate pairs for this library. The value
+    // of "left" and "right" is an array of strings storing the ids of all
+    // the reads. Thus
+    // mates[prefix]["left"][i] and mates[prefix]["right"][i] should be the
+    // id's of the the i'th mate pair in the library given by prefix.
     HashMap<String, HashMap<String, ArrayList<String>>> mates = new HashMap<String, HashMap<String, ArrayList<String>>>();
     for (File fs : files) {
       // first trim to 25bp
+      // TODO(jlewi): It looks like the operands of the or operator are the 
+      // same rendering the or meaningless.
       if (containsPrefix(prefixes, fs.getName(), "fastq") || containsPrefix(prefixes, fs.getName(), "fastq")) {
         String myPrefix = fs.getName().replaceAll("1\\.", "X").replaceAll("2\\.", "X").replaceAll("X.*", "");
         System.err.println("Processing file " + fs.getName() + " prefix " + myPrefix + " FOR FASTA OUTPUT");
@@ -194,6 +237,14 @@ public class buildBambusInput {
     }
     out.close();
 
+    // For each library fetch the library size or throw an error if there
+    // is know size for this library.
+    // Write out the library file. The library is a text file.
+    // For each library there is a line starting wtih "library" which
+    // contains the name of the library and the size for the library.
+    // For each mate pair in the library we write a line with the id's
+    // of the reads forming the pair and the name of the library they come
+    // from.
     for (String lib : mates.keySet()) {
       HashMap<String, ArrayList<String>> libMates = mates.get(lib);
       String libName = lib.replaceAll("_", "");
@@ -219,7 +270,7 @@ public class buildBambusInput {
     libOut.close();
     System.err.println("Library file built");
 
-    // run the bowtie aligner
+    // Run the bowtie aligner
     System.err.println("Launching bowtie aligner: " + perlCommand + " -reads " + readDir + " -assembly " + asmDir + " -suffix " + suffix + " --threads 2");
     Process p = Runtime.getRuntime().exec("perl " + perlCommand + " -reads " + readDir + " -assembly " + asmDir + " -suffix " + suffix + " --threads 2");
     p.waitFor();
@@ -247,6 +298,8 @@ public class buildBambusInput {
       System.exit(1);
     }
 
+    // TODO(jlewi): This code will only read contigs from the first contig
+    // file that matches.
     File contigFasta = null;
     for (File f: dir.listFiles()) {
       if (f.getName().endsWith(suffix)) {
