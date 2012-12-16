@@ -10,7 +10,7 @@
     <junit-version>4.8.2</junit-version>
     <jackson-version>1.7.3</jackson-version>
     <!--Avro 1.7.1 offers SortedKeyValue pairs-->
-    <avro-version>1.7.1</avro-version>
+    <avro-version>1.7.3</avro-version>
     <!--<avro-version>1.6.1</avro-version>-->
   </properties>
   <profiles>

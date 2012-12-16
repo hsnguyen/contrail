@@ -6,14 +6,23 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 
+import org.apache.avro.Schema;
+import org.apache.avro.file.DataFileWriter;
 import org.apache.avro.hadoop.file.SortedKeyValueFile;
+import org.apache.avro.specific.SpecificDatumWriter;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
+import org.apache.log4j.Logger;
 
 import contrail.stages.ContrailParameters;
 import contrail.stages.ParameterDefinition;
 import contrail.stages.Stage;
+import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
 
 /**
@@ -23,8 +32,9 @@ import contrail.graph.GraphNodeData;
  * lookup nodes in the files.
  */
 public class WalkGraph extends Stage {
-  protected Map<String, ParameterDefinition>
-  createParameterDefinitions() {
+  private static final Logger sLogger =
+      Logger.getLogger(WalkGraph.class);
+  protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
         new HashMap<String, ParameterDefinition>();
 
@@ -34,78 +44,178 @@ public class WalkGraph extends Stage {
       ContrailParameters.getInputOutputPathOptions()) {
       defs.put(def.getName(), def);
     }
+
+    ParameterDefinition startNodes = new ParameterDefinition(
+        "start_nodes", "Comma separated list of the nodes to start the walk " +
+        "from", String.class, null);
+
+    defs.put(startNodes.getName(), startNodes);
+
+    ParameterDefinition numHops = new ParameterDefinition(
+        "num_hops", "Number of hops to take starting at start_nodes.",
+        Integer.class, null);
+
+    defs.put(numHops.getName(), numHops);
+
     return Collections.unmodifiableMap(defs);
   }
 
-  private SortedKeyValueFile.Reader createReader() {
-    SortedKeyValueFile.Reader.Options reader_options =
+  private SortedKeyValueFile.Reader<CharSequence, GraphNodeData> createReader()
+      {
+    SortedKeyValueFile.Reader.Options readerOptions =
         new SortedKeyValueFile.Reader.Options();
 
-    SortedKeyValueFile.Reader<String, GraphNodeData> reader = null;
+    String inputPath = (String) stage_options.get("inputpath");
+    readerOptions.withPath(new Path(inputPath));
+
+    GraphNodeData nodeData = new GraphNodeData();
+    readerOptions.withConfiguration(getConf());
+    readerOptions.withKeySchema(Schema.create(Schema.Type.STRING));
+    readerOptions.withValueSchema(nodeData.getSchema());
+
+    SortedKeyValueFile.Reader<CharSequence, GraphNodeData> reader = null;
     try {
-      reader = new SortedKeyValueFile.Reader<String,GraphNodeData> (reader_options);
+      reader = new SortedKeyValueFile.Reader<CharSequence,GraphNodeData> (
+          readerOptions);
     } catch (IOException e) {
       // TODO Auto-generated catch block
       e.printStackTrace();
     }
 
     return reader;
-//    writer_options.withConfiguration(getConf());
-//    writer_options.withKeySchema(Schema.create(Schema.Type.STRING));
-//    writer_options.withValueSchema(node_data.getSchema());
-//    writer_options.withPath(new Path(output_path));
   }
+
+  /**
+   * Walk the graph from the start node.
+   * @param startId
+   * @param numHops
+   * @param writer
+   * @param exclude: List of nodes already outputted so we exclude them.
+   * @return: List of all nodes visited.
+   */
+  private HashSet<String> walk(
+      SortedKeyValueFile.Reader<CharSequence, GraphNodeData> reader,
+      String startId, int numHops,
+      DataFileWriter<GraphNodeData> writer, HashSet<String> exclude) {
+    HashSet<String> visited = new HashSet<String>();
+    visited.addAll(exclude);
+
+    // Use two lists so we can keep track of the hops.
+    HashSet<String> thisHop = new HashSet<String>();
+    HashSet<String> nextHop = new HashSet<String>();
+
+    int hop = 0;
+    thisHop.add(startId);
+    GraphNodeData nodeData = null;
+    GraphNode node = new GraphNode();
+    while (hop <= numHops && thisHop.size() > 0) {
+      // Fetch each node in thisHop.
+      for (String nodeId : thisHop) {
+        if (!exclude.contains(nodeId)) {
+          try{
+            Object value = reader.get(nodeId);
+            nodeData = (GraphNodeData) value;
+          } catch (IOException e) {
+            sLogger.fatal("There was a problem reading from the file.", e);
+            System.exit(-1);
+          }
+          if (nodeData == null) {
+            sLogger.fatal(
+                "Could not find node:" + nodeId,
+                new RuntimeException("Couldn't find node"));
+          }
+          try{
+            writer.append(nodeData);
+          } catch (IOException e) {
+            sLogger.fatal("There was a problem writing the node", e);
+            System.exit(-1);
+          }
+          exclude.add(nodeId);
+        }
+        // Even if the nodeId is in the exclude set we still want to
+        // process its edges because its possible we have multiple seeds
+        // and the walk overlaps.
+        node.setData(nodeData);
+        nextHop.addAll(node.getNeighborIds());
+      }
+      thisHop.clear();
+      thisHop.addAll(nextHop);
+      nextHop.clear();
+      ++hop;
+    }
+    return visited;
+  }
+
+  /**
+   * Find the subgraph by starting at the indicated node and walking the
+   * specified number of hops.
+   */
+  private void writeSubGraph() {
+    String outputPath = (String) stage_options.get("outputpath");
+    String startNodes = (String) stage_options.get("start_nodes");
+    int numHops = (Integer) stage_options.get("num_hops");
+
+    String[] nodeids = startNodes.split(",");
+
+    SortedKeyValueFile.Reader<CharSequence, GraphNodeData> reader =
+        createReader();
+
+    FileSystem fs = null;
+    try{
+      fs = FileSystem.get(getConf());
+    } catch (IOException e) {
+      sLogger.fatal(e.getMessage(), e);
+      System.exit(-1);
+    }
+
+    GraphNodeData node = new GraphNodeData();
+
+    // TODO(jeremy@lewi.us): Output path must exist.
+    try {
+      if (!fs.exists(new Path(outputPath))) {
+        sLogger.info("Creating output path:" + outputPath);
+        fs.mkdirs(new Path(outputPath));
+      }
+    } catch (IOException e) {
+      sLogger.fatal("Could not create the outputpath:" + outputPath, e);
+      System.exit(-1);
+    }
+
+    String outputFile = FilenameUtils.concat(outputPath, "subgraph.avro");
+    FSDataOutputStream outStream = null;
+    DataFileWriter<GraphNodeData> avroStream = null;
+    SpecificDatumWriter<GraphNodeData> writer = null;
+    try {
+      outStream = fs.create(new Path(outputFile));
+      writer =
+          new SpecificDatumWriter<GraphNodeData>(GraphNodeData.class);
+      avroStream =
+          new DataFileWriter<GraphNodeData>(writer);
+      avroStream.create(node.getSchema(), outStream);
+    } catch (IOException e) {
+      sLogger.fatal("Couldn't create the output stream.", e);
+      System.exit(-1);
+    }
+
+    HashSet<String> visited = new HashSet<String>();
+    for (String nodeId : nodeids) {
+      visited = walk(reader, nodeId, numHops, avroStream, visited);
+    }
+    try {
+      outStream.close();
+    } catch (IOException e) {
+      sLogger.fatal("Couldn't close the output stream.", e);
+      System.exit(-1);
+    }
+  }
+
   @Override
   public RunningJob runJob() throws Exception {
-    String[] required_args = {"inputpath", "outputpath", "seednodes"};
+    String[] required_args = {
+        "inputpath", "outputpath", "start_nodes", "num_hops"};
     checkHasParametersOrDie(required_args);
 
-    String input_path = (String) stage_options.get("inputpath");
-    String output_path = (String) stage_options.get("outputpath");
-    String seednodes = (String) stage_options.get("outputpath");
-    Integer hops = (Integer) stage_options.get("hops");
-
-    String[] nodeids = seednodes.split(",");
-
-    // Keep track of nodes visited so we only output each node once.
-    HashSet<String> nodes_visited = new HashSet<String>();
-
-
-    //    // Read the input file. We use a stream because we don't need random
-    //    // access to the file.
-    //    // TODO(jlewi): We should use hadoop classes so we can read files directly
-    //    // from HDFS.
-    //    FileInputStream in_stream = new FileInputStream(input_path);
-    //    SpecificDatumReader<GraphNodeData> reader =
-    //        new SpecificDatumReader<GraphNodeData>(GraphNodeData.class);
-    //
-    //    DataFileStream<GraphNodeData> avro_stream =
-    //        new DataFileStream<GraphNodeData>(in_stream, reader);
-    //
-    //    GraphNodeData node_data = new GraphNodeData();
-    //
-    //    SortedKeyValueFile.Writer.Options writer_options =
-    //        new SortedKeyValueFile.Writer.Options();
-    //
-    //    writer_options.withConfiguration(getConf());
-    //    writer_options.withKeySchema(Schema.create(Schema.Type.STRING));
-    //    writer_options.withValueSchema(node_data.getSchema());
-    //    writer_options.withPath(new Path(output_path));
-    //
-    //    SortedKeyValueFile.Writer<String, GraphNodeData> writer =
-    //        new SortedKeyValueFile.Writer<String,GraphNodeData> (writer_options);
-    //
-    //    Schema node_schema = node_data.getSchema();
-    //    while(avro_stream.hasNext()) {
-    //      avro_stream.next(node_data);
-    //
-    //      //writer.append(node_data.getNodeId().toString(), node_data);
-    //      // Key it by mertag.
-    //      String mertag = node_data.getMertag().getReadTag().toString() + "_" +
-    //          node_data.getMertag().getChunk();
-    //      writer.append(mertag, node_data);
-    //    }
-
+    writeSubGraph();
     return null;
   }
 
