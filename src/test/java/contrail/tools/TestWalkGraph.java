@@ -1,8 +1,10 @@
 package contrail.tools;
 
 import static org.junit.Assert.fail;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -11,7 +13,9 @@ import java.util.Map;
 import java.util.Random;
 
 import org.apache.avro.Schema;
+import org.apache.avro.file.DataFileStream;
 import org.apache.avro.hadoop.file.SortedKeyValueFile;
+import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -104,6 +108,26 @@ public class TestWalkGraph {
     } catch (Exception exception) {
       exception.printStackTrace();
       fail("Exception occured:" + exception.getMessage());
+    }
+
+    // Verify output is non empty.
+    try {
+      FileInputStream inStream = new FileInputStream(outputPath);
+      ArrayList<GraphNodeData> nodes = new ArrayList<GraphNodeData>();
+      SpecificDatumReader<GraphNodeData> reader =
+          new SpecificDatumReader<GraphNodeData>();
+      DataFileStream<GraphNodeData> avro_stream =
+          new DataFileStream<GraphNodeData>(inStream, reader);
+      while(avro_stream.hasNext()) {
+        GraphNodeData data  = avro_stream.next();
+        nodes.add(data);
+      }
+      assertTrue(nodes.size() > 1);
+
+    } catch (IOException exception) {
+      throw new RuntimeException(
+          "There was a problem reading the nodes the graph to an avro file." +
+              " Exception:" + exception.getMessage());
     }
   }
 }

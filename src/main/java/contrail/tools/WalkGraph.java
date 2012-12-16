@@ -1,5 +1,24 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+ * implied.  See the License for the specific language governing
+ * permissions and limitations under the License.
+ */
 package contrail.tools;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
@@ -8,7 +27,14 @@ import java.util.Map;
 
 import org.apache.avro.Schema;
 import org.apache.avro.file.DataFileWriter;
+import org.apache.avro.generic.GenericDatumWriter;
+import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.hadoop.file.SortedKeyValueFile;
+import org.apache.avro.io.BinaryDecoder;
+import org.apache.avro.io.BinaryEncoder;
+import org.apache.avro.io.DecoderFactory;
+import org.apache.avro.io.EncoderFactory;
+import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -106,15 +132,18 @@ public class WalkGraph extends Stage {
 
     int hop = 0;
     thisHop.add(startId);
-    GraphNodeData nodeData = null;
+    GraphNodeData nodeData = new GraphNodeData();
     GraphNode node = new GraphNode();
+    GenericRecord record = null;
     while (hop <= numHops && thisHop.size() > 0) {
       // Fetch each node in thisHop.
       for (String nodeId : thisHop) {
         if (!exclude.contains(nodeId)) {
           try{
-            Object value = reader.get(nodeId);
-            nodeData = (GraphNodeData) value;
+            // The actual type returned by get is a generic record even
+            // though the return type is GraphNodeData. I have no idea
+            // how SortedKeyValueFileReader actually compiles.
+            record =  (GenericRecord) reader.get(nodeId);
           } catch (IOException e) {
             sLogger.fatal("There was a problem reading from the file.", e);
             System.exit(-1);
@@ -123,7 +152,44 @@ public class WalkGraph extends Stage {
             sLogger.fatal(
                 "Could not find node:" + nodeId,
                 new RuntimeException("Couldn't find node"));
+            System.exit(-1);
           }
+
+          // Convert the Generic record to a specific record.
+          try {
+            // TODO(jeremy@lewi.us): We could probably make this code
+            // more efficient by reusing objects.
+            GenericDatumWriter<GenericRecord> datumWriter =
+                new GenericDatumWriter<GenericRecord>(record.getSchema());
+
+            ByteArrayOutputStream outStream = new ByteArrayOutputStream();
+            BinaryEncoder encoder =
+                EncoderFactory.get().binaryEncoder(outStream, null);
+
+            datumWriter.write(record, encoder);
+            // We need to flush the encoder to write the data to the byte
+            // buffer.
+            encoder.flush();
+
+            outStream.flush();
+
+            // Now read it back in as a specific datum reader.
+            ByteArrayInputStream inStream = new ByteArrayInputStream(
+                outStream.toByteArray());
+
+            BinaryDecoder decoder =
+                DecoderFactory.get().binaryDecoder(inStream, null);
+            SpecificDatumReader<GraphNodeData> specificReader = new
+                SpecificDatumReader<GraphNodeData>(nodeData.getSchema());
+
+            specificReader.read(nodeData, decoder);
+          } catch (IOException e) {
+            sLogger.fatal(
+                "There was a problem converting the GenericRecord to " +
+                "GraphNodeData", e);
+            System.exit(-1);
+          }
+
           try{
             writer.append(nodeData);
           } catch (IOException e) {
@@ -202,6 +268,7 @@ public class WalkGraph extends Stage {
       visited = walk(reader, nodeId, numHops, avroStream, visited);
     }
     try {
+      avroStream.close();
       outStream.close();
     } catch (IOException e) {
       sLogger.fatal("Couldn't close the output stream.", e);
