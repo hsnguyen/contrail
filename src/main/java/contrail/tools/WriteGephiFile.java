@@ -1,3 +1,18 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+// Author: Jeremy Lewi (jeremy@lewi.us)
+
 package contrail.tools;
 
 import java.io.File;
@@ -21,7 +36,6 @@ import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
 import contrail.sequences.DNAStrand;
-import contrail.sequences.DNAUtil;
 import contrail.sequences.StrandsUtil;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -175,9 +189,7 @@ public class WriteGephiFile extends Stage {
       } else if (entry.getKey().equals("length")) {
         value = Integer.toString(node.getSequence().size());
       } else if (entry.getKey().equals("sequence")) {
-        // Get the proper strand of the sequence.
-        value = DNAUtil.sequenceToDir(
-            node.getSequence(), terminal.strand).toString();
+        value = node.getSequence().toString();
       }  else {
         throw new RuntimeException(
             "No handler for attribute:" + entry.getKey());
@@ -302,7 +314,6 @@ public class WriteGephiFile extends Stage {
     // Determine the input type by reading the first record in one of the
     // file.
     GenericDatumReader reader = new GenericDatumReader<GenericRecord>();
-    //SpecificDatumReader<GraphNodeData> reader = new SpecificDatumReader<GraphNodeData>();
     try {
       FileInputStream in_stream = new FileInputStream(inFile);
 
