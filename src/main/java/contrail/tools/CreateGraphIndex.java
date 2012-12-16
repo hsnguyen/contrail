@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 
 import org.apache.avro.hadoop.file.SortedKeyValueFile;
 import org.apache.avro.Schema;
@@ -31,9 +32,7 @@ import contrail.graph.GraphNodeData;
  * the node id.
  *
  * The code assumes the graph is stored in .avro files in the input directory
- * provided by inputpath. It also assumes that to iterate over the nodes in
- * sorted order by nodeId we just sequentially process the nodes in the files
- * after sorting the files by name.
+ * provided by inputpath.
  *
  * Note: This code requies Avro 1.7
  */
@@ -92,6 +91,47 @@ public class CreateGraphIndex extends Stage {
 
     return graphFiles;
   }
+
+  /**
+   * A utility class which allows us to sort the various streams based
+   * on the id of the element. We use this class to do a merge sort of
+   * the various input files as we write the output file.
+   */
+  private static class GraphStream implements Comparable<GraphStream> {
+    private DataFileStream<GraphNodeData> stream;
+    private GraphNodeData next;
+
+    public GraphStream(DataFileStream<GraphNodeData> fileStream) {
+      stream = fileStream;
+      next = null;
+      if (stream.hasNext()) {
+        next = stream.next();
+      }
+    }
+
+    public GraphNodeData getData() {
+      return next;
+    }
+
+    public boolean hasNext() {
+      return stream.hasNext();
+    }
+
+    public GraphNodeData next() {
+      next = stream.next();
+      return next;
+    }
+
+    /**
+     * Sort the items in ascending order.
+     */
+    @Override
+    public int compareTo (GraphStream other) {
+      return this.getData().getNodeId().toString().compareTo(
+          other.getData().getNodeId().toString());
+    }
+  }
+
   @Override
   public RunningJob runJob() throws Exception {
     String[] required_args = {"inputpath", "outputpath"};
@@ -129,22 +169,52 @@ public class CreateGraphIndex extends Stage {
       System.exit(-1);
     }
 
+    ArrayList<FSDataInputStream> streams = new ArrayList<FSDataInputStream>();
+    ArrayList<SpecificDatumReader<GraphNodeData>> readers = new
+        ArrayList<SpecificDatumReader<GraphNodeData>>();
+
+    int numNodes = 0;
+    TreeSet<GraphStream> graphStreams = new TreeSet<GraphStream>();
     for (String inputFile : graphFiles) {
       FSDataInputStream inStream = fs.open(new Path(inputFile));
       SpecificDatumReader<GraphNodeData> reader =
           new SpecificDatumReader<GraphNodeData>(GraphNodeData.class);
 
+      streams.add(inStream);
+      readers.add(reader);
+
       DataFileStream<GraphNodeData> avroStream =
           new DataFileStream<GraphNodeData>(inStream, reader);
 
-      while(avroStream.hasNext()) {
-        avroStream.next(nodeData);
-        writer.append(nodeData.getNodeId().toString(), nodeData);
+      GraphStream graphStream = new GraphStream(avroStream);
+
+      if (graphStream.getData() == null) {
+        // Stream is empty so continue;
+        continue;
       }
-     avroStream.close();
+
+      graphStreams.add(graphStream);
+    }
+
+    while (graphStreams.size() > 0) {
+      GraphStream stream = graphStreams.first();
+      graphStreams.remove(stream);
+
+      writer.append(stream.getData().getNodeId().toString(), stream.getData());
+      ++numNodes;
+      if (stream.hasNext()) {
+        stream.next();
+        graphStreams.add(stream);
+      }
+
     }
 
     writer.close();
+    sLogger.info("Number of nodes written:" + numNodes);
+    for (FSDataInputStream stream : streams) {
+      stream.close();
+    }
+
     return null;
   }
 
