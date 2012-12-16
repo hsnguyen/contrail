@@ -8,7 +8,7 @@ import java.util.Map;
 
 import org.apache.avro.Schema;
 import org.apache.avro.file.DataFileWriter;
-import org.apache.avro.hadoop.file.SortedKeyValueFile;
+//import org.apache.avro.hadoop.file.SortedKeyValueFile;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -75,6 +75,10 @@ public class WalkGraph extends Stage {
 
     SortedKeyValueFile.Reader<CharSequence, GraphNodeData> reader = null;
     try {
+//      SortedKeyValueFile.Reader<CharSequence, CharSequence> readerTest = null;
+//      readerTest = new SortedKeyValueFile.Reader<CharSequence,CharSequence> (
+//          testOptions)
+
       reader = new SortedKeyValueFile.Reader<CharSequence,GraphNodeData> (
           readerOptions);
     } catch (IOException e) {
