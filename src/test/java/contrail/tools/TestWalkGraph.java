@@ -125,9 +125,7 @@ public class TestWalkGraph {
       assertTrue(nodes.size() > 1);
 
     } catch (IOException exception) {
-      throw new RuntimeException(
-          "There was a problem reading the nodes the graph to an avro file." +
-              " Exception:" + exception.getMessage());
+      fail("Exception occured:" + exception.getMessage());
     }
   }
 }
