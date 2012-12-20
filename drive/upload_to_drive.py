@@ -20,8 +20,7 @@ import gflags
 import os
 import sys
 
-gflags.DEFINE_string("path", None, "The path to the file to upload")
-gflags.DEFINE_string("name", None, "The name for the file, defaults to the filename")
+gflags.DEFINE_string("path", None, "The path to a file or directory to upload")
 gflags.DEFINE_string("description", "", "Description for the file.")
 
 gflags.MarkFlagAsRequired("path")
@@ -53,11 +52,7 @@ def main(argv):
   
   if not FLAGS.path:
     raise Exception("You must specify a file to upload using the --path argument.")
-  
-  name = FLAGS.name
-  if not name:
-    name = os.path.basename(FLAGS.path)
-    
+        
   # Run through the OAuth flow and retrieve credentials
   flow = OAuth2WebServerFlow(CLIENT_ID, CLIENT_SECRET, OAUTH_SCOPE, REDIRECT_URI)
   authorize_url = flow.step1_get_authorize_url()
@@ -71,16 +66,33 @@ def main(argv):
   
   drive_service = build('drive', 'v2', http=http)
     
-  # Insert a file
-  media_body = MediaFileUpload(FLAGS.path, mimetype='text/plain', resumable=True)
-  body = {
-    'title': name,
-    'description': FLAGS.description,
-    'mimeType': 'text/plain'
-  }
-
-  file = drive_service.files().insert(body=body, media_body=media_body).execute()
-  pprint.pprint(file)
+  files = []
+  
+  if os.path.isdir(FLAGS.path):
+    for f in os.listdir(FLAGS.path):
+      files.append(os.path.join(FLAGS.path, f))
+  else:
+    files.append(FLAGS.path)
+    
+  for file_path in files:
+    # Insert a file
+    media_body = MediaFileUpload(file_path, mimetype='text/plain', resumable=True)
+    mime_type = "text/plain"
+    
+    file_ext = os.path.splitext(file_path)[1].lower()
+    if file_ext == ".html":
+      mime_type = "text/html"
+      
+    name = os.path.basename(file_path)
+    
+    body = {
+      'title': name,
+      'description': FLAGS.description,
+      'mimeType': mime_type
+    }
+  
+    file = drive_service.files().insert(body=body, media_body=media_body, convert=True).execute()
+    pprint.pprint(file)
 
 if __name__ == "__main__":  
   main(sys.argv)
