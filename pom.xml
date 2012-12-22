@@ -8,10 +8,9 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <junit-version>4.8.2</junit-version>
-    <jackson-version>1.7.3</jackson-version>
+    <jackson-version>1.8.8</jackson-version>
     <!--Avro 1.7.1 offers SortedKeyValue pairs-->
     <avro-version>1.7.3</avro-version>
-    <!--<avro-version>1.6.1</avro-version>-->
   </properties>
   <profiles>
     <!-- We define different profiles for the different hadoop versions
@@ -106,6 +105,16 @@
       <groupId>org.apache.avro</groupId>
       <artifactId>avro-mapred</artifactId>
       <version>${avro-version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.codehaus.jackson</groupId>
+      <artifactId>jackson-core-asl</artifactId>
+      <version>${jackson-version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.codehaus.jackson</groupId>
+      <artifactId>jackson-mapper-asl</artifactId>
+      <version>${jackson-version}</version>
     </dependency>
   </dependencies>
   <repositories>
