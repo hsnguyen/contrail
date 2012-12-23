@@ -300,7 +300,7 @@ public class FindLastValidGraph extends Stage {
 
   public static void main(String[] args) throws Exception {
     int res = ToolRunner.run(
-        new Configuration(), new ValidateGraph(), args);
+        new Configuration(), new FindLastValidGraph(), args);
     System.exit(res);
   }
 }
