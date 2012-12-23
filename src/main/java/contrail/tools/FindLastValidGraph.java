@@ -81,7 +81,11 @@ public class FindLastValidGraph extends Stage {
       ContrailParameters.getInputOutputPathOptions()) {
       defs.put(def.getName(), def);
     }
-    // Over the comment for the inputpath.
+
+    // Delete the parameter K.
+    defs.remove("K");
+
+    // Overwrite the comment for the inputpath.
     ParameterDefinition input = new ParameterDefinition(
         "inputpath", "The path to the json file encoding StageInfo.",
         String.class,
