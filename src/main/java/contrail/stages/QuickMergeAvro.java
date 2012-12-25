@@ -1,12 +1,7 @@
 // Author: Michael Schatz, Jeremy Lewi
 package contrail.stages;
 
-import contrail.graph.GraphNode;
-import contrail.graph.GraphNodeData;
-import contrail.stages.GraphCounters.CounterName;
-
 import java.io.IOException;
-
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -30,6 +25,10 @@ import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
+
+import contrail.graph.GraphNode;
+import contrail.graph.GraphNodeData;
+import contrail.stages.GraphCounters.CounterName;
 
 public class QuickMergeAvro extends Stage {
   private static final Logger sLogger = Logger.getLogger(QuickMergeAvro.class);
@@ -61,6 +60,7 @@ public class QuickMergeAvro extends Stage {
 
     private Pair<CharSequence, GraphNodeData> out_pair;
 
+    @Override
     public void configure(JobConf job) {
       out_pair = new Pair<CharSequence, GraphNodeData>(MAP_OUT_SCHEMA);
     }
@@ -104,6 +104,7 @@ public class QuickMergeAvro extends Stage {
     private static int K = 0;
     public static boolean VERBOSE = false;
 
+    @Override
     public void configure(JobConf job) {
       QuickMergeAvro stage = new QuickMergeAvro();
       Map<String, ParameterDefinition> definitions =
@@ -134,6 +135,10 @@ public class QuickMergeAvro extends Stage {
         GraphNode node = new GraphNode(value);
         node = node.clone();
         nodes.put(node.getNodeId().toString(), node);
+      }
+
+      if (nodes.containsKey("7rgzMzMzMzMzM9FEBA")) {
+        System.out.println("LEWI NO COMMIT. target node");
       }
 
       // Create a list of the nodes to process. We need to make a copy of
@@ -196,6 +201,7 @@ public class QuickMergeAvro extends Stage {
     }
   }
 
+  @Override
   protected Map<String, ParameterDefinition>
       createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
@@ -210,6 +216,7 @@ public class QuickMergeAvro extends Stage {
     return defs;
   }
 
+  @Override
   public int run(String[] args) throws Exception {
     sLogger.info("Tool name: QuickMergeAvro");
     parseCommandLine(args);
