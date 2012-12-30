@@ -29,6 +29,11 @@ import contrail.sequences.AlphabetUtil;
 import contrail.sequences.DNAAlphabetFactory;
 import contrail.util.FileHelper;
 
+// TODO(jeremy@lewi.us) We need to add a unittest which covers the following
+// case: We have multiple seeds which we start from. The subgraphs overlap.
+// We want to verify that all nodes are outputted at most once even though
+// some nodes will be encountered multiple teams since they are reachable
+// from both seeds.
 public class TestWalkGraph {
 
   private static class TestCase {
@@ -96,7 +101,7 @@ public class TestWalkGraph {
     HashMap<String, Object> params = new HashMap<String, Object>();
     params.put("inputpath", testCase.sortedGraphFile);
 
-    File outputPath = new File(temp, "output.avro");
+    File outputPath = new File(temp, "output");
     params.put("outputpath", outputPath.toString());
     params.put("num_hops", new Integer(3));
     params.put("start_nodes", testCase.nodes.keySet().iterator().next());
@@ -112,7 +117,8 @@ public class TestWalkGraph {
 
     // Verify output is non empty.
     try {
-      FileInputStream inStream = new FileInputStream(outputPath);
+      FileInputStream inStream = new FileInputStream(
+          FilenameUtils.concat(outputPath.getPath(), "subgraph.avro"));
       ArrayList<GraphNodeData> nodes = new ArrayList<GraphNodeData>();
       SpecificDatumReader<GraphNodeData> reader =
           new SpecificDatumReader<GraphNodeData>();

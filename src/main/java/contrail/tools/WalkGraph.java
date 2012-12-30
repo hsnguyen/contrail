@@ -60,6 +60,16 @@ import contrail.graph.GraphNodeData;
 public class WalkGraph extends Stage {
   private static final Logger sLogger =
       Logger.getLogger(WalkGraph.class);
+
+  /**
+   * Keep track of all nodes already written so we only write each node once.
+   */
+  private HashSet<String> outputted;
+
+  public WalkGraph() {
+    outputted = new HashSet<String>();
+  }
+
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
         new HashMap<String, ParameterDefinition>();
@@ -122,9 +132,8 @@ public class WalkGraph extends Stage {
   private HashSet<String> walk(
       SortedKeyValueFile.Reader<CharSequence, GraphNodeData> reader,
       String startId, int numHops,
-      DataFileWriter<GraphNodeData> writer, HashSet<String> exclude) {
+      DataFileWriter<GraphNodeData> writer) {
     HashSet<String> visited = new HashSet<String>();
-    visited.addAll(exclude);
 
     // Use two lists so we can keep track of the hops.
     HashSet<String> thisHop = new HashSet<String>();
@@ -138,7 +147,7 @@ public class WalkGraph extends Stage {
     while (hop <= numHops && thisHop.size() > 0) {
       // Fetch each node in thisHop.
       for (String nodeId : thisHop) {
-        if (!exclude.contains(nodeId)) {
+        if (!visited.contains(nodeId)) {
           try{
             // The actual type returned by get is a generic record even
             // though the return type is GraphNodeData. I have no idea
@@ -191,18 +200,18 @@ public class WalkGraph extends Stage {
           }
 
           try{
-            writer.append(nodeData);
+            if (!outputted.contains(nodeId)) {
+              writer.append(nodeData);
+              outputted.add(nodeId);
+            }
           } catch (IOException e) {
             sLogger.fatal("There was a problem writing the node", e);
             System.exit(-1);
           }
-          exclude.add(nodeId);
+          visited.add(nodeId);
+          node.setData(nodeData);
+          nextHop.addAll(node.getNeighborIds());
         }
-        // Even if the nodeId is in the exclude set we still want to
-        // process its edges because its possible we have multiple seeds
-        // and the walk overlaps.
-        node.setData(nodeData);
-        nextHop.addAll(node.getNeighborIds());
       }
       thisHop.clear();
       thisHop.addAll(nextHop);
@@ -263,9 +272,8 @@ public class WalkGraph extends Stage {
       System.exit(-1);
     }
 
-    HashSet<String> visited = new HashSet<String>();
     for (String nodeId : nodeids) {
-      visited = walk(reader, nodeId, numHops, avroStream, visited);
+      walk(reader, nodeId, numHops, avroStream);
     }
     try {
       avroStream.close();
