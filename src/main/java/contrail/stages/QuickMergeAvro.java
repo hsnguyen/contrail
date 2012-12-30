@@ -149,14 +149,6 @@ public class QuickMergeAvro extends Stage {
         nodes.put(node.getNodeId().toString(), node);
       }
 
-      if (nodes.containsKey("qI_6qI_KqI_6qI_6KA")) {
-        System.out.println("LEWI NO COMMIT debug");
-      }
-
-      if (nodes.containsKey("UA3VUA3VUA3VUA3VEA")) {
-        System.out.println("LEWI NO COMMIT debug");
-      }
-
       // Create a list of the nodes to process. We need to make a copy of
       // nodes.keySet otherwise when we remove an entry from the set we remove
       // it from the hashtable.
