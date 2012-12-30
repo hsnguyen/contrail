@@ -142,14 +142,6 @@ public class CompressibleAvro extends Stage {
       // Set both fields of comp
       node.setData(graph_data);
 
-      if (node.getNodeId().equals("UA3VUA3VUA3VUA3VEA")) {
-        System.out.println("LEWI NO COMMIT");
-      }
-
-      if (node.getNodeId().equals("qI_6qI_KqI_6qI_6KA")) {
-        System.out.println("LEWI NO COMMIT");
-      }
-
       CompressibleMapOutput map_output = out_pair.value();
 
       // We consider the outgoing edges from both strands.
@@ -277,9 +269,6 @@ public class CompressibleAvro extends Stage {
 
       annotated_node.setNode(node.getData());
 
-      if (node.getNodeId().equals("UA3VUA3VUA3VUA3VEA")) {
-        System.out.println("LEWI NO COMMIT");
-      }
       /*
        * Now check if this node is compressible.
        * Suppose we have edge X->Y. We can compress this edge
