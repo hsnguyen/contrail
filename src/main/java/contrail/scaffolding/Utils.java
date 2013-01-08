@@ -11,33 +11,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Author: Serge Koren(sergekoren@gmail.com)
 package contrail.scaffolding;
 
 /**
  * Some utilities used for scaffolding.
  */
 public class Utils {
-  public static class Pair {
-    public int first;
-    public double second;
-    public String identifier;
-
-    public Pair(int first, double second) {
-      this.first = first;
-      this.second = second;
-    }
-
-    public Pair(int first, double second, String third) {
-      this.first = first;
-      this.second = second;
-      this.identifier = third;
-    }
-
-    public int size() {
-      return (Math.max(first, (int)second) - Math.min(first, (int)second) + 1);
-    }
-  }
-
   /**
    * Converts unsafe characters in read ids to safe characters.
    *
