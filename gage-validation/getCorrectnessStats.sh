@@ -18,6 +18,10 @@ SCAFFOLDS=$3
 CONTIG_FILE=$(basename $CONTIGS)
 SCAFFOLD_FILE=$(basename $SCAFFOLDS)
 
+echo "Reference:" $REF
+echo "Contigs:" $CONTIGS
+echo "Scaffolds:" $SCAFFOLDS
+
 GENOMESIZE=`java -cp $JAVA_PATH SizeFasta $REF |awk '{SUM+=$NF; print SUM}'|tail -n 1`
 echo "Genome size: $GENOMESIZE"
 echo "Contig Stats"
