@@ -81,10 +81,9 @@ public class ReverseReads extends Stage {
 
       // Reverse the qValue
       qValue = record.getQValue();
-      StringUtils.reverse(qValue);
+      qValue = StringUtils.reverse(qValue);
 
       record.set(record.getId(), sequence.toString(), qValue);
-
       collector.collect(record, NullWritable.get());
     }
   }
