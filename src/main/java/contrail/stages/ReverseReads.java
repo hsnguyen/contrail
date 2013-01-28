@@ -11,15 +11,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Author: Deepak Nettem (deepaknettem@gmail.com)
-
-package contrail.correct;
+// Author: Jeremy Lewi (jeremy@lewi.us)
+package contrail.stages;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import org.apache.avro.mapred.AvroWrapper;
+
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -37,21 +37,19 @@ import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
-import contrail.sequences.FastQRecord;
-import contrail.stages.ContrailParameters;
-import contrail.stages.ParameterDefinition;
-import contrail.stages.Stage;
-import contrail.io.FastQText;
 import contrail.io.FastQInputFormat;
+import contrail.io.FastQText;
+import contrail.sequences.DNAAlphabetFactory;
+import contrail.sequences.DNAUtil;
+import contrail.sequences.Sequence;
 
 /**
- * MapReduce job to convert a FastQ File to Avro.
- * Uses FastQInputFormat.
+ * Mapper only job to reverse the reads in a FastQ file.
  *
- * TODO(deepaknettem): This code needs a unittest.
+ * TODO(jeremy@lewi.us): This probably doesn't belong in package scaffolding.
  */
-public class FastQToAvro extends Stage {
-  final Logger sLogger = Logger.getLogger(FastQToAvro.class);
+public class ReverseReads extends Stage {
+  private static final Logger sLogger = Logger.getLogger(ReverseReads.class);
 
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs = new HashMap<String,
@@ -59,43 +57,52 @@ public class FastQToAvro extends Stage {
 
     defs.putAll(super.createParameterDefinitions());
     for (ParameterDefinition def :
-      ContrailParameters.getInputOutputPathOptions()) {
+         ContrailParameters.getInputOutputPathOptions()) {
       defs.put(def.getName(), def);
     }
     return Collections.unmodifiableMap(defs);
   }
 
-  public static class FastQToAvroMapper extends MapReduceBase
-      implements Mapper<LongWritable, FastQText,
-                        AvroWrapper<FastQRecord>, NullWritable> {
-    private FastQRecord read = new FastQRecord();
-    private AvroWrapper<FastQRecord> out_wrapper = new AvroWrapper<FastQRecord>(read);
+  public static class ReverseMapper extends MapReduceBase
+      implements Mapper<LongWritable, FastQText, FastQText, NullWritable>{
+    private Sequence sequence;
+    private String qValue;
+
+    public void configure(JobConf job) {
+      sequence = new Sequence(DNAAlphabetFactory.create());
+    }
 
     public void map(LongWritable line, FastQText record,
-        OutputCollector<AvroWrapper<FastQRecord>, NullWritable> output, Reporter reporter)
+        OutputCollector<FastQText, NullWritable> collector, Reporter reporter)
             throws IOException {
+      // Get the reverse complement of the sequence.
+      sequence.readCharSequence(record.getDna());
+      sequence = DNAUtil.reverseComplement(sequence);
 
-      read.id = record.getId();
-      read.read = record.getDna();
-      read.qvalue = record.getQValue();
+      // Reverse the qValue
+      qValue = record.getQValue();
+      qValue = StringUtils.reverse(qValue);
 
-      output.collect(out_wrapper, NullWritable.get());
+      record.set(record.getId(), sequence.toString(), qValue);
+      collector.collect(record, NullWritable.get());
     }
   }
 
   public RunningJob runJob() throws Exception {
-    JobConf conf = new JobConf(FastQToAvro.class);
-
-    conf.setJobName("FastQToAvro");
-    String inputPath, outputPath;
-    Long splitSize;
-    conf.setJobName("Rekey Data");
-    String[] required_args = {"inputpath", "outputpath","splitSize"};
+    String[] required_args = {"inputpath", "outputpath"};
     checkHasParametersOrDie(required_args);
 
-    inputPath = (String) stage_options.get("inputpath");
-    outputPath = (String) stage_options.get("outputpath");
-    splitSize = (Long) stage_options.get("splitSize");
+    String inputPath = (String) stage_options.get("inputpath");
+    String outputPath = (String) stage_options.get("outputpath");
+
+    Configuration base_conf = getConf();
+    JobConf conf = null;
+    if (base_conf != null) {
+      conf = new JobConf(getConf(), this.getClass());
+    } else {
+      conf = new JobConf(this.getClass());
+    }
+    conf.setJobName(this.getClass().getName());
 
     //Sets the parameters in JobConf
     initializeJobConfiguration(conf);
@@ -103,9 +110,9 @@ public class FastQToAvro extends Stage {
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
 
     // Input
-    conf.setMapperClass(FastQToAvroMapper.class);
+    conf.setMapperClass(ReverseMapper.class);
     conf.setInputFormat(FastQInputFormat.class);
-    conf.setLong("FastQInputFormat.splitSize", splitSize);
+
     //Map Only Job
     conf.setNumReduceTasks(0);
 
@@ -124,8 +131,8 @@ public class FastQToAvro extends Stage {
   }
 
   public static void main(String[] args) throws Exception {
-    int res = ToolRunner.run(new Configuration(), new FastQToAvro(), args);
+    int res = ToolRunner.run(
+        new Configuration(), new ReverseReads(), args);
     System.exit(res);
   }
 }
-
