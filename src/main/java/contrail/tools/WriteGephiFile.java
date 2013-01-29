@@ -420,6 +420,11 @@ public class WriteGephiFile extends Stage {
     ArrayList<Path> inputFiles = new ArrayList<Path>();
 
     for (FileStatus status : fileStates) {
+     if (status.isDir()) {
+	 sLogger.info("Skipping directory:" + status.getPath());
+         continue;
+      }
+      sLogger.info("Input file:" + status.getPath()) ;
       inputFiles.add(status.getPath());
     }
 
