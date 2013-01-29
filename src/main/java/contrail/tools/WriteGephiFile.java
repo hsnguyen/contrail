@@ -15,8 +15,6 @@
 
 package contrail.tools;
 
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -52,6 +50,7 @@ import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.RunningJob;
@@ -316,12 +315,12 @@ public class WriteGephiFile extends Stage {
     Unknown
   };
 
-  private InputRecordTypes determineInputType (File inFile) {
+  private InputRecordTypes determineInputType (Path path) {
     // Determine the input type by reading the first record in one of the
     // file.
     GenericDatumReader reader = new GenericDatumReader<GenericRecord>();
     try {
-      FSDataInputStream inStream = fs.open(new Path(inFile.toURI()));
+      FSDataInputStream inStream = fs.open(path);
 
       DataFileStream<GenericRecord> avro_stream =
           new DataFileStream<GenericRecord>(inStream, reader);
@@ -348,13 +347,12 @@ public class WriteGephiFile extends Stage {
     }
   }
 
-  private HashMap<String, GraphNode> readGraphNodes(List<File> inputFiles) {
+  private HashMap<String, GraphNode> readGraphNodes(List<Path> inputFiles) {
     // Read the nodes from a file where the record type is GraphNodeData.
     HashMap<String, GraphNode> nodes = new HashMap<String, GraphNode>();
     try {
-      for (File inFile : inputFiles) {
-        FSDataInputStream inStream = fs.open(new Path(inFile.toURI()));
-
+      for (Path inFile : inputFiles) {
+        FSDataInputStream inStream = fs.open(inFile);
         SpecificDatumReader<GraphNodeData> reader =
             new SpecificDatumReader<GraphNodeData>();
         DataFileStream<GraphNodeData> avro_stream =
@@ -376,23 +374,24 @@ public class WriteGephiFile extends Stage {
   }
 
   private HashMap<String, GraphNode> readCompressibleNodes(
-      List<File> inputFiles) {
+      List<Path> inputFiles) {
     // Read the nodes from a file where the record type is GraphNodeData.
     HashMap<String, GraphNode> nodes = new HashMap<String, GraphNode>();
     try {
-      for (File inFile : inputFiles) {
-        FileInputStream in_stream = new FileInputStream(inFile);
+      for (Path inFile : inputFiles) {
+        FSDataInputStream inStream = fs.open(inFile);
 
         SpecificDatumReader<CompressibleNodeData> reader =
             new SpecificDatumReader<CompressibleNodeData>();
         DataFileStream<CompressibleNodeData> avro_stream =
-            new DataFileStream<CompressibleNodeData>(in_stream, reader);
+            new DataFileStream<CompressibleNodeData>(inStream, reader);
         while(avro_stream.hasNext()) {
           CompressibleNodeData data  = avro_stream.next();
           GraphNode node = new GraphNode(data.getNode());
 
           nodes.put(node.getNodeId(), node);
         }
+        inStream.close();
       }
     } catch (IOException exception) {
       throw new RuntimeException(
@@ -408,19 +407,20 @@ public class WriteGephiFile extends Stage {
     sLogger.info(" - input: "  + inputPathStr);;
 
     // Check if path is a directory.
-    File inputPath = new File(inputPathStr);
+    Path inputPath = new Path(inputPathStr);
 
-    ArrayList<File> inputFiles = new ArrayList<File>();
+    FileStatus[] fileStates = null;
+    try {
+      fileStates = fs.globStatus(new Path(inputPathStr));
+    } catch (IOException e) {
+      sLogger.fatal("Could not get file status for inputpath:" + inputPath, e);
+      System.exit(-1);
+    }
 
-    if (inputPath.isDirectory()) {
-      String[] contents =  inputPath.list();
-      for (String name : contents) {
-        if (name.endsWith("avro")) {
-          inputFiles.add(new File(inputPath, name));
-        }
-      }
-    } else {
-      inputFiles.add(inputPath);
+    ArrayList<Path> inputFiles = new ArrayList<Path>();
+
+    for (FileStatus status : fileStates) {
+      inputFiles.add(status.getPath());
     }
 
     if (inputFiles.size() == 0) {
