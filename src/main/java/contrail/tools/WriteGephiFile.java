@@ -50,6 +50,10 @@ import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
@@ -66,13 +70,10 @@ import org.w3c.dom.Element;
  * WARNING: Gephi appears to have problems reading files in "/tmp" so
  * write the file somewhere else.
  *
- * Important: The code currently assumes the graph is stored locally and not
- * on HDFS.
+ * The input/output can be on any filesystem supported by the hadoop file api.
  *
  * TODO(jlewi): We should make color vary depending on the
  * node's length and coverage.
- *
- * TODO(jlewi): Enable reading from HDFS directly.
  */
 public class WriteGephiFile extends Stage {
   private static final Logger sLogger =
@@ -89,6 +90,9 @@ public class WriteGephiFile extends Stage {
 
   // Hashmap mapping node attributes to their id values.
   private HashMap<String, String> nodeAttrIdMap;
+
+  // The filesystem.
+  private FileSystem fs;
 
   protected Map<String, ParameterDefinition>
       createParameterDefinitions() {
@@ -297,8 +301,10 @@ public class WriteGephiFile extends Stage {
       TransformerFactory transformerFactory = TransformerFactory.newInstance();
       Transformer transformer = transformerFactory.newTransformer();
       DOMSource source = new DOMSource(doc);
-      StreamResult result = new StreamResult(xml_file);
+      FSDataOutputStream outStream = fs.create(new Path(xml_file), true);
+      StreamResult result = new StreamResult(outStream);
       transformer.transform(source, result);
+      outStream.close();
     } catch (Exception exception) {
       sLogger.error("Exception:" + exception.toString());
     }
@@ -315,16 +321,17 @@ public class WriteGephiFile extends Stage {
     // file.
     GenericDatumReader reader = new GenericDatumReader<GenericRecord>();
     try {
-      FileInputStream in_stream = new FileInputStream(inFile);
+      FSDataInputStream inStream = fs.open(new Path(inFile.toURI()));
 
       DataFileStream<GenericRecord> avro_stream =
-          new DataFileStream<GenericRecord>(in_stream, reader);
+          new DataFileStream<GenericRecord>(inStream, reader);
 
       if (!avro_stream.hasNext()) {
         throw new RuntimeException(
             "Couldn't determine the input record type because no records could be read.");
       }
       GenericRecord record = avro_stream.next();
+      inStream.close();
       if (record.getSchema().getName().equals("GraphNodeData")) {
         return InputRecordTypes.GraphNodeData;
       } else if (record.getSchema().getName().equals("CompressibleNodeData")) {
@@ -346,18 +353,19 @@ public class WriteGephiFile extends Stage {
     HashMap<String, GraphNode> nodes = new HashMap<String, GraphNode>();
     try {
       for (File inFile : inputFiles) {
-        FileInputStream in_stream = new FileInputStream(inFile);
+        FSDataInputStream inStream = fs.open(new Path(inFile.toURI()));
 
         SpecificDatumReader<GraphNodeData> reader =
             new SpecificDatumReader<GraphNodeData>();
         DataFileStream<GraphNodeData> avro_stream =
-            new DataFileStream<GraphNodeData>(in_stream, reader);
+            new DataFileStream<GraphNodeData>(inStream, reader);
         while(avro_stream.hasNext()) {
           GraphNodeData data  = avro_stream.next();
           GraphNode node = new GraphNode(data);
 
           nodes.put(node.getNodeId(), node);
         }
+        inStream.close();
       }
     } catch (IOException exception) {
       throw new RuntimeException(
@@ -481,6 +489,12 @@ public class WriteGephiFile extends Stage {
 
   @Override
   public RunningJob runJob() throws Exception {
+    try{
+      fs = FileSystem.get(getConf());
+    } catch (IOException e) {
+      sLogger.fatal(e.getMessage(), e);
+      System.exit(-1);
+    }
     // Check for missing arguments.
     String[] required_args = {"inputpath", "outputpath"};
     checkHasParametersOrDie(required_args);
