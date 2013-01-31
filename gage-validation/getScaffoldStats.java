@@ -13,9 +13,9 @@ public class getScaffoldStats {
   private static final int MIN_SKIP_SIZE = 200;
   private static final char GAP_CHAR = 'N';
   private static final char GAP_CHAR_LOWER = 'n';
-  private static final NumberFormat nf = new DecimalFormat("############.##");
+  private static final NumberFormat nf = new DecimalFormat("############.#");
 
-   private static final String[] extensions = {"fa", "fasta", "scafSeq"};
+   private static final String[] extensions = {"final", "fa", "fasta", "scafSeq"};
    private int genomeSize = 0;
    private HashMap<String, Scaffold> scfs = new HashMap<String, Scaffold>();
 
@@ -155,7 +155,6 @@ System.err.println("Storing scaffold " + header);
       int scfGaps = 0;
       String currScf = null;
       char currOri = ' ';
-      char currOrder = ' ';
       String currName = null;
       int lastIndex = 0;
       int lastOffset = 0;
@@ -163,12 +162,11 @@ System.err.println("Storing scaffold " + header);
       int start = 0;
       int totalLength = 0;
       int numIndels = 0;
-      int numReloc = 0;
       int numInversion = 0;
       int numTranslocation = 0;
       ArrayList<Integer> lengths = new ArrayList<Integer>();
 
-      int indelCurrScf = 0;
+      int inCurrScf = 0;
       String startScf = null;
       int startOffset = 0;
       char startOri = ' ';
@@ -180,7 +178,6 @@ System.err.println("Storing scaffold " + header);
 
       HashMap<String, String> lastChr = new HashMap<String, String>();
       HashMap<String, Character> lastOri = new HashMap<String, Character>();
-      HashMap<String, Integer> lastIndices = new HashMap<String, Integer>();
       HashMap<String, Integer> lastPos = new HashMap<String, Integer>();
       HashMap<String, Integer> lastStart = new HashMap<String, Integer>();
 
@@ -190,7 +187,7 @@ System.err.println("Storing scaffold " + header);
             if (count > 0) { 
                if (currName.equalsIgnoreCase(startScf) && currOri == startOri && Math.abs(lastIndex - startOffset) == 1) {
 System.err.println("Looped a circle " +  lastIndex + " " + startOffset + " "+  startScf + " "  +  currName);
-                 if (indelCurrScf == 1) {numIndels--;}
+                 if (inCurrScf == 1) { numIndels--; } // we looped a circle
                  System.err.println("Looped a circle replacing length " + startIndex);
                  lengths.add(totalLength + scfGaps + startGaps + lengths.get(startIndex));
                  lengths.remove(startIndex);
@@ -202,15 +199,13 @@ System.err.println("Starting a new range in " + currScf + " on scf " + currName 
             currScf = line.replaceAll(">", "");
             currOri = ' ';
             currName = null;
-            currOrder = ' ';
             count = start = gaps = scfGaps = totalLength = 0;
             startScf = null;
             startOffset = 0;
             startGaps = 0;
-            indelCurrScf = 0;
+            inCurrScf = 0;
             lastPos.clear();
             lastStart.clear();
-            lastIndices.clear();
             continue;
          }
 
@@ -238,18 +233,15 @@ System.err.println("Processing " + line);
          }
 
          if (startScf == null) {
-System.err.println("While reading line " + line + " initialized startScf to " + currName);
             startScf = currName;
             startOri = currOri;
             startOffset = lastIndex;
          }
 
          if (currOri == ' ' && currName == null) {
-System.err.println("While readling line " + line + " initialized currOri to " + scfID);
             currOri = ori;
             currName = scfID;
             start = offset;
-            currOrder = ' ';
             count = gaps = scfGaps = lastOffset = totalLength = 0;
          } else {
 System.err.println("Processing scf " + currName + " with ori " + currOri + " and offset " + lastOffset + " and info on this is " + scfID + " and ori " + ori + " and offset " + offset + " and math is " + Math.abs(index-lastIndex) + " and gaps is " + gaps + " and scf is " + scfGaps);
@@ -275,13 +267,6 @@ System.err.println("Processing skip in " + scfID + " from " + index + " to " + l
 System.err.println("The skip avove had dist " + dist + " versus " + totalSize + " which is OK? " + badSkip);
             }
 
-           char order = ' ';
-           if (lastIndices.get(scfID) != null) {
-              order = (index > lastIndices.get(scfID) ? '+' : '-'); 
-              if (currOrder == ' ') {
-                 currOrder = (index > lastIndices.get(scfID) ? '+' : '-');
-              }
-           }
            int gapDifference = -1;
            int otherDiff = Integer.MAX_VALUE;
            if (lastPos.get(scfID) != null) {
@@ -302,7 +287,7 @@ System.err.println("The sizes is " + scfID + " and sizes " + sizes.get(scfID + "
 System.err.println("Between " + currName + "_" + lastIndex + " and " + index +" expected gap " + dist + " and real gap is " + lastGap + " and estimate gap is " + gapDifference + " and other gap is " + otherDist + " " + otherDiff);
             }
 
-            if (badSkip || currOri != ori || currOrder != order || !currName.equalsIgnoreCase(scfID)) {
+            if (badSkip || currOri != ori || !currName.equalsIgnoreCase(scfID)) {
                if ((currOri != ori && currName.equalsIgnoreCase(scfID)) || (lastOri.get(scfID) != null && lastOri.get(scfID) != ori && lastChr.get(scfID).equalsIgnoreCase(currScf))) {
                   System.err.println("Inversion found in scf " + scfID);
                   numInversion++;
@@ -310,14 +295,10 @@ System.err.println("Between " + currName + "_" + lastIndex + " and " + index +" 
                   System.err.println("Translocation found in scf " + scfID);
                   numTranslocation++;
                }
-               else if (currOrder != order && currName.equalsIgnoreCase(scfID)) {
-                  System.err.println("Relloc " + scfID);
-                  numReloc++;
-               }  
-               else if (currName.equalsIgnoreCase(scfID)) {
+               else if (Math.abs(index - lastIndex) > 1 && currName.equalsIgnoreCase(scfID)) {
                   System.err.println("Insertion in scf " + scfID);
                   numIndels++;
-                  indelCurrScf++;
+                  inCurrScf++;
                }
                if (count > 0) { 
                   if (startIndex < 0) { startIndex = lengths.size(); }
@@ -331,7 +312,6 @@ System.err.println("Between " + currName + "_" + lastIndex + " and " + index +" 
                currName = scfID;
                start = offset;
                gaps = scfGaps = lastOffset = totalLength = 0;
-               currOrder = ' ';
             }
             else {
               if (gapDifference >= 0 && currName.equalsIgnoreCase(scfID)) {
@@ -355,13 +335,13 @@ System.err.println("Difference is " + Math.min(otherDiff, gapDifference));
          lastStart.put(scfID, lastOffset);
          lastOri.put(scfID, ori);
          lastChr.put(scfID, currScf);
-         lastIndices.put(scfID, index);
 System.err.println("After processing " + scfID + "_" + index + " the length is " + totalLength + " and gaps is " + scfGaps);
          count++;
       }
 
       if (count != 0) { 
-         if (currName.equalsIgnoreCase(startScf) && currOri == startOri && Math.abs(lastIndex - startOffset) == 1)
+         if (startScf.equalsIgnoreCase(currName) && currOri == startOri && Math.abs(lastIndex - startOffset) == 1)
+         //if (currName.equalsIgnoreCase(startScf) && currOri == startOri && Math.abs(lastIndex - startOffset) == 1)
 {
               // we looped a circle
               System.err.println("Looped a circle replacing length " + startIndex);
@@ -377,29 +357,23 @@ System.err.println("After processing " + scfID + "_" + index + " the length is "
 
 
       // now we can compute all the stats
-      System.out.println("#Indels, #Inversions, #Translocations, #Relocations, #Gaps >= " + GAP_FUDGE_FACTOR + ", Mean Gap Error, #Contigs, Corrected N50, Corrected E-size");
-      System.out.print(numIndels + "," + numInversion + "," + numTranslocation + "," + numReloc + "," + numBadGaps + "," + nf.format((double)badGapSize / numGaps));
+      System.out.print(numIndels + "," + numInversion + "," + numTranslocation + "," + numBadGaps + "," + (double)badGapSize / numGaps);
       Collections.sort(lengths); 
       Collections.reverse(lengths);
 
       int sum = 0;
-      double fSize = 0;
-      boolean doneN50 = false;
       for (int i = 0; i < lengths.size(); i++) {
+         if (i == 0) {
+            System.out.print("," + (i+1) + "," + lengths.get(i));
+         }
          System.err.println("At index " + i + " I have length " + lengths.get(i));
          sum += lengths.get(i);
 
-         // compute the F-size
-         if (lengths.get(i) > MIN_SKIP_SIZE) {
-            fSize += Math.pow(lengths.get(i), 2);
-         }
-         if (!doneN50 && sum / (double)genomeSize >= 0.5) {
-            System.out.print("," + (i+1) + "," + lengths.get(i));
-            doneN50=true;
+         if (sum / (double)genomeSize >= 0.5) {
+            System.out.println("," + (i+1) + "," + lengths.get(i));
+            break;
          }
       }
-      fSize /= genomeSize;
-      System.out.println("," + nf.format(fSize));
    }
 
    public static void printUsage() {
