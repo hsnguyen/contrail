@@ -1,15 +1,11 @@
 package contrail.correct;
-import org.apache.avro.Schema;
-
-import contrail.sequences.FastQRecord;
-import contrail.sequences.MatePair;
-import contrail.stages.ParameterDefinition;
-import contrail.stages.*;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Map;
 import java.util.Iterator;
+import java.util.Map;
+
+import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroMapper;
@@ -28,6 +24,12 @@ import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
+import contrail.sequences.FastQRecord;
+import contrail.sequences.MatePair;
+import contrail.stages.ContrailParameters;
+import contrail.stages.ParameterDefinition;
+import contrail.stages.Stage;
+
 public class JoinReads extends Stage {
 
   private static final Logger sLogger = Logger.getLogger(JoinReads.class);
@@ -37,6 +39,7 @@ public class JoinReads extends Stage {
   public static final Schema REDUCE_OUT_SCHEMA = mate_record;
 
 
+  @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs = new HashMap<String,
         ParameterDefinition>();
@@ -55,20 +58,18 @@ public class JoinReads extends Stage {
     private static int K = 0;
     private Pair<CharSequence,FastQRecord> out_pair;
 
+    @Override
     public void configure(JobConf job)
     {
       out_pair = new Pair<CharSequence, FastQRecord>("",new FastQRecord());
     }
 
+  @Override
   public void map(FastQRecord record,
         AvroCollector<Pair<CharSequence, FastQRecord>> output, Reporter reporter)
             throws IOException {
-
-      System.out.println("Test");
       CharSequence key = record.getId();
-      System.out.println(key);
       out_pair.set(key, record);
-      System.out.println(out_pair.toString());
       output.collect(out_pair);
     }
   }
@@ -76,6 +77,7 @@ public class JoinReads extends Stage {
   public static class JoinReducer extends
   AvroReducer <CharSequence, FastQRecord, MatePair>
   {
+    @Override
     public void reduce(CharSequence id, Iterable<FastQRecord> iterable,
         AvroCollector<MatePair> collector, Reporter reporter)
             throws IOException {
@@ -91,11 +93,11 @@ public class JoinReads extends Stage {
       MatePair joined = new MatePair();
       joined.left = mate_1;
       joined.right = mate_2;
-      System.out.println(mate_1.id + " " + mate_2.id);
       collector.collect(joined);
     }
   }
 
+  @Override
   public RunningJob runJob() throws Exception {
 
     String[] required_args = {"inputpath", "outputpath"};
