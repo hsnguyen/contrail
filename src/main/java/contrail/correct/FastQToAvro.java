@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroWrapper;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -103,6 +104,7 @@ public class FastQToAvro extends Stage {
     initializeJobConfiguration(conf);
     FileInputFormat.addInputPath(conf, new Path(inputPath));
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
+    AvroJob.setOutputSchema(conf,new FastQRecord().getSchema());
 
     // Input
     conf.setMapperClass(FastQToAvroMapper.class);
@@ -113,7 +115,7 @@ public class FastQToAvro extends Stage {
       conf.setLong("FastQInputFormat.splitSize", splitSize);
     }
 
-    //Map Only Job
+    // Map Only Job
     conf.setNumReduceTasks(0);
 
     // Delete the output directory if it exists already
