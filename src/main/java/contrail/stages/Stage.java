@@ -166,7 +166,7 @@ public abstract class Stage extends Configured implements Tool  {
   /**
    * This function logs the values of the options.
    */
-  private void logParameters() {
+  protected void logParameters() {
     ArrayList<String> keys = new ArrayList<String>();
     keys.addAll(stage_options.keySet());
     Collections.sort(keys);

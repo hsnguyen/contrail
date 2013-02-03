@@ -15,6 +15,7 @@
 package contrail.correct;
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -26,7 +27,6 @@ import org.apache.avro.mapred.AvroMapper;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.filecache.DistributedCache;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.FileOutputFormat;
@@ -84,95 +84,118 @@ public class InvokeFlash extends Stage {
       count = 0;
       outputCollector = null;
       correctUtil = new CorrectUtil();
-      flashHome = correctUtil.getDcachePath("flash", job);
+      if (job.get("mapred.job.tracker").equals("local")) {
+        // Local job runner doesn't support the distributed cache.
+        // However in this case the flash binary should be local.
+        InvokeFlash stage = new InvokeFlash();
+        ParameterDefinition binaryDefinition =
+            stage.getParameterDefinitions().get("flash_binary");
+        sLogger.info(
+            "Local job runner is being used. Distributed cache isn't " +
+            "supported");
+        flashHome = (String) binaryDefinition.parseJobConf(job);
+        Path binaryPath = new Path(flashHome);
+        String uriScheme = binaryPath.toUri().getScheme();
+        if (uriScheme != null && !uriScheme.equals("file")) {
+          sLogger.fatal(
+              "If you are using the local job runner the flash binary should" +
+              "be local but the URI was:" + uriScheme,
+              new RuntimeException("Invalid URI scheme"));
+          System.exit(-1);
+        }
+        // Get the path without the URI.
+        flashHome = binaryPath.toUri().getPath();
+      } else {
+        flashHome = correctUtil.getDcachePath("flash", job);
+      }
       InvokeFlash stage = new InvokeFlash();
       Map<String, ParameterDefinition> definitions = stage.getParameterDefinitions();
       blockSize = (Integer)(definitions.get("block_size").parseJobConf(job));
       sLogger.info("Flash Home: " + flashHome);
+    }
+
+    @Override
+    public void map(MatePair mateRecord,
+        AvroCollector<FastQRecord> collector, Reporter reporter) throws IOException {
+      if(outputCollector == null){
+        outputCollector = collector;
+      }
+      count++;
+      correctUtil.addMateToArrayLists(mateRecord, fastqRecordsMateLeft, fastqRecordsMateRight);
+      // Time to process one block
+      if(count ==blockSize){
+        runFlashOnInMemoryReads(collector);
+        count = 0;
+      }
+    }
+
+    /**
+     * This method runs flash locally and collects the results.
+     * @param output: The reference of the collector
+     * @throws IOException
+     */
+    private void runFlashOnInMemoryReads(AvroCollector<FastQRecord> collector)throws IOException {
+      String filePathFq1;
+      String filePathFq2;
+      //gets the current timestamp in nanoseconds
+      long time = System.nanoTime();
+
+      // blockSize number of reads are written to a temporary folder - blockFolder
+      // blockFolder is a combination of mapred taskid and timestamp to ensure uniqueness
+      // The input files are names <timestamp_1>.fq and <timestamp>_2.fq. Flash is executed
+      // on these and the output file produced is out.extendedFrags.fastq in the same directory.
+      // During cleanup, we can delete the blockFolder directly
+
+      blockFolder = jobName+time;
+      localOutFolderPath = new File(tempWritableFolder,blockFolder).getAbsolutePath();
+      File tempFile = new File(localOutFolderPath);
+      if(!tempFile.exists()){
+        tempFile.mkdir();
+      }
+      filePathFq1 = new File(localOutFolderPath,time + "_1.fq").getAbsolutePath();
+      filePathFq2 = new File(localOutFolderPath,time + "_2.fq").getAbsolutePath();
+      correctUtil.writeLocalFile(fastqRecordsMateLeft,filePathFq1);
+      correctUtil.writeLocalFile(fastqRecordsMateRight,filePathFq2);
+      fastqRecordsMateLeft.clear();
+      fastqRecordsMateRight.clear();
+      ArrayList<String> command =  new ArrayList<String>();
+      command.add(flashHome);
+      command.add(filePathFq1);
+      command.add(filePathFq2);
+      command.add("-d");
+      command.add(localOutFolderPath);/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      ShellUtil.execute(command, null, "flash", sLogger);
+      String combinedFilePath = localOutFolderPath + "/out.extendedFrags.fastq";
+
+      // collecting results of extended and not combined files
+      correctUtil.emitFastqFileToHDFS(new File(combinedFilePath), collector);
+      String notCombinedLeft = localOutFolderPath + "/out.notCombined_1.fastq";
+      correctUtil.emitFastqFileToHDFS(new File(notCombinedLeft), collector);
+      String notCombinedRight = localOutFolderPath + "/out.notCombined_2.fastq";
+      correctUtil.emitFastqFileToHDFS(new File(notCombinedRight), collector);
+
+      // Cleaning up the block Folder. The results of the extended file have been collected.
+      tempFile = new File(localOutFolderPath);
+      if(tempFile.exists()){
+        FileUtils.deleteDirectory(tempFile);
+      }
+    }
+
+    /**
+     * Writes out the remaining chunk of data which is a non multiple of blockSize
+     */
+    @Override
+    public void close() throws IOException{
+      if(count > 0){
+        runFlashOnInMemoryReads(outputCollector);
+      }
+      //delete the top level directory, and everything beneath
+      File tempFile = new File(tempWritableFolder);
+      if(tempFile.exists()){
+        FileUtils.deleteDirectory(tempFile);
+      }
+    }
   }
-
-  @Override
-  public void map(MatePair mateRecord,
-                  AvroCollector<FastQRecord> collector, Reporter reporter) throws IOException {
-    if(outputCollector == null){
-      outputCollector = collector;
-    }
-    count++;
-    correctUtil.addMateToArrayLists(mateRecord, fastqRecordsMateLeft, fastqRecordsMateRight);
-    // Time to process one block
-    if(count ==blockSize){
-      runFlashOnInMemoryReads(collector);
-      count = 0;
-    }
-  }
-
-  /**
-   * This method runs flash locally and collects the results.
-   * @param output: The reference of the collector
-   * @throws IOException
-   */
-  private void runFlashOnInMemoryReads(AvroCollector<FastQRecord> collector)throws IOException {
-    String filePathFq1;
-    String filePathFq2;
-    //gets the current timestamp in nanoseconds
-    long time = System.nanoTime();
-
-    // blockSize number of reads are written to a temporary folder - blockFolder
-    // blockFolder is a combination of mapred taskid and timestamp to ensure uniqueness
-    // The input files are names <timestamp_1>.fq and <timestamp>_2.fq. Flash is executed
-    // on these and the output file produced is out.extendedFrags.fastq in the same directory.
-    // During cleanup, we can delete the blockFolder directly
-
-    blockFolder = jobName+time;
-    localOutFolderPath = new File(tempWritableFolder,blockFolder).getAbsolutePath();
-    File tempFile = new File(localOutFolderPath);
-    if(!tempFile.exists()){
-      tempFile.mkdir();
-    }
-    filePathFq1 = new File(localOutFolderPath,time + "_1.fq").getAbsolutePath();
-    filePathFq2 = new File(localOutFolderPath,time + "_2.fq").getAbsolutePath();
-    correctUtil.writeLocalFile(fastqRecordsMateLeft,filePathFq1);
-    correctUtil.writeLocalFile(fastqRecordsMateRight,filePathFq2);
-    fastqRecordsMateLeft.clear();
-    fastqRecordsMateRight.clear();
-    ArrayList<String> command =  new ArrayList<String>();
-    command.add(flashHome);
-    command.add(filePathFq1);
-    command.add(filePathFq2);
-    command.add("-d ");
-    command.add(localOutFolderPath);/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ShellUtil.execute(command, null, "flash", sLogger);
-    String combinedFilePath = localOutFolderPath + "/out.extendedFrags.fastq";
-
-    // collecting results of extended and not combined files
-    correctUtil.emitFastqFileToHDFS(new File(combinedFilePath), collector);
-    String notCombinedLeft = localOutFolderPath + "/out.notCombined_1.fastq";
-    correctUtil.emitFastqFileToHDFS(new File(notCombinedLeft), collector);
-    String notCombinedRight = localOutFolderPath + "/out.notCombined_2.fastq";
-    correctUtil.emitFastqFileToHDFS(new File(notCombinedRight), collector);
-
-    // Cleaning up the block Folder. The results of the extended file have been collected.
-    tempFile = new File(localOutFolderPath);
-    if(tempFile.exists()){
-      FileUtils.deleteDirectory(tempFile);
-    }
-  }
-
-  /**
-   * Writes out the remaining chunk of data which is a non multiple of blockSize
-   */
-  @Override
-  public void close() throws IOException{
-    if(count > 0){
-      runFlashOnInMemoryReads(outputCollector);
-    }
-    //delete the top level directory, and everything beneath
-    File tempFile = new File(tempWritableFolder);
-    if(tempFile.exists()){
-    	FileUtils.deleteDirectory(tempFile);
-    }
-  }
-}
 
   /* creates the custom definitions that we need for this phase*/
   @Override
@@ -180,7 +203,10 @@ public class InvokeFlash extends Stage {
     HashMap<String, ParameterDefinition> defs = new HashMap<String, ParameterDefinition>();
     defs.putAll(super.createParameterDefinitions());
     ParameterDefinition flashBinary = new ParameterDefinition(
-    "flash_binary", "The path of flash binary ", String.class, new String(""));
+    "flash_binary", "The URI of the flash binary. To use a filesystem other " +
+    "than the default filesystem for hadoop you must specify an appropriate " +
+    "scheme; e.g. file:/some/path/flash to use a local binary.",
+    String.class, new String(""));
     ParameterDefinition blockSize = new ParameterDefinition(
         "block_size", "block_size number of records are" +
         " written to local files at a time.", Integer.class, new Integer(10000));
@@ -195,15 +221,38 @@ public class InvokeFlash extends Stage {
 
   @Override
   public RunningJob runJob() throws Exception {
-    JobConf conf = new JobConf(InvokeFlash.class);
+    logParameters();
+    Configuration base_conf = getConf();
+    JobConf conf = null;
+    if (base_conf != null) {
+      conf = new JobConf(getConf(), this.getClass());
+    } else {
+      conf = new JobConf(this.getClass());
+    }
     conf.setJobName("Flash invocation");
     String inputPath = (String) stage_options.get("inputpath");
     String outputPath = (String) stage_options.get("outputpath");
-    String flashPath = (String) stage_options.get("flash_binary");
-    if (flashPath.length() == 0) {
+    String flashBinary = (String) stage_options.get("flash_binary");
+    if (flashBinary.length() == 0) {
       throw new Exception("Flash binary location required");
     }
-    DistributedCache.addCacheFile(new Path(flashPath).toUri(),conf);
+
+    // Delete the output directory if it exists already
+    Path out_path = new Path(outputPath);
+    if (out_path.getFileSystem(conf).exists(out_path)) {
+      out_path.getFileSystem(conf).delete(out_path, true);
+    }
+
+    // TODO: Distribute the flash binary to the workers. We need to copy the
+    // binary to HDFS if the path isn't already on a distributed filesystem.
+    // We should check if flash is in on the same filesystem as the input
+    // or output paths. If it is then we can assume those are distributed
+    // filesystems and just add the uri to the distributed cache. Otherwise
+    // we need to copy the binary to the distributed filesystem. We can
+    // just use a subdirectory e.g "dccache" of the outputpath.
+    URI flashCacheURI = new Path(flashBinary).toUri();
+    DistributedCache.addCacheFile(flashCacheURI, conf);
+
     //Sets the parameters in JobConf
     initializeJobConfiguration(conf);
     AvroJob.setMapperClass(conf, RunFlashMapper.class);
@@ -217,12 +266,6 @@ public class InvokeFlash extends Stage {
 
     //Map Only Job
     conf.setNumReduceTasks(0);
-
-    // Delete the output directory if it exists already
-    Path out_path = new Path(outputPath);
-    if (FileSystem.get(conf).exists(out_path)) {
-      FileSystem.get(conf).delete(out_path, true);
-    }
 
     long starttime = System.currentTimeMillis();
     RunningJob result = JobClient.runJob(conf);
