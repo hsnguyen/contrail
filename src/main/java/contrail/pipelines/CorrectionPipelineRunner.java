@@ -99,8 +99,6 @@ public class CorrectionPipelineRunner extends Stage{
         "The path to the fastq files which should be included in " +
         "quake but which we don't run flash on. This can be a glob expression.",
         String.class, null);
-//    ParameterDefinition quakeMateInputPath = new ParameterDefinition(
-//        "quake_input_mate", "The inputpath of matepairs on which quake is to be run", String.class, new String(""));
 
     definitions.put(flashInputPath.getName(), flashInputPath);
     definitions.put(quakeNonMateInputPath.getName(), quakeNonMateInputPath);
@@ -156,14 +154,15 @@ public class CorrectionPipelineRunner extends Stage{
     String kmerCountsPath = FilenameUtils.concat(
         outputPath, kmerCounter.getClass().getSimpleName());
     String kmerInputPaths = StringUtils.join(inputGlobs, ",");
-    HashMap<String, Object> counterOptions = new HashMap<String, Object>();
+    Map<String, Object> counterOptions = ContrailParameters.extractParameters(
+            stage_options, kmerCounter.getParameterDefinitions().values());
     counterOptions.put("inputpath", kmerInputPaths);
     counterOptions.put("outputpath", kmerCountsPath);
     counterOptions.put("K", stage_options.get("K"));
     kmerCounter.setParameters(counterOptions);
     runStage(kmerCounter);
 
-    //Convert KmerCounts to Text
+    // Convert KmerCounts to Text
     sLogger.info("Running ConvertKMerCountsToText");
     ConvertKMerCountsToText converter = new ConvertKMerCountsToText();
     HashMap<String, Object> convertOptions = new HashMap<String, Object>();
@@ -179,7 +178,8 @@ public class CorrectionPipelineRunner extends Stage{
     sLogger.info("Running CutOffCalculation");
     CutOffCalculation cutoffStage = new CutOffCalculation();
 
-    HashMap<String, Object> cutoffOptions = new HashMap<String, Object>();
+    Map<String, Object> cutoffOptions = ContrailParameters.extractParameters(
+        stage_options, cutoffStage.getParameterDefinitions().values());
 
     String cutoffPath = FilenameUtils.concat(
         outputPath, cutoffStage.getClass().getSimpleName());
@@ -187,7 +187,6 @@ public class CorrectionPipelineRunner extends Stage{
     cutoffOptions.put("outputpath", cutoffPath);
     cutoffStage.setParameters(cutoffOptions);
     runStage(cutoffStage);
-
 
     // Bitvector construction
     sLogger.info("Running BuildBitVector");
@@ -197,7 +196,8 @@ public class CorrectionPipelineRunner extends Stage{
     String bitVectorPath = FilenameUtils.concat(
         outputPath, bitVectorStage.getClass().getSimpleName());
 
-    HashMap<String, Object> vectorOptions = new HashMap<String, Object>();
+    Map<String, Object> vectorOptions = ContrailParameters.extractParameters(
+        stage_options, bitVectorStage.getParameterDefinitions().values());
     vectorOptions.put("inputpath", kmerCountsPath);
     vectorOptions.put("outputpath", bitVectorPath);
     vectorOptions.put("cutoff", cutoff);
@@ -206,12 +206,15 @@ public class CorrectionPipelineRunner extends Stage{
 
     sLogger.info("Running Quake.");
     InvokeQuake quakeStage = new InvokeQuake();
-    HashMap<String, Object> quakeOptions = new HashMap<String, Object>();
+    Map<String, Object> quakeOptions = ContrailParameters.extractParameters(
+        stage_options, quakeStage.getParameterDefinitions().values());
     quakeOptions.put("inputpath", StringUtils.join(inputGlobs, ","));
 
     String quakePath = FilenameUtils.concat(
         outputPath, quakeStage.getClass().getSimpleName());
     quakeOptions.put("outputpath", quakePath);
+    quakeOptions.put(
+        "bitvectorpath", bitVectorStage.getBitVectorPath().toString());
     quakeStage.setParameters(quakeOptions);
 
     runStage(quakeStage);
@@ -294,7 +297,7 @@ public class CorrectionPipelineRunner extends Stage{
     RunningJob job = null;
     try {
       job = stage.runJob();
-      if (!job.isSuccessful()) {
+      if (job !=null && !job.isSuccessful()) {
         sLogger.fatal(
             String.format(
                 "Stage %s had a problem", stage.getClass().getName()),
@@ -314,7 +317,7 @@ public class CorrectionPipelineRunner extends Stage{
     // Check for missing arguments.
     String[] required_args = {
         "flash_binary", "no_flash_input", "flash_input", "outputpath",
-        "K"};
+        "K", "cov_model", "quake_binary"};
     checkHasParametersOrDie(required_args);
 
     Configuration baseConf = getConf();
