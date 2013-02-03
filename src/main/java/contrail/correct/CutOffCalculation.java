@@ -35,33 +35,35 @@ import contrail.stages.Stage;
 import contrail.util.FileHelper;
 
 /**
- *  Cutoff calculation helps us in determining which kmers are trusted and untrusted. 
+ *  Cutoff calculation helps us in determining which kmers are trusted and untrusted.
  *  Trusted Kmers are kmers that have a frequency of occurrence more than a threshold
  *  (cutoff) value in the input dataset. They are used for correction, because
  *  their presence is more likely than the presence of kmer with a low frequency
  *  count (untrusted kmer). Therefore, trusted kmers are used for correction purposes
  *  by the quake engine.
- *  cov_model.py uses VGAM package within R to run some statistical analysis to 
+ *  cov_model.py uses VGAM package within R to run some statistical analysis to
  *  calculate the cutoff value. All kmers below the cutoff are considered untrusted.
- *  This is a non MR job. 
+ *  This is a non MR job.
  *  For calculating the cutoff, we need a fragment of the Kmer count file in text format
  *  A small portion of the file (fragment) is enough for calculating the cutoff.
  *  A fragment of the kmer count file is copied from the HDFS onto the local system where cov_model.py is
- *  run on it to calculate the cutoff value. The value is read from the output stream of the 
+ *  run on it to calculate the cutoff value. The value is read from the output stream of the
  *  cov_model.py process.
  */
 
 public class CutOffCalculation extends Stage {
   private int cutoff;
   private static final Logger sLogger = Logger.getLogger(CutOffCalculation.class);
- 
-  public int getCutoff() throws Exception{
-    if(cutoff!=0){
-      return cutoff;
+
+  public int getCutoff() {
+    if (cutoff == 0) {
+      sLogger.fatal("Cutoff wasn't calculated",
+          new Exception("ERROR: Cutoff not calculated"));
+      System.exit(-1);
     }
-	else throw new Exception("ERROR: Cutoff not calculated");
+    return cutoff;
   }
-	
+
   /**
    * we only need a sample of all KMers counts to compute the cutoff value
    * This method calculates the cutoff by:
@@ -91,7 +93,7 @@ public class CutOffCalculation extends Stage {
       FileUtils.deleteDirectory(tempFile);
     }
   }
-	
+
   private int executeCovModel(String command) throws Exception{
     StringTokenizer tokenizer;
     String line;
@@ -104,7 +106,7 @@ public class CutOffCalculation extends Stage {
       tokenizer = new StringTokenizer(line);
       /* Everything displayed by the execution of cov_model.py here is stored in tokenizer
        * line by line. In the end, the token containing
-       * the cutoff is taken out 
+       * the cutoff is taken out
        */
       if(tokenizer.hasMoreTokens() && tokenizer.nextToken().trim().equals("Cutoff:")){
         String ss = tokenizer.nextToken();
@@ -115,7 +117,7 @@ public class CutOffCalculation extends Stage {
    p.waitFor();
    return calculatedCutoff;
   }
-  
+
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =new HashMap<String, ParameterDefinition>();
     defs.putAll(super.createParameterDefinitions());

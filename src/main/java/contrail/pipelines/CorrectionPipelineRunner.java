@@ -1,6 +1,6 @@
 package contrail.pipelines;
 
-import java.util.Collection;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -8,7 +8,6 @@ import java.util.Map;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
@@ -127,79 +126,109 @@ public class CorrectionPipelineRunner extends Stage{
 
   /**
    *
-   * @param inputGlobs: Collection of input globs.
+   * @param flashResults: The results of running flash.
    */
-  private void runQuake(Collection<String> inputGlobs) {
-    String outputPath = (String) stage_options.get("outputpath");
-    String quakeOutputPath = FilenameUtils.concat(outputPath, "quake");
-    String noFlashInputAvroPath =FilenameUtils.concat(
-        quakeOutputPath, FastQToAvro.class.getSimpleName());
-      // Kmer counting stage
-      sLogger.info("Running KmerCounter");
-      KmerCounter kmerCounter = new KmerCounter();
+  private void runQuake(FlashResults flashResults) {
+    String outputPath = FilenameUtils.concat(
+        (String) stage_options.get("outputpath"), "quake");
 
-      //stageInput = stageInput + quakeNonMateInput + "," + quakeMateInput;
+    // Convert the fastq files which we want to use for quake but not flash.
+    String inputAvroPath = FilenameUtils.concat(
+        outputPath, FastQToAvro.class.getSimpleName());
 
-      // We add the flash output directory only if the user has run flash
-      //if(flashInvoked){
-       // stageInput = stageInput + "," + flashOutputPath;
-      //}
-      //kmerCounterOutputPath = runStage(stage, stageInput, outputDirectory, "");
+    {
+      FastQToAvro inputToAvro = new FastQToAvro();
+      HashMap<String, Object> options = new HashMap<String, Object>();
+      options.put("inputpath", stage_options.get("no_flash_input"));
+      options.put("outputpath", inputAvroPath);
+      inputToAvro.setParameters(options);
+      runStage(inputToAvro);
+    }
 
-      String kmerInputPaths = StringUtils.join(inputGlobs, ",");
-      HashMap<String, Object> counterOptions = new HashMap<String, Object>();
-      counterOptions.put("inputpath", kmerInputPaths);
+    ArrayList<String> inputGlobs = new ArrayList<String>();
+    inputGlobs.add(flashResults.flashOutputPath);
+    inputGlobs.add(inputAvroPath);
 
-      kmerCounter.setParameters(counterOptions);
+    // Kmer counting stage
+    sLogger.info("Running KmerCounter");
+    KmerCounter kmerCounter = new KmerCounter();
 
-      throw new NotImplementedException("Need to update the remaining code");
-      //Convert KmerCounts to Non Avro stage
-//      sLogger.info("Running ConvertKMerCountsToText");
-//      stage = new ConvertKMerCountsToText();
-//      stageInput = new Path(kmerCounterOutputPath, "part-00000.avro").toString();
-//      nonAvroKmerCountOutput = runStage(stage, stageInput, outputDirectory, "");
-//
-//      // Cutoff calculation stage
-//      sLogger.info("Running CutOffCalculation");
-//      CutOffCalculation cutoffObj = new CutOffCalculation();
-//      stageInput = new Path(nonAvroKmerCountOutput, "part-00000").toString();
-//      runStage(cutoffObj, stageInput, outputDirectory,  "");
-//
-//      //Bitvector construction
-//      sLogger.info("Running BuildBitVector");
-//      cutoff = cutoffObj.getCutoff();
-//      stage_options.put("cutoff", cutoff);
-//      stage = new BuildBitVector();
-//      stageInput = kmerCounterOutputPath;
-//      bitVectorDirectory = runStage(stage, stageInput, outputDirectory, "");
-//      bitVectorPath = new Path(bitVectorDirectory, "bitvector").toString();
-//      stage_options.put("bitvectorpath", bitVectorPath);
-//
-//      //Invoke Quake on Non Mate Pairs
-//      // TODO(dnettem) - for now all quake inputs dumped together.
-//      if(quakeNonMateInput.trim().length() !=0 ){
-//        sLogger.info("Running Quake for Non Mate Pairs");
-//        stage = new InvokeQuake();
-//        stageInput = quakeNonMateInput;
-//        if(flashInvoked){
-//          stageInput = stageInput + "," +  flashOutputPath + "," + quakeMateInput;
-//        }
-//        runStage(stage, stageInput, outputDirectory, "non_mate_");
-//      }
-//      else{
-//        sLogger.info("Skipping running Quake for non mate pairs");
-//      }
+    String kmerCountsPath = FilenameUtils.concat(
+        outputPath, kmerCounter.getClass().getSimpleName());
+    String kmerInputPaths = StringUtils.join(inputGlobs, ",");
+    HashMap<String, Object> counterOptions = new HashMap<String, Object>();
+    counterOptions.put("inputpath", kmerInputPaths);
+    counterOptions.put("outputpath", kmerCountsPath);
+    counterOptions.put("K", stage_options.get("K"));
+    kmerCounter.setParameters(counterOptions);
+    runStage(kmerCounter);
+
+    //Convert KmerCounts to Text
+    sLogger.info("Running ConvertKMerCountsToText");
+    ConvertKMerCountsToText converter = new ConvertKMerCountsToText();
+    HashMap<String, Object> convertOptions = new HashMap<String, Object>();
+
+    String textCountsPath = FilenameUtils.concat(
+        outputPath, converter.getClass().getSimpleName());
+    convertOptions.put("inputpath", kmerCountsPath);
+    convertOptions.put("outputpath", textCountsPath);
+    converter.setParameters(convertOptions);
+    runStage(converter);
+
+    // Cutoff calculation stage
+    sLogger.info("Running CutOffCalculation");
+    CutOffCalculation cutoffStage = new CutOffCalculation();
+
+    HashMap<String, Object> cutoffOptions = new HashMap<String, Object>();
+
+    String cutoffPath = FilenameUtils.concat(
+        outputPath, cutoffStage.getClass().getSimpleName());
+    cutoffOptions.put("inputpath", textCountsPath);
+    cutoffOptions.put("outputpath", cutoffPath);
+    cutoffStage.setParameters(cutoffOptions);
+    runStage(cutoffStage);
+
+
+    // Bitvector construction
+    sLogger.info("Running BuildBitVector");
+    int cutoff = cutoffStage.getCutoff();
+    BuildBitVector bitVectorStage = new BuildBitVector();
+
+    String bitVectorPath = FilenameUtils.concat(
+        outputPath, bitVectorStage.getClass().getSimpleName());
+
+    HashMap<String, Object> vectorOptions = new HashMap<String, Object>();
+    vectorOptions.put("inputpath", kmerCountsPath);
+    vectorOptions.put("outputpath", bitVectorPath);
+    vectorOptions.put("cutoff", cutoff);
+    bitVectorStage.setParameters(vectorOptions);
+    runStage(bitVectorStage);
+
+    sLogger.info("Running Quake.");
+    InvokeQuake quakeStage = new InvokeQuake();
+    HashMap<String, Object> quakeOptions = new HashMap<String, Object>();
+    quakeOptions.put("inputpath", StringUtils.join(inputGlobs, ","));
+
+    String quakePath = FilenameUtils.concat(
+        outputPath, quakeStage.getClass().getSimpleName());
+    quakeOptions.put("outputpath", quakePath);
+    quakeStage.setParameters(quakeOptions);
+
+    runStage(quakeStage);
   }
 
-  private void runFlash() {
-    String outputPath = (String) stage_options.get("outputpath");
+  private class FlashResults {
+    public String flashOutputPath;
+  }
+
+  private FlashResults runFlash() {
+    String outputPath = FilenameUtils.concat(
+        (String) stage_options.get("outputpath"), "flash");
     // The output will be organized into subdirectories for flash and quake
     // respectively.
     String flashOutputPath = FilenameUtils.concat(outputPath, "flash");
 
-    // Convert the flash and no flash fastq files to avro
-
-
+    // Convert the fastq files to run flash on to to avro files.
     String flashInputAvroPath = FilenameUtils.concat(
         flashOutputPath, FastQToAvro.class.getSimpleName());
 
@@ -212,30 +241,14 @@ public class CorrectionPipelineRunner extends Stage{
       runStage(flashInputToAvro);
     }
 
-
-    //TODO(dnettem) - Make this more generic. Currently this is quick and dirty, since
-    // we know for sure that Flash will run.
-
-
-    //String[] required_args = {"flash_input", "flash_binary","flash_notcombined","splitSize"};
-
-    String rawFlashInput = (String) stage_options.get("flash_input");
-    String flashBinary = (String) stage_options.get("flash_binary");
-    String notCombinedFlash = (String) stage_options.get("flash_notcombined");
-
-
-
-    String quakeNonMateInput = (String) stage_options.get("quake_input_non_mate");
-    String quakeMateInput = (String) stage_options.get("quake_input_mate");
-    String quakeBinary = (String) stage_options.get("quake_binary");
-
-    // Join for Flash.
+    // Join mate pairs.
     String flashJoinedPath = FilenameUtils.concat(
         flashOutputPath, JoinReads.class.getSimpleName());
     runJoinMatePairs(flashInputAvroPath, flashJoinedPath);
 
     // Invoke Flash
     // TODO(jeremy@lewi.us): We should add a boolean option to skip flash.
+    // or else create a subpipeline which just runs quake.
     String flashOutput = FilenameUtils.concat(
         flashOutputPath, InvokeFlash.class.getSimpleName());
     {
@@ -250,6 +263,10 @@ public class CorrectionPipelineRunner extends Stage{
       invokeFlash.setParameters(parameters);
       runStage(invokeFlash);
     }
+
+    FlashResults results = new FlashResults();
+    results.flashOutputPath = flashOutput;
+    return results;
   }
 
   /**
@@ -257,49 +274,8 @@ public class CorrectionPipelineRunner extends Stage{
    * @throws Exception
    */
   private void runCorrectionPipeline() {
-    runFlash();
-    //runQuake();
-  }
-
-  /**
-   * Runs a particular stage and returns the path containing the output
-   * The output path is OutputDirectory/prefix+className
-   * @param stage
-   * @param inputPath
-   * @param flashBinary
-   * @param outputDirectory
-   * @return
-   * @throws Exception
-   */
-  private String runStage(
-      Stage stage, String inputPath, String outputDirectory, String prefix) {
-
-    Map<String, Object> stageOptions =
-        ContrailParameters.extractParameters(
-            this.stage_options,
-            stage.getParameterDefinitions().values());
-    stage.setConf(getConf());
-    stageOptions.put("inputpath", inputPath);
-    String outputPath = new Path(outputDirectory, (prefix + stage.getClass().getName()) ).toString();
-    stageOptions.put("outputpath", outputPath);
-    stage.setParameters(stageOptions);
-    RunningJob job = null;
-    try {
-      job = stage.runJob();
-      if (!job.isSuccessful()) {
-        sLogger.fatal(
-            String.format(
-                "Stage %s had a problem", stage.getClass().getName()),
-            new RuntimeException("Stage failed"));
-        System.exit(-1);
-      }
-    } catch (Exception e) {
-      sLogger.fatal(
-          "Stage: " + stage.getClass().getSimpleName() + " failed.", e);
-      System.exit(-1);
-    }
-
-    return outputPath;
+    FlashResults flashResults = runFlash();
+    runQuake(flashResults);
   }
 
   /**
@@ -337,7 +313,8 @@ public class CorrectionPipelineRunner extends Stage{
   public RunningJob runJob() throws Exception {
     // Check for missing arguments.
     String[] required_args = {
-        "flash_binary", "no_flash_input", "flash_input", "outputpath"};
+        "flash_binary", "no_flash_input", "flash_input", "outputpath",
+        "K"};
     checkHasParametersOrDie(required_args);
 
     Configuration baseConf = getConf();
