@@ -82,7 +82,7 @@ import contrail.stages.Stage;
  */
 public class BuildBitVector extends Stage {
   // The name for the file to store the bitvector.
-  private final static String VECTOR_FILENAME = "bitvector.binary";
+  public final static String VECTOR_FILENAME = "bitvector.binary";
 
   public static class FilterMapper extends AvroMapper<Pair<CharSequence, Long>, Pair<CharSequence, Long>> {
     private int cutOff;
