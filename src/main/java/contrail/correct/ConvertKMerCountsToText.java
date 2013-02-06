@@ -33,14 +33,18 @@ import contrail.stages.Stage;
 
 /**
  * This file converts an avro file of kmer count into a non Avro
- * <kmer, count> key value pair. This file will then be used for cutoff calculation
+ * <kmer, count> key value pair. This file will then be used for cutoff c
+ * calculation
+ *
+ * TODO(jeremy@lewi.us): Currently we are restricted to using a single mapper
+ * because we need all the output to be in a single file. This could become
+ * a bottleneck.
  */
-
-public class ConvertKMerCountsToText extends Stage{  
+public class ConvertKMerCountsToText extends Stage{
   /* Simply reads the file from HDFS and gives it to the reducer*/
   public static class copyPartMapper extends MapReduceBase implements Mapper <AvroWrapper<Pair<CharSequence, Long>>, NullWritable, Text, LongWritable> {
 
-    @Override 
+    @Override
     public void map(AvroWrapper<Pair<CharSequence, Long>> key, NullWritable value,
         OutputCollector<Text, LongWritable> collector, Reporter reporter)
         throws IOException {
@@ -48,7 +52,7 @@ public class ConvertKMerCountsToText extends Stage{
         collector.collect(new Text(kmerCountPair.key().toString()), new LongWritable(kmerCountPair.value()));
     }
   }
-  
+
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs = new HashMap<String, ParameterDefinition>();
     defs.putAll(super.createParameterDefinitions());
@@ -57,12 +61,12 @@ public class ConvertKMerCountsToText extends Stage{
     }
     return Collections.unmodifiableMap(defs);
   }
-  
+
   public RunningJob runJob() throws Exception {
-    // Here the inputFile is not for a directory, but a specific path 
+    // Here the inputFile is not for a directory, but a specific path
     String inputPath = (String) stage_options.get("inputpath");
     String outputPath = (String) stage_options.get("outputpath");
-   
+
     JobConf conf = new JobConf(ConvertKMerCountsToText.class);
     Pair<CharSequence,Long> read = new Pair<CharSequence,Long>("", 0L);
     AvroJob.setInputSchema(conf, read.getSchema());
@@ -74,23 +78,27 @@ public class ConvertKMerCountsToText extends Stage{
     FileInputFormat.addInputPath(conf, new Path(inputPath));
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
     conf.setMapperClass(copyPartMapper.class);
+
+    // Only use a single map task because we want all the output to be in
+    // a single file.
+    conf.setNumMapTasks(1);
     conf.setNumReduceTasks(0);
     conf.setOutputKeyClass(Text.class);
     conf.setOutputValueClass(LongWritable.class);
-    
+
     // Delete the output directory if it exists already
     Path out_path = new Path(outputPath);
     if (FileSystem.get(conf).exists(out_path)) {
-	  FileSystem.get(conf).delete(out_path, true);  
-    }	
-    long starttime = System.currentTimeMillis();            
+      FileSystem.get(conf).delete(out_path, true);
+    }
+    long starttime = System.currentTimeMillis();
     RunningJob runingJob = JobClient.runJob(conf);
     long endtime = System.currentTimeMillis();
-    float diff = (float) (((float) (endtime - starttime)) / 1000.0);
+    float diff = (float) ((endtime - starttime) / 1000.0);
     System.out.println("Runtime: " + diff + " s");
     return runingJob;
-  }							
-   
+  }
+
   public static void main(String[] args) throws Exception {
     int res = ToolRunner.run(new Configuration(), new ConvertKMerCountsToText(), args);
     System.exit(res);
