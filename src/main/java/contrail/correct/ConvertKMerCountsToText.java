@@ -36,9 +36,6 @@ import contrail.stages.Stage;
  * <kmer, count> key value pair. This file will then be used for cutoff c
  * calculation
  *
- * TODO(jeremy@lewi.us): Currently we are restricted to using a single mapper
- * because we need all the output to be in a single file. This could become
- * a bottleneck.
  */
 public class ConvertKMerCountsToText extends Stage{
   /* Simply reads the file from HDFS and gives it to the reducer*/
@@ -63,6 +60,7 @@ public class ConvertKMerCountsToText extends Stage{
   }
 
   public RunningJob runJob() throws Exception {
+    logParameters();
     // Here the inputFile is not for a directory, but a specific path
     String inputPath = (String) stage_options.get("inputpath");
     String outputPath = (String) stage_options.get("outputpath");
@@ -79,9 +77,6 @@ public class ConvertKMerCountsToText extends Stage{
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
     conf.setMapperClass(copyPartMapper.class);
 
-    // Only use a single map task because we want all the output to be in
-    // a single file.
-    conf.setNumMapTasks(1);
     conf.setNumReduceTasks(0);
     conf.setOutputKeyClass(Text.class);
     conf.setOutputValueClass(LongWritable.class);
