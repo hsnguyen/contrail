@@ -94,7 +94,8 @@ public class CutOffCalculation extends Stage {
     if (matchedFiles.length != 1) {
       sLogger.fatal(String.format(
           "More than 1 file matched the input glob %s. Number matched:%d",
-          matchedFiles.length), new IllegalArgumentException());
+          inputPath.toString(), matchedFiles.length),
+          new IllegalArgumentException());
       System.exit(-1);
     }
     inputPath = matchedFiles[0].getPath();
@@ -168,6 +169,9 @@ public class CutOffCalculation extends Stage {
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =new HashMap<String, ParameterDefinition>();
     defs.putAll(super.createParameterDefinitions());
+    // TODO(jeremy@lewi.us): We assume the other files needed for the
+    // cutoff calculation are in the same directory as cov_model. We
+    // also require this to be a local path.
     ParameterDefinition QuakeHome = new ParameterDefinition(
         "cov_model", "location of cov_model.py", String.class, null);
     for (ParameterDefinition def: new ParameterDefinition[] {QuakeHome}) {
