@@ -205,7 +205,6 @@ public class InvokeQuake extends Stage{
           count = 0;
         }
       }
-
     }
 
     /**
@@ -220,8 +219,7 @@ public class InvokeQuake extends Stage{
       // The input files are names <timestamp_1>.fq and <timestamp>_2.fq. Flash is executed
       // on these and the output file produced is out.extendedFrags.fastq in the same directory.
       // During cleanup, we can delete the blockFolder directly
-
-      blockFolder = jobName+folderNameSuffixString;
+      blockFolder = jobName + folderNameSuffixString;
       sLogger.info("block folder: " + blockFolder);
       // Create temp file names
       String folderPath = new File(tempWritableFolder,blockFolder).getAbsolutePath();
@@ -320,7 +318,8 @@ public class InvokeQuake extends Stage{
    *  creates the custom definitions that we need for this phase
    */
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
-    HashMap<String, ParameterDefinition> defs = new HashMap<String, ParameterDefinition>();
+    HashMap<String, ParameterDefinition> defs =
+        new HashMap<String, ParameterDefinition>();
     defs.putAll(super.createParameterDefinitions());
     ParameterDefinition quakeBinary = new ParameterDefinition(
         "quake_binary", "The path to the correct binary in quake.",
