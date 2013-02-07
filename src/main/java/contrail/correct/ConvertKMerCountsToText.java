@@ -3,29 +3,30 @@ package contrail.correct;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
+import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroInputFormat;
 import org.apache.avro.mapred.AvroJob;
+import org.apache.avro.mapred.AvroMapper;
 import org.apache.avro.mapred.AvroWrapper;
 import org.apache.avro.mapred.Pair;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
-import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.FileOutputFormat;
 import org.apache.hadoop.mapred.JobClient;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.MapReduceBase;
-import org.apache.hadoop.mapred.Mapper;
 import org.apache.hadoop.mapred.OutputCollector;
+import org.apache.hadoop.mapred.Reducer;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.mapred.TextOutputFormat;
-import org.apache.hadoop.mapred.lib.IdentityReducer;
 import org.apache.hadoop.util.ToolRunner;
 
 import contrail.stages.ContrailParameters;
@@ -40,22 +41,41 @@ import contrail.stages.Stage;
  */
 public class ConvertKMerCountsToText extends Stage{
   /* Simply reads the file from HDFS and gives it to the reducer*/
-  public static class ConvertMapper extends MapReduceBase implements
-      Mapper <AvroWrapper<Pair<CharSequence, Long>>, NullWritable,
-              Text, LongWritable> {
-
+  public static class ConvertMapper extends AvroMapper
+      <Pair<CharSequence, Long>, Pair<CharSequence, Long>> {
     @Override
-    public void map(AvroWrapper<Pair<CharSequence, Long>> key, NullWritable value,
-        OutputCollector<Text, LongWritable> collector, Reporter reporter)
-        throws IOException {
-        Pair<CharSequence, Long> kmerCountPair = key.datum();
-        collector.collect(new Text(kmerCountPair.key().toString()), new LongWritable(kmerCountPair.value()));
+    public void map(
+        Pair<CharSequence, Long> input,
+        AvroCollector<Pair<CharSequence, Long>> collector,
+        Reporter reporter) throws IOException {
+        collector.collect(input);
     }
   }
 
   // We need a reducer to force the data to a single file.
-  public static class ConvertReducer extends
-    IdentityReducer<Text, LongWritable> {
+  public static class ConvertReducer extends MapReduceBase implements
+      Reducer<AvroWrapper<CharSequence>, AvroWrapper<Long>, Text, LongWritable> {
+    private Text outKey;
+    private LongWritable outValue;
+
+    @Override
+    public void configure(JobConf conf) {
+      outKey = new Text();
+      outValue = new LongWritable();
+    }
+    @Override
+    public void reduce(
+        AvroWrapper<CharSequence> key, Iterator<AvroWrapper<Long>> iter,
+        OutputCollector<Text,LongWritable> collector, Reporter reporter)
+            throws IOException {
+      outKey.set(key.toString());
+      outValue.set(iter.next().datum());
+
+      collector.collect(outKey, outValue);
+      if (iter.hasNext()) {
+        reporter.getCounter("contrail", "Error-multiple-counts-for-key");
+      }
+    }
   }
 
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
@@ -76,6 +96,8 @@ public class ConvertKMerCountsToText extends Stage{
     JobConf conf = new JobConf(ConvertKMerCountsToText.class);
     Pair<CharSequence,Long> read = new Pair<CharSequence,Long>("", 0L);
     AvroJob.setInputSchema(conf, read.getSchema());
+    AvroJob.setMapOutputSchema(
+        conf, new Pair<CharSequence, Long>("", 0L).getSchema());
     conf.setJobName("Convert part file to non avro");
     AvroInputFormat<Pair<CharSequence,Long>> input_format =
         new AvroInputFormat<Pair<CharSequence,Long>>();
@@ -83,7 +105,7 @@ public class ConvertKMerCountsToText extends Stage{
     conf.setOutputFormat(TextOutputFormat.class);
     FileInputFormat.addInputPath(conf, new Path(inputPath));
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
-    conf.setMapperClass(ConvertMapper.class);
+    AvroJob.setMapperClass(conf, ConvertMapper.class);
 
     // We use a single reducer because we want to force the data to a single
     // file.
