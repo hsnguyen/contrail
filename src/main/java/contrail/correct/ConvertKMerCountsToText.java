@@ -25,6 +25,7 @@ import org.apache.hadoop.mapred.OutputCollector;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.mapred.TextOutputFormat;
+import org.apache.hadoop.mapred.lib.IdentityReducer;
 import org.apache.hadoop.util.ToolRunner;
 
 import contrail.stages.ContrailParameters;
@@ -39,7 +40,9 @@ import contrail.stages.Stage;
  */
 public class ConvertKMerCountsToText extends Stage{
   /* Simply reads the file from HDFS and gives it to the reducer*/
-  public static class copyPartMapper extends MapReduceBase implements Mapper <AvroWrapper<Pair<CharSequence, Long>>, NullWritable, Text, LongWritable> {
+  public static class ConvertMapper extends MapReduceBase implements
+      Mapper <AvroWrapper<Pair<CharSequence, Long>>, NullWritable,
+              Text, LongWritable> {
 
     @Override
     public void map(AvroWrapper<Pair<CharSequence, Long>> key, NullWritable value,
@@ -48,6 +51,11 @@ public class ConvertKMerCountsToText extends Stage{
         Pair<CharSequence, Long> kmerCountPair = key.datum();
         collector.collect(new Text(kmerCountPair.key().toString()), new LongWritable(kmerCountPair.value()));
     }
+  }
+
+  // We need a reducer to force the data to a single file.
+  public static class ConvertReducer extends
+    IdentityReducer<Text, LongWritable> {
   }
 
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
@@ -75,9 +83,12 @@ public class ConvertKMerCountsToText extends Stage{
     conf.setOutputFormat(TextOutputFormat.class);
     FileInputFormat.addInputPath(conf, new Path(inputPath));
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
-    conf.setMapperClass(copyPartMapper.class);
+    conf.setMapperClass(ConvertMapper.class);
 
-    conf.setNumReduceTasks(0);
+    // We use a single reducer because we want to force the data to a single
+    // file.
+    conf.setReducerClass(ConvertReducer.class);
+    conf.setNumReduceTasks(1);
     conf.setOutputKeyClass(Text.class);
     conf.setOutputValueClass(LongWritable.class);
 
