@@ -109,12 +109,12 @@ public class CutOffCalculation extends Stage {
     String tempWritableFolder = null;
     if (!inputPath.getFileSystem(getConf()).getUri().getScheme().equals(
             "file")) {
-
       // TODO(jeremy@lewi.us): We should cleanup this temporary directory
-      // after we are done.
+      // after we are done. Can we just use File.deleteonexit()?
       tempWritableFolder =
           FileHelper.createLocalTempDir().getAbsolutePath();
 
+      countFile = FilenameUtils.concat(tempWritableFolder, "kmer_counts.txt");
       FileSystem fs = FileSystem.get(getConf());
       Path localCountPath = new Path(countFile);
       sLogger.info(String.format("Copy %s to %s", inputPath, localCountPath));
