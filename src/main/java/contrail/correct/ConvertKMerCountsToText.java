@@ -68,7 +68,7 @@ public class ConvertKMerCountsToText extends Stage{
         AvroWrapper<CharSequence> key, Iterator<AvroWrapper<Long>> iter,
         OutputCollector<Text,LongWritable> collector, Reporter reporter)
             throws IOException {
-      outKey.set(key.toString());
+      outKey.set(key.datum().toString());
       outValue.set(iter.next().datum());
 
       collector.collect(outKey, outValue);

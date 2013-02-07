@@ -147,10 +147,9 @@ public class CutOffCalculation extends Stage {
     StringTokenizer tokenizer;
     String line;
     int calculatedCutoff = 0;
-    sLogger.info("Cutoff Calculation: "+ command);
+    sLogger.info("Excecute Cutoff Calculation: "+ command);
     Process p = Runtime.getRuntime().exec(command);
     BufferedReader stdInput = new BufferedReader(new InputStreamReader(p.getInputStream()));
-    sLogger.info("Running cov_model.py");
     while ((line = stdInput.readLine()) != null) {
       tokenizer = new StringTokenizer(line);
       /* Everything displayed by the execution of cov_model.py here is stored in tokenizer
