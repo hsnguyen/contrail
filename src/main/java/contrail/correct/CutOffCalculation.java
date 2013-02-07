@@ -79,7 +79,8 @@ public class CutOffCalculation extends Stage {
     String covModelPath = (String) stage_options.get("cov_model");
 
     // Check if inputPath is a directory.
-    if (inputPath.getFileSystem(getConf()).getFileStatus(inputPath).isDir()) {
+    if (inputPath.getFileSystem(getConf()).exists(inputPath) &&
+        inputPath.getFileSystem(getConf()).getFileStatus(inputPath).isDir()) {
       // Construct a glob path to match all part files.
       inputPath = new Path(FilenameUtils.concat(
           inputPath.toString(), "part-?????"));
