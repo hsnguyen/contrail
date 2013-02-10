@@ -48,17 +48,21 @@ import contrail.util.FileHelper;
 
 
 /**
- * Quake is a tool that is used to correct fastq reads. This class deals with correction of both
+ * This stage uses quake to correct fastq reads.
+ *
+ * This class deals with correction of both
  * paired reads (MatePair) and unpaired reads (FastQRecord).
- * The input to this class is an AVRO file might be either of MatePair type (which essentially contains
- * two fastQ records) or FastQRecord type.
+ * The input to this class is an AVRO file containing either FastQRecoords or
+ * MatePair records (which essentially contains two fastQ records).
  *
  * Assumptions:
- * 1 - Quake binary is available, and its path specified in the parameters. This is used
- * later to load the flash binary from the location into Distributed Cache
- * We have access to a system temp directoy on each node; i.e the java command File.createTempFile succeeds.
- * The bitvector of kmers above the cutoff has been constructed and is available at a location
- * specified in the input
+ * 1. Quake binary is available, and its path specified in the parameters. This is used
+ *     later to load the binary from the location into Distributed Cache
+ * 2. We have access to a system temp directoy on each node; i.e the java
+ *   command File.createTempFile succeeds.
+ * 3. The bitvector of kmers above the cutoff has been constructed and is
+ *   available at a location specified in the input
+ *
  * Execution:
  * For the AVRO file in MatePair schema:
  * A mate pair record is split into two fastQ records which are converted into two fastq records.
@@ -298,12 +302,12 @@ public class InvokeQuake extends Stage{
      * Writes out the remaining chunk of data which is a non multiple of blockSize
      */
     public void close() throws IOException{
-      if(count > 0){
+      if(count > 0) {
         if(matePairMode){
-            runQuakePairedOnInMemoryReads(outputCollector);
+          runQuakePairedOnInMemoryReads(outputCollector);
         }
         else{
-              runQuakeSingleOnInMemoryReads(outputCollector);
+          runQuakeSingleOnInMemoryReads(outputCollector);
         }
       }
       // delete the top level directory, and everything beneath
