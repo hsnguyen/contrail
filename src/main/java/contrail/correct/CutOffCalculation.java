@@ -139,16 +139,10 @@ public class CutOffCalculation extends Stage {
   }
 
   private int executeCovModel(String countFile) throws Exception {
-    // TODO(jeremy@lewi.us): This is very brittle we aren't detecting whether
-    // the cutoff calculation succeeded or failed. We should use the functions
-    // in ShellUtil. We should redirect the output
-    // Furthermore, the python script is firing off an R script so R is
+    // TODO(jeremy@lewi.us): The python script is firing off an R script so R is
     // required.
     // It might be easier if we just called the R script directly ourselves
     // rather than using cov_model.py
-    // TODO(jeremy@lewi.us): The python script and R script are both
-    // creating local files in the working directory. We should copy
-    // those files to the outputpath.
 
     // Create a local temporary directory from which to run the cutoff
     // calculation.
