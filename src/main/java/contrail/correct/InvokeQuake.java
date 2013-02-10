@@ -44,7 +44,6 @@ import contrail.sequences.MatePair;
 import contrail.stages.ContrailParameters;
 import contrail.stages.ParameterDefinition;
 import contrail.stages.Stage;
-import contrail.util.FileHelper;
 import contrail.util.ShellUtil;
 
 
@@ -85,7 +84,6 @@ public class InvokeQuake extends Stage{
 
   public static class RunQuakeMapper extends AvroMapper<Object, FastQRecord>{
     private String quakeHome = null;
-    private String tempWritableFolder = null;
     private String bitVectorPath = null;
     // fastqRecordList is used in case the input AVRO file follows FastQRecord schema
     private ArrayList<String> fastqRecordList;
@@ -105,8 +103,6 @@ public class InvokeQuake extends Stage{
 
       Map<String, ParameterDefinition> definitions =
           stage.getParameterDefinitions();
-
-      tempWritableFolder = FileHelper.createLocalTempDir().getAbsolutePath();
       K = (Integer)(definitions.get("K").parseJobConf(job));
 
       blockSize = (Integer)(definitions.get("block_size").parseJobConf(job));
@@ -178,7 +174,6 @@ public class InvokeQuake extends Stage{
       }
       sLogger.info("Quake Home: " + quakeHome);
       sLogger.info("BitVector Location: " + bitVectorPath);
-
     }
 
     public void map(
@@ -219,12 +214,17 @@ public class InvokeQuake extends Stage{
      */
     private void runQuakeOnInMemoryReads(
         AvroCollector<FastQRecord> output) throws IOException {
-      // Create a directory for processing this block of reads.
+      // Create a directory for this block of reads.
+      // Hadoop should set the temporary directory to a unique directory for
+      // each task attempt so we shouldn't need to worry about two tasks
+      // trying to use the same directory. We will delete blockDir but
+      // rely on hadoop to clean up the toplevel temporary directory.
       File blockDir = new File(FilenameUtils.concat(
-          tempWritableFolder, String.format("%05d", block)));
+          FileUtils.getTempDirectory().getPath(),
+          String.format("block_%05d", block)));
       if (!blockDir.mkdirs()) {
         sLogger.fatal(
-            "Couldn't create the director:" + blockDir.getPath(),
+            "Couldn't create the directory:" + blockDir.getPath(),
             new RuntimeException("Couldn't create directory."));
         System.exit(-1);
       }
@@ -262,9 +262,12 @@ public class InvokeQuake extends Stage{
       sLogger.info("corrected path: " + correctedFilePath.getPath());
       correctUtil.emitFastqFileToHDFS(correctedFilePath, output);
 
-      // Clear temporary files
-      if(blockDir.exists()){
-        blockDir.delete();
+      // File.Delete won't work because the directory isn't empty.
+      try {
+        FileUtils.deleteDirectory(blockDir);
+      } catch (IOException e) {
+        sLogger.fatal("There was a problem deleting:" + blockDir.getPath(), e);
+        System.exit(-1);
       }
 
       fastqRecordList.clear();
@@ -277,11 +280,6 @@ public class InvokeQuake extends Stage{
     public void close() throws IOException{
       if(count > 0) {
         runQuakeOnInMemoryReads(outputCollector);
-      }
-      // delete the top level directory, and everything beneath
-      File tempFile = new File(tempWritableFolder);
-      if(tempFile.exists()) {
-          FileUtils.deleteDirectory(tempFile);
       }
     }
   }
