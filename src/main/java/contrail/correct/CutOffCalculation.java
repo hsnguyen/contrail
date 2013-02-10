@@ -17,7 +17,10 @@ package contrail.correct;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStreamReader;
+import java.io.PrintStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -36,6 +39,7 @@ import contrail.stages.ContrailParameters;
 import contrail.stages.ParameterDefinition;
 import contrail.stages.Stage;
 import contrail.util.FileHelper;
+import contrail.util.ShellUtil;
 
 /**
  *  Cutoff calculation helps us in determining which kmers are trusted and untrusted.
@@ -76,7 +80,6 @@ public class CutOffCalculation extends Stage {
   public void calculateCutoff() throws Exception{
     //inputPath is the path of the file on DFS where the non avro count part is stored
     Path inputPath = new Path((String) stage_options.get("inputpath"));
-    String covModelPath = (String) stage_options.get("cov_model");
 
     // Check if inputPath is a directory.
     if (inputPath.getFileSystem(getConf()).exists(inputPath) &&
@@ -94,7 +97,8 @@ public class CutOffCalculation extends Stage {
 
     if (matchedFiles.length != 1) {
       sLogger.fatal(String.format(
-          "More than 1 file matched the input glob %s. Number matched:%d",
+          "A single file should match the input glob %s. The actual number " +
+          "of files that matched:%d",
           inputPath.toString(), matchedFiles.length),
           new IllegalArgumentException());
       System.exit(-1);
@@ -123,9 +127,7 @@ public class CutOffCalculation extends Stage {
       countFile = inputPath.toUri().getPath();
     }
 
-    // command to run cov_model.py
-    String command = covModelPath+" --int "+ countFile;
-    cutoff = executeCovModel(command);
+    cutoff = executeCovModel(countFile);
 
     // Clean up the temporary directory if we created one.
     if (tempWritableFolder != null) {
@@ -136,7 +138,7 @@ public class CutOffCalculation extends Stage {
     }
   }
 
-  private int executeCovModel(String command) throws Exception {
+  private int executeCovModel(String countFile) throws Exception {
     // TODO(jeremy@lewi.us): This is very brittle we aren't detecting whether
     // the cutoff calculation succeeded or failed. We should use the functions
     // in ShellUtil. We should redirect the output
@@ -144,13 +146,50 @@ public class CutOffCalculation extends Stage {
     // required.
     // It might be easier if we just called the R script directly ourselves
     // rather than using cov_model.py
+    // TODO(jeremy@lewi.us): The python script and R script are both
+    // creating local files in the working directory. We should copy
+    // those files to the outputpath.
+
+    // Create a local temporary directory from which to run the cutoff
+    // calculation.
+    File workDir = FileHelper.createLocalTempDir();
     StringTokenizer tokenizer;
-    String line;
+    //String line;
     int calculatedCutoff = 0;
-    sLogger.info("Excecute Cutoff Calculation: "+ command);
-    Process p = Runtime.getRuntime().exec(command);
-    BufferedReader stdInput = new BufferedReader(new InputStreamReader(p.getInputStream()));
-    while ((line = stdInput.readLine()) != null) {
+
+    String covModelPath = (String) stage_options.get("cov_model");
+    // Command to run cov_model.py
+    ArrayList<String> command = new ArrayList<String>();
+    command.add(covModelPath);
+    command.add("--int");
+    command.add(countFile);
+
+    String outputFile =  FilenameUtils.concat(
+        workDir.toString(), "cov_model.output");
+    PrintStream outStream = new PrintStream(outputFile);
+    if (ShellUtil.executeAndRedirect(
+         command, workDir.toString(), "cov_model.py", sLogger, outStream) !=
+         0 ){
+      sLogger.fatal(
+          "There was a problem running cov_model.py",
+          new RuntimeException("cov_model.py failed."));
+      System.exit(-1);
+    }
+
+    outStream.close();
+    if (outStream.checkError()) {
+      sLogger.fatal(
+          "There was a problem writing the output of cov_model.py to a file.",
+          new RuntimeException("cov_model.py failed."));
+      System.exit(-1);
+    }
+
+    // Read the cutoff.
+    sLogger.info("Parsing:" + outputFile);
+    BufferedReader reader = new BufferedReader(
+        new InputStreamReader(new FileInputStream(outputFile)));
+    for (String line = reader.readLine(); line != null;
+        line = reader.readLine()) {
       tokenizer = new StringTokenizer(line);
       /* Everything displayed by the execution of cov_model.py here is stored in tokenizer
        * line by line. In the end, the token containing
@@ -159,10 +198,33 @@ public class CutOffCalculation extends Stage {
       if(tokenizer.hasMoreTokens() && tokenizer.nextToken().trim().equals("Cutoff:")){
         String ss = tokenizer.nextToken();
         calculatedCutoff = Integer.parseInt(ss);
+        sLogger.info("Cutoff:" + calculatedCutoff);
         break;
       }
-   }
-   p.waitFor();
+    }
+    reader.close();
+
+    // Copy the log files to the output directory.
+    FileSystem fs = FileSystem.get(getConf());
+    String[] names = new String[] {
+        "cov_model.output", "r.log", "cutoff.txt", "kmers.hist"};
+    String outputPath = (String) stage_options.get("outputpath");
+    for (String name : names) {
+      // TODO(jeremy@lewi.us): Should we check the input file exists?
+      Path inPath = new Path(workDir.toString(), name);
+      Path outPath = new Path(outputPath, name);
+      sLogger.info(String.format(
+          "Copy %s to %s.", inPath.toString(), outPath.toString()));
+      fs.copyFromLocalFile(inPath, outPath);
+    }
+
+    // 1. Use shellUtil to execute the command from the directory
+    // 2. How to get the cutoff from the result
+    //    redirect stdout to a file and then read the file and parse the output
+    // 3. copy result files to outputpath.
+
+   // Delete the temporary directory.
+   workDir.delete();
    return calculatedCutoff;
   }
 
