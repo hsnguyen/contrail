@@ -44,30 +44,28 @@ import contrail.sequences.KMerReadTag;
 import contrail.sequences.StrandsForEdge;
 
 /**
- * @author avijit
  * QuickMark
-   We use QuickMark + QuickMerge when the number of compressible nodes is
-   below some threshold. In this case, we can send all the nodes to be
-   compressed to a single reducer so that we can compress all the chains in
-   one shot.
-
-   Since the graph is represented as a collection of CompressibleNodeData,
-   we already know which nodes in the graph are compressible.
-
-   However, we also need to know which nodes are connected to nodes which
-   will be compressed. e.g suppose we have the graph
-   A->B->C->D
-   E->B->C->D
-
-   So the nodes B,C,D will all be marked as compressible. However, after
-   compressing B,C,D we need to update the edges from A and E. So we need
-   the nodes A and E to be marked such that they get sent to the same
-   reducer as B,C,D when doing the merge.
-
-   The point of QuickMark is thus to set the "mertag" such that  when
-   QuickMerge is run A,B,C,D,E all get same to the same reducer and we can
-   do the merge in one shot.
-
+ * We use QuickMark + QuickMerge when the number of compressible nodes is
+ * below some threshold. In this case, we can send all the nodes to be
+ * compressed to a single reducer so that we can compress all the chains in
+ * one shot.
+ *
+ * Since the graph is represented as a collection of CompressibleNodeData,
+ * we already know which nodes in the graph are compressible.
+ *
+ * However, we also need to know which nodes are connected to nodes which
+ * will be compressed. e.g suppose we have the graph
+ * A->B->C->D
+ * E->B->C->D
+ * So the nodes B,C,D will all be marked as compressible. However, after
+ * compressing B,C,D we need to update the edges from A and E. So we need
+ * the nodes A and E to be marked such that they get sent to the same
+ * reducer as B,C,D when doing the merge.
+ *
+ * The point of QuickMark is thus to set the "mertag" such that  when
+ * QuickMerge is run A,B,C,D,E all get same to the same reducer and we can
+ * do the merge in one shot.
+ *
  * Mapper:  the mapper takes in CompressibleNodeData and sees if any node has strands that need to be compressed
  *          if there are NO Compressible Strands for that node
  *		mapper outputs nodeID as key and its CompressibleStrands as msg
@@ -168,8 +166,11 @@ public class QuickMarkAvro extends Stage     {
       }
 
       if (sawnode != 1)	{
-        throw new IOException("ERROR: Didn't see exactly 1 nodemsg (" + sawnode + ") for " + nodeid.toString());
+        throw new IOException(String.format(
+            "ERROR: There should be exactly 1 node for nodeid:%s but there " +
+            "were %d nodes for this id.", nodeid.toString(), sawnode));
       }
+
       if (compresspair)     {
         KMerReadTag readtag = new KMerReadTag("compress", 0);
         //when QuickMerge is run all nodes that need to be compressed or are connected to compressed nodes will be sent to the same reducer
