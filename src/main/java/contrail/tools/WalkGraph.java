@@ -158,7 +158,7 @@ public class WalkGraph extends Stage {
             sLogger.fatal("There was a problem reading from the file.", e);
             System.exit(-1);
           }
-          if (nodeData == null) {
+          if (record == null) {
             sLogger.fatal(
                 "Could not find node:" + nodeId,
                 new RuntimeException("Couldn't find node"));
