@@ -15,11 +15,13 @@
 package contrail.tools;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
+import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroMapper;
@@ -37,6 +39,7 @@ import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
+import contrail.stages.CompressibleNodeData;
 import contrail.stages.ContrailParameters;
 import contrail.stages.ParameterDefinition;
 import contrail.stages.Stage;
@@ -69,18 +72,26 @@ public class SortGraph extends Stage {
   }
 
   public static class SortGraphMapper extends
-    AvroMapper<GraphNodeData, Pair<CharSequence, GraphNodeData>> {
+    AvroMapper<Object, Pair<CharSequence, GraphNodeData>> {
     private Pair<CharSequence, GraphNodeData> pair;
     public void configure(JobConf job) {
       pair = new Pair<CharSequence, GraphNodeData>("", new GraphNodeData());
     }
 
     @Override
-    public void map(GraphNodeData input,
+    public void map(Object input,
         AvroCollector<Pair<CharSequence, GraphNodeData>> collector,
         Reporter reporter)
             throws IOException {
-      pair.set(input.getNodeId(), input);
+
+      if (input instanceof GraphNodeData) {
+        GraphNodeData nodeData = (GraphNodeData) input;
+        pair.set(nodeData.getNodeId(), nodeData);
+      } else if (input instanceof CompressibleNodeData) {
+        CompressibleNodeData compressibleNode = (CompressibleNodeData) input;
+        pair.set(
+            compressibleNode.getNode().getNodeId(), compressibleNode.getNode());
+      }
       collector.collect(pair);
     }
   }
@@ -133,8 +144,17 @@ public class SortGraph extends Stage {
     FileInputFormat.addInputPath(conf, new Path(inputPath));
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
 
+    ArrayList<Schema> schemas = new ArrayList<Schema>();
     GraphNodeData nodeData = new GraphNodeData();
-    AvroJob.setInputSchema(conf, nodeData.getSchema());
+    CompressibleNodeData compressibleData = new CompressibleNodeData();
+
+    // We need to create a schema representing the union of GraphNodeData
+    // and CompressibleNodeData.
+    schemas.add(nodeData.getSchema());
+    schemas.add(compressibleData.getSchema());
+    Schema unionSchema = Schema.createUnion(schemas);
+
+    AvroJob.setInputSchema(conf, unionSchema);
 
     Pair<CharSequence, GraphNodeData> pair =
         new Pair<CharSequence, GraphNodeData>("", nodeData);

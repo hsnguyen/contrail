@@ -84,8 +84,9 @@ public class ContrailParameters {
     help.setShortName("h");
     stage_options.add(help);
 
-    // TODO(jlewi): We should remove this as a required parameter
-    // because not all stages need it.
+    // TODO(jeremy@lewi.us): This option doesn't really apply to all stages
+    // so we should remove it from getCommon and just have the stages
+    // which use it add it to their parameters.
     ParameterDefinition k = new ParameterDefinition(
         "K", "Length of KMers [required].", Integer.class, null);
     stage_options.add(k);

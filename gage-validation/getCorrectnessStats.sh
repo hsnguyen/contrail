@@ -18,16 +18,16 @@ SCAFFOLDS=$3
 CONTIG_FILE=$(basename $CONTIGS)
 SCAFFOLD_FILE=$(basename $SCAFFOLDS)
 
-JAVADIR=/fs/wrenhomes/sergek/Utils
-GENOMESIZE=`java -cp $JAVA_PATH SizeFasta $REF |awk '{SUM+=$NF; print SUM}'|tail -n 1`
+echo "Reference:" $REF
+echo "Contigs:" $CONTIGS
+echo "Scaffolds:" $SCAFFOLDS
 
+GENOMESIZE=`java -cp $JAVA_PATH SizeFasta $REF |awk '{SUM+=$NF; print SUM}'|tail -n 1`
+echo "Genome size: $GENOMESIZE"
 echo "Contig Stats"
 java -cp $JAVA_PATH GetFastaStats -o -min 200 -genomeSize $GENOMESIZE $CONTIGS 2>/dev/null
-echo $MUMMER/nucmer --maxmatch -p $CONTIG_FILE -l 30 -banded -D 5 $REF $CONTIGS
 $MUMMER/nucmer --maxmatch -p $CONTIG_FILE -l 30 -banded -D 5 $REF $CONTIGS
-echo $MUMMER/delta-filter -o 95 -i 95 $CONTIG_FILE.delta > $CONTIG_FILE.fdelta
 $MUMMER/delta-filter -o 95 -i 95 $CONTIG_FILE.delta > $CONTIG_FILE.fdelta
-echo $MUMMER/dnadiff -d $CONTIG_FILE.fdelta
 $MUMMER/dnadiff -d $CONTIG_FILE.fdelta
 
 $SCRIPT_PATH/getMummerStats.sh $CONTIGS $SCRIPT_PATH

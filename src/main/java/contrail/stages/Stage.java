@@ -21,6 +21,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
@@ -164,9 +165,40 @@ public abstract class Stage extends Configured implements Tool  {
   }
 
   /**
+   * A class containing information about invalid parameters.
+   */
+  public class InvalidParameter {
+    public String stage;
+    // Name of the invalid parameter.
+    final public String name;
+
+    // Message describing why the parameter is invalid.
+    final public String message;
+
+    public InvalidParameter(String name, String message) {
+      this.name = name;
+      this.message = message;
+    }
+  }
+  /**
+   * Check whether parameters are valid.
+   * Subclasses which override this method should call the base class
+   *
+   * We return information describing all the invalid parameters. If
+   * the validation requires access to a valid job configuration
+   * then the caller should ensure the configuration is properly set.
+   */
+  public List<InvalidParameter> validateParameters() {
+    // TODO(jeremy@lewi.us): Should we automatically check that required
+    // parameters are set. The question is whether a parameter which has
+    // null for the default value should be considered required?
+    return new ArrayList<InvalidParameter>();
+  }
+
+  /**
    * This function logs the values of the options.
    */
-  private void logParameters() {
+  protected void logParameters() {
     ArrayList<String> keys = new ArrayList<String>();
     keys.addAll(stage_options.keySet());
     Collections.sort(keys);
@@ -314,7 +346,9 @@ public abstract class Stage extends Configured implements Tool  {
     // TODO(jlewi): Should we check if getConf() returns null and if it does
     // either initialize it or throw an exception. Normally the configuration
     // should be initialized in the caller, e.g in main ToolRunner.run
-    // takes a configuration.
+    // takes a configuration. We really want to do this in runJob
+    // since we often invoke a stage by calling runJob directly.
+
     //
     // This function provides the entry point when running from the command
     // line; i.e. using ToolRunner.

@@ -161,8 +161,8 @@ public class AssembleContigs extends Stage {
     String outputPath = (String) stage_options.get("outputpath");
 
     Stage[] subStages =
-      {new FastqPreprocessorAvroCompressed(), new BuildGraphAvro(),
-       new QuickMergeAvro(), new CompressAndCorrect(), new GraphToFasta()};
+      {new BuildGraphAvro(), new QuickMergeAvro(), new CompressAndCorrect(),
+       new GraphToFasta()};
 
     // The path to process for the next stage.
     String latestPath = (String) stage_options.get("inputpath");
