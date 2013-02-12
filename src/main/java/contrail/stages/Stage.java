@@ -96,6 +96,8 @@ public abstract class Stage extends Configured implements Tool  {
   private static final Logger sLogger =
       Logger.getLogger(Stage.class);
 
+  private StageInfoWriter infoWriter;
+
   public Stage() {
   }
 
@@ -261,6 +263,39 @@ public abstract class Stage extends Configured implements Tool  {
       printHelp();
       System.exit(0);
     }
+  }
+
+  /**
+   * Initialize the stage by inheriting the settings from other.
+   *
+   * This function will throw an error if any of the settings have already
+   * been set.
+   *
+   * @param other
+   */
+  public void initialize(Stage other) {
+    // Check if any of the settings have already been set.
+    if (stage_options.size() != 0) {
+      sLogger.fatal(
+          "This stage already has parameters set so it can't be initialized.",
+          new RuntimeException("Already initialitized"));
+    }
+
+    if (getConf() != null) {
+      sLogger.fatal(
+          "This stage already has a hadoop configuration.",
+          new RuntimeException("Already initialitized"));
+    }
+
+    // Initialize the hadoop configuration so we inherit hadoop variables
+    // like number of map tasks.
+    setConf(other.getConf());
+
+    // Get the parameters.
+    stage_options.putAll(ContrailParameters.extractParameters(
+        other.stage_options, this.definitions.values()));
+
+    infoWriter = other.infoWriter;
   }
 
   /**
