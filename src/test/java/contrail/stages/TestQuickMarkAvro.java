@@ -131,7 +131,6 @@ public class TestQuickMarkAvro extends QuickMarkAvro{
     return cases;
   }
 
-
   @Test
   public void testMap() {
 
