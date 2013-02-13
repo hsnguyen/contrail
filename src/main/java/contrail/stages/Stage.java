@@ -96,7 +96,7 @@ public abstract class Stage extends Configured implements Tool  {
   private static final Logger sLogger =
       Logger.getLogger(Stage.class);
 
-  private StageInfoWriter infoWriter;
+  protected StageInfoWriter infoWriter;
 
   public Stage() {
   }
@@ -462,7 +462,9 @@ public abstract class Stage extends Configured implements Tool  {
    * @param job
    * @return
    */
+  @Deprecated
   public StageInfo getStageInfo(RunningJob job) {
+    // TODO(jeremy@lewi.us): should be replaced by getStageInfo();
     StageInfo info = new StageInfo();
     info.setCounters(new ArrayList<CounterInfo>());
     info.setParameters(new ArrayList<StageParameter>());
@@ -503,6 +505,16 @@ public abstract class Stage extends Configured implements Tool  {
       }
     }
     return info;
+  }
+
+  /**
+   * Return the stage info.
+   * @return
+   */
+  public StageInfo getStageInfo() {
+    // TODO(jeremy@lewi.us) We should make this an abstract method once
+    // Stage becomes an abstract class.
+    return new StageInfo();
   }
 
   /**

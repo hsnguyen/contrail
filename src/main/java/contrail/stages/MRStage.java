@@ -15,13 +15,18 @@
 package contrail.stages;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
 
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapred.Counters;
 import org.apache.hadoop.mapred.FileOutputFormat;
 import org.apache.hadoop.mapred.JobClient;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RunningJob;
+import org.apache.hadoop.mapred.Counters.Group;
 import org.apache.log4j.Logger;
 
 /**
@@ -53,6 +58,62 @@ public class MRStage extends Stage {
    */
   protected void setupConfHook() {
     // Do nothing by default.
+  }
+
+  /**
+   * Return information about the stage.
+   *
+   * @param job
+   * @return
+   */
+  public StageInfo getStageInfo() {
+    StageInfo info = new StageInfo();
+    info.setCounters(new ArrayList<CounterInfo>());
+    info.setParameters(new ArrayList<StageParameter>());
+    info.setSubStages(new ArrayList<StageInfo>());
+
+    info.setStageClass(this.getClass().getName());
+
+    ArrayList<String> keys = new ArrayList<String>();
+    keys.addAll(stage_options.keySet());
+    Collections.sort(keys);
+
+    for (String key : keys) {
+      StageParameter parameter = new StageParameter();
+      parameter.setName(key);
+      parameter.setValue(stage_options.get(key).toString());
+      info.getParameters().add(parameter);
+    }
+
+    if (job != null) {
+      try {
+        if (job.isSuccessful()) {
+          info.setState(StageState.SUCCESS);
+        } else {
+          info.setState(StageState.ERROR);
+        }
+        Counters counters = job.getCounters();
+        Iterator<Group> itGroup = counters.iterator();
+        while (itGroup.hasNext()) {
+          Group group = itGroup.next();
+          Iterator<Counters.Counter> itCounter = group.iterator();
+          while (itCounter.hasNext()) {
+            Counters.Counter counter = itCounter.next();
+            CounterInfo counterInfo = new CounterInfo();
+            counterInfo.setName(counter.getDisplayName());
+            counterInfo.setValue(counter.getValue());
+            info.getCounters().add(counterInfo);
+          }
+        }
+      } catch (IOException e) {
+        // TODO Auto-generated catch block
+        sLogger.fatal("Couldn't get stage counters", e);
+        System.exit(-1);
+      }
+    } else {
+      info.setState(StageState.STARTED);
+    }
+    return info;
   }
 
   /**
@@ -100,15 +161,18 @@ public class MRStage extends Stage {
       try {
         // Write the stageinfo if a writer is specified.
         if (infoWriter != null) {
-          infoWriter.writeStage(getStageInfo(null));
+          infoWriter.writeStage(getStageInfo());
         }
         job = JobClient.runJob(conf);
 
         if (infoWriter != null) {
-          infoWriter.overWriteLastStage(getStageInfo(null));
+          infoWriter.writeStage(getStageInfo());
         }
         return job.isSuccessful();
       } catch (IOException e) {
+        if (infoWriter != null) {
+          infoWriter.writeStage(getStageInfo());
+        }
         sLogger.fatal(
             "There was a problem running the mr job.", e);
         System.exit(-1);

@@ -4,6 +4,11 @@
   "doc": "Data structures for recording information about the stages run.",
 
   "types": [
+     {"name": "StageState",
+      "type":  "enum",
+      "doc": "Stage of a job.",
+      "symbols": ["STARTED", "SUCCESS", "ERROR"]
+     },
      {"name": "CounterInfo",
       "type": "record",
       "doc": "This record records the value of a mapreduce counter.",
@@ -36,6 +41,10 @@
       "fields": [{"name": "stage_class",
                   "type": "string",
                   "doc": "The class name for the stage."
+                 },
+                 {"name": "state",
+                  "type": "StageState",
+                  "doc": "The state of the job."
                  },
                  {"name": "parameters",
                   "type": {"type": "array", "items": "StageParameter"},
