@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.Counters;
@@ -148,7 +149,8 @@ public class MRStage extends Stage {
 
     setupConfHook();
     logParameters();
-    if (stage_options.containsKey("writeconfig")) {
+    if (stage_options.containsKey("writeconfig") &&
+        ((String)stage_options.get("writeconfig")).length() >0) {
       writeJobConfig(conf);
     } else {
       // Delete the output directory if it exists already.
@@ -192,5 +194,27 @@ public class MRStage extends Stage {
     }
 
     return true;
+  }
+
+  /**
+   * Run the stage after parsing the string arguments.
+   */
+  final public int run(String[] args) throws Exception {
+    //
+    // This function provides the entry point when running from the command
+    // line; i.e. using ToolRunner.
+    sLogger.info("Tool name: " + this.getClass().getName());
+
+    // Print the command line on a single line as its convenient for
+    // copy pasting.
+    sLogger.info("Command line arguments: " + StringUtils.join(args, " "));
+
+    parseCommandLine(args);
+    execute();
+    if (job==null || !job.isSuccessful()) {
+      return -1;
+    } else {
+      return 0;
+    }
   }
 }

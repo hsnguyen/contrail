@@ -56,8 +56,26 @@ public class ContrailParameters {
   private static List<ParameterDefinition> stage_options;
 
   /**
-   * A list of options that apply to all stages.
+   * Return the parameter which
+   * @return
    */
+  public static ParameterDefinition getK() {
+    ParameterDefinition k = new ParameterDefinition(
+        "K", "Length of KMers [required].", Integer.class, null);
+    stage_options.add(k);
+    return k;
+  }
+
+  /**
+   * A list of options that apply to all stages.
+   *
+   * TODO(jeremy@lewi.us): This is deprecated because K shouldn't be
+   * a parameter that applies to all stages.
+   * Common parameters should just be initialized in
+   * Stage.createParameterDefinitions. Stages which require K should
+   * add it explicitly.
+   */
+  @Deprecated
   public static List<ParameterDefinition> getCommon() {
     if (stage_options != null) {
       return stage_options;
@@ -67,7 +85,7 @@ public class ContrailParameters {
     ParameterDefinition writeconfig = new ParameterDefinition(
         "writeconfig",
         "The XMLfile to write the job configuration to. The job won't be run.",
-        String.class, null);
+        String.class, "");
 
     stage_options.add(writeconfig);
 
@@ -84,18 +102,10 @@ public class ContrailParameters {
     help.setShortName("h");
     stage_options.add(help);
 
-    // TODO(jeremy@lewi.us): This option doesn't really apply to all stages
-    // so we should remove it from getCommon and just have the stages
-    // which use it add it to their parameters.
-    ParameterDefinition k = new ParameterDefinition(
-        "K", "Length of KMers [required].", Integer.class, null);
-    stage_options.add(k);
-
     ParameterDefinition logFile = new ParameterDefinition(
         "log_file", "File to log to. This can't be an HDFS path.", String.class,
-        null);
+        "");
     stage_options.add(logFile);
-
     return stage_options;
   }
 

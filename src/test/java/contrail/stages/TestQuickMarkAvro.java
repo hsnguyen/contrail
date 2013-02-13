@@ -159,9 +159,7 @@ public class TestQuickMarkAvro extends QuickMarkAvro{
 
       assertMapperOutput(case_data.node, case_data.expected_message, collector_mock);
     }
-
   }
-
 
   private static class ReduceTestCaseData {
     List <QuickMarkMessage> map_out_list;
