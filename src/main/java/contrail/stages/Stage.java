@@ -132,8 +132,9 @@ public abstract class Stage extends Configured implements Tool  {
     }
 
     if (missing.size() > 0) {
-      sLogger.error(("Missing required arguments: " +
-                     StringUtils.join(missing, ",")));
+      sLogger.error(
+          this.getClass().getSimpleName() +": Missing required " +
+          "arguments: " + StringUtils.join(missing, ","));
       printHelp();
       // Should we exit or throw an exception?
       System.exit(0);

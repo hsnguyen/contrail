@@ -34,7 +34,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
@@ -45,6 +44,7 @@ import org.codehaus.jackson.util.DefaultPrettyPrinter;
 import contrail.stages.BuildGraphAvro;
 import contrail.stages.CompressAndCorrect;
 import contrail.stages.ContrailParameters;
+import contrail.stages.NonMRStage;
 import contrail.stages.PairMergeAvro;
 import contrail.stages.ParameterDefinition;
 import contrail.stages.PopBubblesAvro;
@@ -64,7 +64,7 @@ import contrail.stages.ValidateGraph;
  * the outputs of each stage in reverse order until we find the last
  * stage which produced a valid graph.
  */
-public class FindLastValidGraph extends Stage {
+public class FindLastValidGraph extends NonMRStage {
   private static final Logger sLogger = Logger.getLogger(
       FindLastValidGraph.class);
 
@@ -81,9 +81,6 @@ public class FindLastValidGraph extends Stage {
       ContrailParameters.getInputOutputPathOptions()) {
       defs.put(def.getName(), def);
     }
-
-    // Delete the parameter K.
-    defs.remove("K");
 
     // Overwrite the comment for the inputpath.
     ParameterDefinition input = new ParameterDefinition(
@@ -238,14 +235,10 @@ public class FindLastValidGraph extends Stage {
       parameters.put("K", K);
       validateStage.setParameters(parameters);
       RunningJob job  = null;
-      try {
-        job = validateStage.runJob();
-      } catch(Exception e) {
-        sLogger.fatal("There was a problem validating the graph.", e);
-        System.exit(-1);
-      }
 
-      long errorCount = ValidateGraph.getErrorCount(job);
+      validateStage.execute();
+
+      long errorCount = validateStage.getErrorCount();
       if (errorCount == 0) {
         errorStageIndex = stageIndex -1;
         foundValid = true;
@@ -284,23 +277,8 @@ public class FindLastValidGraph extends Stage {
   }
 
   @Override
-  public RunningJob runJob() throws Exception {
-    // Check for missing arguments.
-    String[] required_args = {"inputpath", "outputpath"};
-    checkHasParametersOrDie(required_args);
-
-    Configuration base_conf = getConf();
-    JobConf conf = null;
-    if (base_conf != null) {
-      conf = new JobConf(getConf(), this.getClass());
-    } else {
-      conf = new JobConf(this.getClass());
-    }
-    initializeJobConfiguration(conf);
-
+  protected void stageMain() {
     findLastValidGraph();
-
-    return null;
   }
 
   public static void main(String[] args) throws Exception {

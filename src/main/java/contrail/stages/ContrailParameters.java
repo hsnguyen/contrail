@@ -16,6 +16,7 @@ package contrail.stages;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,7 +63,6 @@ public class ContrailParameters {
   public static ParameterDefinition getK() {
     ParameterDefinition k = new ParameterDefinition(
         "K", "Length of KMers [required].", Integer.class, null);
-    stage_options.add(k);
     return k;
   }
 
@@ -106,6 +106,7 @@ public class ContrailParameters {
         "log_file", "File to log to. This can't be an HDFS path.", String.class,
         "");
     stage_options.add(logFile);
+    stage_options = Collections.unmodifiableList(stage_options);
     return stage_options;
   }
 

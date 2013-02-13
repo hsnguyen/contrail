@@ -38,7 +38,7 @@ import contrail.util.FileHelper;
  * be compressed. Consequently, we repeatedly perform compression followed
  * by error correction until we have a round where the graph doesn't change.
  */
-public class CompressAndCorrect extends Stage {
+public class CompressAndCorrect extends NonMRStage {
   private static final Logger sLogger = Logger.getLogger(CompressChains.class);
   /**
    * Get the parameters used by this stage.
@@ -91,7 +91,7 @@ public class CompressAndCorrect extends Stage {
     stageOptions.put("inputpath", inputPath);
     stageOptions.put("outputpath", outputPath);
     compressStage.setParameters(stageOptions);
-    RunningJob compressJob = compressStage.runJob();
+    compressStage.execute();
 
     // TODO(jlewi): We should compute how much the graph changed and output
     // this as part of the log message.
@@ -121,20 +121,12 @@ public class CompressAndCorrect extends Stage {
     stageOptions.put("inputpath", inputPath);
     stageOptions.put("outputpath", outputPath);
     stage.setParameters(stageOptions);
-    RunningJob job = stage.runJob();
+    stage.execute();
 
     JobInfo result = new JobInfo();
-    if (job == null) {
-      result.logMessage =
-          "RemoveTips stage was skipped because graph would not change.";
-      sLogger.info(result.logMessage);
-      result.graphPath = inputPath;
-      result.graphChanged = false;
-      return result;
-    }
 
     // Check if any tips were found.
-    long tipsRemoved = job.getCounters().findCounter(
+    long tipsRemoved = stage.job.getCounters().findCounter(
         RemoveTipsAvro.NUM_REMOVED.group,
         RemoveTipsAvro.NUM_REMOVED.tag).getValue();
 
@@ -172,24 +164,14 @@ public class CompressAndCorrect extends Stage {
       findStage.setParameters(stageOptions);
     }
 
-    RunningJob findJob = findStage.runJob();
-
-    if (findJob == null) {
-      JobInfo result = new JobInfo();
-      result.logMessage =
-          "FindBubbles stage was skipped because graph would not change.";
-      sLogger.info(result.logMessage);
-      result.graphPath = inputPath;
-      result.graphChanged = false;
-      return result;
-    }
+    findStage.execute();
 
     // Check if any bubbles or palindromes were found.
-    long bubblesFound = findJob.getCounters().findCounter(
+    long bubblesFound = findStage.job.getCounters().findCounter(
         FindBubblesAvro.NUM_BUBBLES.group,
         FindBubblesAvro.NUM_BUBBLES.tag).getValue();
 
-    long palindromesFound = findJob.getCounters().findCounter(
+    long palindromesFound = findStage.job.getCounters().findCounter(
         FindBubblesAvro.NUM_PALINDROMES.group,
         FindBubblesAvro.NUM_PALINDROMES.tag).getValue();
 
@@ -220,7 +202,7 @@ public class CompressAndCorrect extends Stage {
       stageOptions.put("outputpath", popOutputPath);
       popStage.setParameters(stageOptions);
     }
-    RunningJob popJob = popStage.runJob();
+    popStage.execute();
 
     JobInfo result = new JobInfo();
     result.graphChanged = true;
@@ -252,10 +234,10 @@ public class CompressAndCorrect extends Stage {
     stageOptions.put("inputpath", inputPath);
     stageOptions.put("outputpath", outputPath);
     stage.setParameters(stageOptions);
-    RunningJob job = stage.runJob();
+    stage.execute();
 
     JobInfo result = new JobInfo();
-    if (job == null) {
+    if (stage.job == null) {
       result.logMessage =
           "RemoveLowCoverage stage was skipped because graph would not " +
            "change.";
@@ -265,7 +247,7 @@ public class CompressAndCorrect extends Stage {
       return result;
     }
     // Check if any tips were found.
-    long nodesRemoved = job.getCounters().findCounter(
+    long nodesRemoved = stage.job.getCounters().findCounter(
         RemoveLowCoverageAvro.NUM_REMOVED.group,
         RemoveLowCoverageAvro.NUM_REMOVED.tag).getValue();
 
@@ -467,25 +449,13 @@ public class CompressAndCorrect extends Stage {
   }
 
   @Override
-  public RunningJob runJob() throws Exception {
-    String[] required_args = {"inputpath", "outputpath"};
-    checkHasParametersOrDie(required_args);
-
-    if (stage_options.containsKey("writeconfig")) {
-      // TODO(jlewi): Can we write the configuration for this stage like
-      // other stages or do we need to do something special?
-      throw new NotImplementedException(
-          "Support for writeconfig isn't implemented yet for " +
-          "CompressAndCorrect");
-    } else {
-      long starttime = System.currentTimeMillis();
+  protected void stageMain() {
+    try {
       processGraph();
-      long endtime = System.currentTimeMillis();
-
-      float diff = (float) ((endtime - starttime) / 1000.0);
-      sLogger.info("Runtime: " + diff + " s");
+    } catch (Exception e) {
+      sLogger.fatal("CompressAndCorrect failed.", e);
+      System.exit(-1);
     }
-    return null;
   }
 
   public static void main(String[] args) throws Exception {

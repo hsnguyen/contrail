@@ -27,6 +27,7 @@ import contrail.stages.QuickMergeAvro;
 import contrail.stages.RemoveTipsAvro;
 import contrail.stages.StageInfo;
 import contrail.stages.StageParameter;
+import contrail.stages.StageState;
 import contrail.util.FileHelper;
 
 public class TestFindLastValidGraph {
@@ -43,6 +44,7 @@ public class TestFindLastValidGraph {
       String outputPath, Collection<GraphNode> nodes, String className) {
     StageInfo stageInfo = new StageInfo();
     stageInfo.setStageClass(className);
+    stageInfo.setState(StageState.SUCCESS);
     stageInfo.setCounters(new ArrayList<CounterInfo>());
     stageInfo.setParameters(new ArrayList<StageParameter>());
     stageInfo.setSubStages(new ArrayList<StageInfo>());
@@ -75,6 +77,7 @@ public class TestFindLastValidGraph {
     // Create a StageInfo representing the pipeline.
     StageInfo pipelineInfo = new StageInfo();
     pipelineInfo.setStageClass("TestPipeline");
+    pipelineInfo.setState(StageState.SUCCESS);
     pipelineInfo.setCounters(new ArrayList<CounterInfo>());
     pipelineInfo.setParameters(new ArrayList<StageParameter>());
     pipelineInfo.setSubStages(new ArrayList<StageInfo>());
@@ -182,7 +185,7 @@ public class TestFindLastValidGraph {
         "outputpath", FilenameUtils.concat(testDir, "validation"));
     findStage.setParameters(parameters);
     try {
-      findStage.runJob();
+      findStage.execute();
     } catch (Exception e) {
       e.printStackTrace();
       fail("Job failed");
