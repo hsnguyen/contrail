@@ -63,6 +63,15 @@ public class MRStage extends Stage {
   }
 
   /**
+   * Hook which runs after the job runs.
+   *
+   * This hook will be called regardless of whether the job is successful.
+   */
+  protected void postRunHook() {
+    // Do nothing by default.
+  }
+
+  /**
    * Return information about the stage.
    *
    * @param job
@@ -178,10 +187,10 @@ public class MRStage extends Stage {
           infoWriter.writeStage(getStageInfo());
         }
         job = JobClient.runJob(conf);
-
         if (infoWriter != null) {
           infoWriter.writeStage(getStageInfo());
         }
+        postRunHook();
         return job.isSuccessful();
       } catch (IOException e) {
         if (infoWriter != null) {
