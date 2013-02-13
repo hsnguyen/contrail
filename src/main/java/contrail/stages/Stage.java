@@ -167,6 +167,24 @@ public abstract class Stage extends Configured implements Tool  {
   }
 
   /**
+   * Returns a list of the required parameters.
+   *
+   * Ideally subclasses shouldn't need to overload this.
+   */
+  protected List<String> getRequiredParameters() {
+    ArrayList<String> required = new ArrayList<String>();
+
+    // Parameters with no default value are assumed to be required.
+    for (ParameterDefinition def : getParameterDefinitions().values()) {
+      if (def.getDefault() == null) {
+        required.add(def.getName());
+      }
+    }
+
+    return required;
+  }
+
+  /**
    * A class containing information about invalid parameters.
    */
   public class InvalidParameter {

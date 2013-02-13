@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -122,8 +123,19 @@ public class MRStage extends Stage {
    * @return: True on success false otherwise.
    */
   final public boolean execute() {
-    // TODO(jeremy@lewi.us): We should check the required arguments are set
-    // and invoke a hook to validate the parameters.
+    checkHasParametersOrDie(getRequiredParameters().toArray(new String[]{}));
+    List<InvalidParameter> invalidParameters = validateParameters();
+
+    if (invalidParameters.size() > 0) {
+      for (InvalidParameter parameter : invalidParameters) {
+        sLogger.fatal(
+            String.format(
+                "Parameter: %s isn't valid: %s",
+                parameter.name, parameter.message));
+      }
+      sLogger.fatal("Parameters are invalid.", new IllegalArgumentException());
+      System.exit(-1);
+    }
 
     // Initialize the hadoop configuration.
     if (getConf() == null) {
