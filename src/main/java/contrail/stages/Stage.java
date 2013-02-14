@@ -378,7 +378,8 @@ public abstract class Stage extends Configured implements Tool  {
   }
 
   /**
-   * Set the parameters for this stage. Any unset parameters will be
+   * Set the parameters for this stage. Any parameters which haven't been
+   * previously set and which aren't part of the input will be
    * initialized to the default values if there is one.
    */
   public void setParameters(Map<String, Object> values) {

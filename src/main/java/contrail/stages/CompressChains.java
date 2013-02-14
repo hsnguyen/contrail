@@ -54,7 +54,7 @@ import contrail.util.FileHelper;
  *
  * Note: Resuming the compression hasn't been rigoursouly tested.
  */
-public class CompressChains extends NonMRStage {
+public class CompressChains extends PipelineStage {
   // TODO(jlewi): Should we create a separate base class for jobs which
   // run several map reduce jobs.
   private static final Logger sLogger = Logger.getLogger(CompressChains.class);
@@ -69,12 +69,8 @@ public class CompressChains extends NonMRStage {
   // Seeds to use if any for pairmark avro.
   private ArrayList<Integer> seeds;
 
-
-  private StageInfo stageInfo;
-
   public CompressChains() {
     seeds = new ArrayList<Integer>();
-    stageInfo = super.getStageInfo();
   }
 
   /**
@@ -103,7 +99,7 @@ public class CompressChains extends NonMRStage {
       String input_path, String temp_path, String final_path) throws Exception {
     finalGraphPath = final_path;
     CompressibleAvro compress = new CompressibleAvro();
-    compress.setConf(this.getConf());
+    compress.initializeAsChild(this);
 
     int stage = 0;
     long compressible = 0;
@@ -125,7 +121,8 @@ public class CompressChains extends NonMRStage {
 
     // TODO(jlewi): To determine the step number we should probably parse the
     // directory rather than just letting the user specify the directory
-    // to continue from.
+    // to continue from. We should probably rewrite the resume option
+    // so that it uses the StageInfo file to figure out where we were.
     if (RESUME) {
       // We resume Mark/Merge iterations after some previous processing
       // Compressible nodes should already be marked so we don't
@@ -153,7 +150,7 @@ public class CompressChains extends NonMRStage {
 
       substage_options.put("outputpath", latest_path);
       compress.setParameters(substage_options);
-      compress.execute();
+      executeChild(compress);
       compressible = counter(compress.job, CompressibleAvro.NUM_COMPRESSIBLE);
 
       if (compressible == 0) {
@@ -195,8 +192,8 @@ public class CompressChains extends NonMRStage {
       if (lastremaining < LOCALNODES) {
         QuickMarkAvro qmark   = new QuickMarkAvro();
         QuickMergeAvro qmerge = new QuickMergeAvro();
-        qmark.setConf(this.getConf());
-        qmerge.setConf(this.getConf());
+        qmark.initializeAsChild(this);
+        qmerge.initializeAsChild(this);
 
         // Send all the compressible nodes and their neighbors to the same
         // machine so they can be compressed in one shot.
@@ -209,7 +206,7 @@ public class CompressChains extends NonMRStage {
         substage_options.put("inputpath", mark_input);
         substage_options.put("outputpath", marked_graph_path);
         qmark.setParameters(substage_options);
-        qmark.execute();
+        executeChild(qmark);
 
         sLogger.info(
             String.format(
@@ -228,7 +225,7 @@ public class CompressChains extends NonMRStage {
         qmerge_options.put("inputpath", marked_graph_path);
         qmerge_options.put("outputpath", merged_graph_path);
         qmerge.setParameters(qmerge_options);
-        qmerge.execute();
+        executeChild(qmerge);
 
         // Set remaining to zero because all compressible nodes should
         // be compressed.
@@ -240,8 +237,8 @@ public class CompressChains extends NonMRStage {
 
         PairMarkAvro pmark   = new PairMarkAvro();
         PairMergeAvro pmerge = new PairMergeAvro();
-        pmark.setConf(this.getConf());
-        pmerge.setConf(this.getConf());
+        pmark.initializeAsChild(this);
+        pmerge.initializeAsChild(this);
 
         {
           logStartJob("Mark" + stage);
@@ -256,7 +253,7 @@ public class CompressChains extends NonMRStage {
 
           mark_options.put("randseed", seed);
           pmark.setParameters(mark_options);
-          pmark.execute();
+          executeChild(pmark);
 
           sLogger.info(
               "Number of nodes marked to compress:" +
@@ -269,7 +266,7 @@ public class CompressChains extends NonMRStage {
           mark_options.put("outputpath", merged_graph_path);
           mark_options.put("K", stage_options.get("K"));
           pmerge.setParameters(mark_options);
-          pmerge.execute();
+          executeChild(pmerge);
           remaining = counter(
               pmerge.job, PairMergeAvro.NUM_REMAINING_COMPRESSIBLE);
         }
@@ -279,7 +276,7 @@ public class CompressChains extends NonMRStage {
               step_dir, "converted_graph").getPath();
           CompressibleNodeConverter converter =
               new CompressibleNodeConverter();
-          converter.setConf(this.getConf());
+          converter.initializeAsChild(this);
           // If the number of remaining nodes is zero. Then we need to convert
           // the graph of CompressibleNode's to GraphData. Ordinarily this
           // would happen automatically in QuickMark + QuickMerge.
@@ -288,7 +285,7 @@ public class CompressChains extends NonMRStage {
           convert_options.put("inputpath", merged_graph_path);
           convert_options.put("outputpath", convertedGraphPath);
           converter.setParameters(convert_options);
-          converter.execute();
+          executeChild(converter);
           latest_path = convertedGraphPath;
           pathsToDelete.add(merged_graph_path);
         }
@@ -410,11 +407,6 @@ public class CompressChains extends NonMRStage {
         System.exit(-1);
       }
     }
-  }
-
-  @Override
-  public StageInfo getStageInfo() {
-    return stageInfo;
   }
 
   @Override

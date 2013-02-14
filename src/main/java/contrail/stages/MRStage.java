@@ -184,17 +184,17 @@ public class MRStage extends StageBase {
       try {
         // Write the stageinfo if a writer is specified.
         if (infoWriter != null) {
-          infoWriter.writeStage(getStageInfo());
+          infoWriter.write(getWorkflowInfo());
         }
         job = JobClient.runJob(conf);
         if (infoWriter != null) {
-          infoWriter.writeStage(getStageInfo());
+          infoWriter.write(getWorkflowInfo());
         }
         postRunHook();
         return job.isSuccessful();
       } catch (IOException e) {
         if (infoWriter != null) {
-          infoWriter.writeStage(getStageInfo());
+          infoWriter.write(getWorkflowInfo());
         }
         sLogger.fatal(
             "There was a problem running the mr job.", e);

@@ -27,16 +27,21 @@ abstract public class PipelineStage extends NonMRStage {
 
   /**
    * Helper routine for running a child.
+   *
+   * Child stages should always be run using this method to ensure
+   * the information for the stage is properly logged.
+   *
    * @param child
    */
-  protected void executeChild(StageBase child) {
+  protected boolean executeChild(StageBase child) {
     stageInfo.getSubStages().add(child.getStageInfo());
     current = child;
-    child.execute();
+    boolean status = child.execute();
     stageInfo.getSubStages().set(
         stageInfo.getSubStages().size() - 1, child.getStageInfo());
 
     current = null;
+    return status;
   }
 
   public StageInfo getStageInfo() {

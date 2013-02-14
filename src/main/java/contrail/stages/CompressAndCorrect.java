@@ -24,7 +24,6 @@ import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
@@ -38,7 +37,7 @@ import contrail.util.FileHelper;
  * be compressed. Consequently, we repeatedly perform compression followed
  * by error correction until we have a round where the graph doesn't change.
  */
-public class CompressAndCorrect extends NonMRStage {
+public class CompressAndCorrect extends PipelineStage {
   private static final Logger sLogger = Logger.getLogger(CompressChains.class);
   /**
    * Get the parameters used by this stage.
@@ -80,7 +79,8 @@ public class CompressAndCorrect extends NonMRStage {
   private JobInfo compressGraph(String inputPath, String outputPath)
       throws Exception {
     CompressChains compressStage = new CompressChains();
-    compressStage.setConf(getConf());
+    compressStage.initializeAsChild(this);
+
     // Make a shallow copy of the stage options required by the compress
     // stage.
     Map<String, Object> stageOptions =
@@ -91,7 +91,7 @@ public class CompressAndCorrect extends NonMRStage {
     stageOptions.put("inputpath", inputPath);
     stageOptions.put("outputpath", outputPath);
     compressStage.setParameters(stageOptions);
-    compressStage.execute();
+    executeChild(compressStage);
 
     // TODO(jlewi): We should compute how much the graph changed and output
     // this as part of the log message.
@@ -110,7 +110,7 @@ public class CompressAndCorrect extends NonMRStage {
   private JobInfo removeTips(String inputPath, String outputPath)
       throws Exception {
     RemoveTipsAvro stage = new RemoveTipsAvro();
-    stage.setConf(getConf());
+    stage.initializeAsChild(this);
     // Make a shallow copy of the stage options required by the compress
     // stage.
     Map<String, Object> stageOptions =
@@ -121,7 +121,7 @@ public class CompressAndCorrect extends NonMRStage {
     stageOptions.put("inputpath", inputPath);
     stageOptions.put("outputpath", outputPath);
     stage.setParameters(stageOptions);
-    stage.execute();
+    executeChild(stage);
 
     JobInfo result = new JobInfo();
 
@@ -150,7 +150,8 @@ public class CompressAndCorrect extends NonMRStage {
   private JobInfo popBubbles(String inputPath, String outputPath)
       throws Exception {
     FindBubblesAvro findStage = new FindBubblesAvro();
-    findStage.setConf(getConf());
+    findStage.initializeAsChild(this);
+
     String findOutputPath = new Path(outputPath, "FindBubbles").toString();
     {
       // Make a shallow copy of the stage options required.
@@ -164,7 +165,7 @@ public class CompressAndCorrect extends NonMRStage {
       findStage.setParameters(stageOptions);
     }
 
-    findStage.execute();
+    executeChild(findStage);
 
     // Check if any bubbles or palindromes were found.
     long bubblesFound = findStage.job.getCounters().findCounter(
@@ -189,7 +190,8 @@ public class CompressAndCorrect extends NonMRStage {
     }
 
     PopBubblesAvro popStage = new PopBubblesAvro();
-    popStage.setConf(getConf());
+    popStage.initializeAsChild(this);
+
     String popOutputPath = new Path(outputPath, "PopBubbles").toString();
     {
       // Make a shallow copy of the stage options required.
@@ -202,7 +204,7 @@ public class CompressAndCorrect extends NonMRStage {
       stageOptions.put("outputpath", popOutputPath);
       popStage.setParameters(stageOptions);
     }
-    popStage.execute();
+    executeChild(popStage);
 
     JobInfo result = new JobInfo();
     result.graphChanged = true;
@@ -223,18 +225,11 @@ public class CompressAndCorrect extends NonMRStage {
   private JobInfo removeLowCoverageNodes(String inputPath, String outputPath)
       throws Exception {
     RemoveLowCoverageAvro stage = new RemoveLowCoverageAvro();
-    stage.setConf(getConf());
-    // Make a shallow copy of the stage options required by the compress
-    // stage.
-    Map<String, Object> stageOptions =
-        ContrailParameters.extractParameters(
-            this.stage_options,
-            stage.getParameterDefinitions().values());
+    stage.initializeAsChild(this);
+    stage.setParameter("inputpath", inputPath);
+    stage.setParameter("outputpath", outputPath);
 
-    stageOptions.put("inputpath", inputPath);
-    stageOptions.put("outputpath", outputPath);
-    stage.setParameters(stageOptions);
-    stage.execute();
+    executeChild(stage);
 
     JobInfo result = new JobInfo();
     if (stage.job == null) {
@@ -361,14 +356,11 @@ public class CompressAndCorrect extends NonMRStage {
     // TODO(jlewi): It would probably be better to continue running the
     // pipeline and not blocking on GraphStats.
     GraphStats statsStage = new GraphStats();
-    statsStage.setConf(getConf());
-    Map<String, Object> statsParameters = new HashMap<String, Object>();
-    statsParameters.put("inputpath", stageJob.graphPath);
-    statsParameters.put("outputpath", statsOutput);
-    statsStage.setParameters(statsParameters);
+    statsStage.initializeAsChild(this);
+    statsStage.setParameter("inputpath", stageJob.graphPath);
+    statsStage.setParameter("outputpath", statsOutput);
 
-    RunningJob statsJob = statsStage.runJob();
-    if (!statsJob.isSuccessful()) {
+    if (!executeChild(statsStage)) {
       throw new RuntimeException(
           String.format(
               "Computing stats had a problem. Graph: %s", stageJob.graphPath));

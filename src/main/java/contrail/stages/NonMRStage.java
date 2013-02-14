@@ -118,13 +118,13 @@ public abstract class NonMRStage extends StageBase {
 
     // Write the stageinfo if a writer is specified.
     if (infoWriter != null) {
-      infoWriter.writeStage(getStageInfo());
+      infoWriter.write(getWorkflowInfo());
     }
 
     stageMain();
 
     if (infoWriter != null) {
-      infoWriter.writeStage(getStageInfo());
+      infoWriter.write(getWorkflowInfo());
     }
 
     return true;

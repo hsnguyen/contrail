@@ -73,12 +73,14 @@ abstract public class StageBase extends Stage {
   /**
    * Initialize the stage by inheriting the settings from other.
    *
+   * This function sets up this stage as a child of other.
+   *
    * This function will throw an error if any of the settings have already
    * been set.
    *
    * @param other
    */
-  public void initialize(StageBase other) {
+  public void initializeAsChild(StageBase other) {
     parent = other;
     // Check if any of the settings have already been set.
     if (stage_options.size() != 0) {
@@ -144,7 +146,16 @@ abstract public class StageBase extends Stage {
   /**
    * Run the stage.
    */
-  abstract public void execute();
+  abstract public boolean execute();
+
+  /**
+   * Set the parameter.
+   * @param name
+   * @param value
+   */
+  public void setParameter(String name, Object value) {
+    stage_options.put(name, value);
+  }
 
   /**
    * Check whether parameters are valid.
