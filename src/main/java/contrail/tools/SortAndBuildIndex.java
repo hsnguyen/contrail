@@ -26,8 +26,8 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
-import contrail.stages.NonMRStage;
 import contrail.stages.ParameterDefinition;
+import contrail.stages.PipelineStage;
 import contrail.stages.Stage;
 
 /**
@@ -35,7 +35,7 @@ import contrail.stages.Stage;
  * graph.
  *
  */
-public class SortAndBuildIndex extends NonMRStage {
+public class SortAndBuildIndex extends PipelineStage {
   private static final Logger sLogger =
       Logger.getLogger(SortAndBuildIndex.class);
 
@@ -79,35 +79,24 @@ public class SortAndBuildIndex extends NonMRStage {
 
     // Sort the graph.
     SortGraph sortStage = new SortGraph();
-
-    HashMap<String, Object> sortParameters = new HashMap<String, Object>();
-    sortStage.setConf(getConf());
-    sortParameters.put("inputpath", inputPath);
+    sortStage.initializeAsChild(this);
+    sortStage.setParameter("inputpath", inputPath);
 
     String sortedGraph = FilenameUtils.concat(outputPath, "sorted");
-    sortParameters.put("outputpath", sortedGraph);
 
-    sortStage.setParameters(sortParameters);
+    sortStage.setParameter("outputpath", sortedGraph);
 
-
-    sortStage.execute();
+    executeChild(sortStage);
 
     CreateGraphIndex indexStage = new CreateGraphIndex();
-    indexStage.setConf(getConf());
+    indexStage.initializeAsChild(this);
 
     String indexPath = FilenameUtils.concat(outputPath, "indexed");
-    HashMap<String, Object> indexParameters = new HashMap<String, Object>();
-    indexParameters.put("inputpath", sortedGraph);
-    indexParameters.put("outputpath", indexPath);
 
-    indexStage.setParameters(indexParameters);
+    indexStage.setParameter("inputpath", sortedGraph);
+    indexStage.setParameter("outputpath", indexPath);
 
-    try {
-      indexStage.runJob();
-    } catch (Exception e) {
-      sLogger.fatal("BuildIndex stage failed.", e);
-      System.exit(-1);
-    }
+    executeChild(indexStage);
 
     sLogger.info("Indexed graph written to:" + indexPath);
   }
