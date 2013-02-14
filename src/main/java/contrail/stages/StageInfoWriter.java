@@ -59,17 +59,15 @@ public class StageInfoWriter {
     Date date = new Date();
     String timestamp = formatter.format(date);
 
-    String stageDir = FilenameUtils.concat(
-        outputPath, "stage_info");
-
-    String outputFile = FilenameUtils.concat(
-        stageDir, "stage_info." + timestamp + ".json");
+    Path outputDir = new Path(outputPath);
+    Path outputFile = new Path(FilenameUtils.concat(
+        outputPath, "stage_info." + timestamp + ".json"));
     try {
-      FileSystem fs = FileSystem.get(conf);
-      if (!fs.exists(new Path(stageDir))) {
-        fs.mkdirs(new Path(stageDir));
+      FileSystem fs = outputDir.getFileSystem(conf);
+      if (!fs.exists(outputDir)) {
+        fs.mkdirs(outputDir);
       }
-      FSDataOutputStream outStream = fs.create(new Path(outputFile));
+      FSDataOutputStream outStream = fs.create(outputFile);
 
       JsonFactory factory = new JsonFactory();
       JsonGenerator generator = factory.createJsonGenerator(outStream);

@@ -38,6 +38,8 @@ import org.apache.log4j.Logger;
 public abstract class NonMRStage extends StageBase {
   private static final Logger sLogger = Logger.getLogger(NonMRStage.class);
 
+  protected StageState stageState;
+
   public NonMRStage() {
     infoWriter = null;
   }
@@ -67,9 +69,8 @@ public abstract class NonMRStage extends StageBase {
     info.setCounters(new ArrayList<CounterInfo>());
     info.setParameters(new ArrayList<StageParameter>());
     info.setSubStages(new ArrayList<StageInfo>());
-
     info.setStageClass(this.getClass().getName());
-
+    info.setState(stageState);
     ArrayList<String> keys = new ArrayList<String>();
     keys.addAll(stage_options.keySet());
     Collections.sort(keys);
@@ -94,6 +95,11 @@ public abstract class NonMRStage extends StageBase {
     checkHasParametersOrDie(getRequiredParameters().toArray(new String[]{}));
     List<InvalidParameter> invalidParameters = validateParameters();
 
+    // LEWI DEBUG: NO COMMIT
+    if (this instanceof CompressAndCorrect) {
+      sLogger.info("debug");
+    }
+    stageState = StageState.STARTED;
     if (invalidParameters.size() > 0) {
       for (InvalidParameter parameter : invalidParameters) {
         sLogger.fatal(
@@ -122,6 +128,9 @@ public abstract class NonMRStage extends StageBase {
     }
 
     stageMain();
+
+    // TODO(jeremy@lewi.us): How to signify failure?
+    stageState = StageState.SUCCESS;
 
     if (infoWriter != null) {
       infoWriter.write(getWorkflowInfo());

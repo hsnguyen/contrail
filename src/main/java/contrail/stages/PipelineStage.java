@@ -34,6 +34,10 @@ abstract public class PipelineStage extends NonMRStage {
    * @param child
    */
   protected boolean executeChild(StageBase child) {
+    if (stageInfo == null) {
+      // Initialize the stage info.
+      stageInfo = super.getStageInfo();
+    }
     stageInfo.getSubStages().add(child.getStageInfo());
     current = child;
     boolean status = child.execute();
@@ -50,6 +54,8 @@ abstract public class PipelineStage extends NonMRStage {
       stageInfo = super.getStageInfo();
     }
 
+    // Update the state for this pipeline.
+    stageInfo.setState(stageState);
     // If a stage is currently executing update the info for that stage.
     if (current != null) {
       stageInfo.getSubStages().set(
