@@ -21,7 +21,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
@@ -91,12 +90,13 @@ import org.apache.log4j.PatternLayout;
  * when running from within java? Since stage implements Configured I think
  * the caller can just set the configuration. runJob should then initialize
  * its job configuration using the configuration stored in the class.
+ *
+ * TODO(jlewi): Move non deprecated methods into StageBase and get rid
+ * of this class
  */
+@Deprecated
 public abstract class Stage extends Configured implements Tool  {
-  private static final Logger sLogger =
-      Logger.getLogger(Stage.class);
-
-  protected StageInfoWriter infoWriter;
+  private static final Logger sLogger = Logger.getLogger(Stage.class);
 
   public Stage() {
   }
@@ -154,6 +154,10 @@ public abstract class Stage extends Configured implements Tool  {
     for (ParameterDefinition def: ContrailParameters.getCommon()) {
       parameters.put(def.getName(), def);
     }
+
+    // For legacy reasons we add K as a parameter always.
+    ParameterDefinition kDef = ContrailParameters.getK();
+    parameters.put(kDef.getName(), kDef);
     return Collections.unmodifiableMap(parameters);
   }
 
@@ -165,55 +169,6 @@ public abstract class Stage extends Configured implements Tool  {
       definitions = createParameterDefinitions();
     }
     return definitions;
-  }
-
-  /**
-   * Returns a list of the required parameters.
-   *
-   * Ideally subclasses shouldn't need to overload this.
-   */
-  protected List<String> getRequiredParameters() {
-    ArrayList<String> required = new ArrayList<String>();
-
-    // Parameters with no default value are assumed to be required.
-    for (ParameterDefinition def : getParameterDefinitions().values()) {
-      if (def.getDefault() == null) {
-        required.add(def.getName());
-      }
-    }
-
-    return required;
-  }
-
-  /**
-   * A class containing information about invalid parameters.
-   */
-  public class InvalidParameter {
-    public String stage;
-    // Name of the invalid parameter.
-    final public String name;
-
-    // Message describing why the parameter is invalid.
-    final public String message;
-
-    public InvalidParameter(String name, String message) {
-      this.name = name;
-      this.message = message;
-    }
-  }
-  /**
-   * Check whether parameters are valid.
-   * Subclasses which override this method should call the base class
-   *
-   * We return information describing all the invalid parameters. If
-   * the validation requires access to a valid job configuration
-   * then the caller should ensure the configuration is properly set.
-   */
-  public List<InvalidParameter> validateParameters() {
-    // TODO(jeremy@lewi.us): Should we automatically check that required
-    // parameters are set. The question is whether a parameter which has
-    // null for the default value should be considered required?
-    return new ArrayList<InvalidParameter>();
   }
 
   /**
@@ -282,39 +237,6 @@ public abstract class Stage extends Configured implements Tool  {
       printHelp();
       System.exit(0);
     }
-  }
-
-  /**
-   * Initialize the stage by inheriting the settings from other.
-   *
-   * This function will throw an error if any of the settings have already
-   * been set.
-   *
-   * @param other
-   */
-  public void initialize(Stage other) {
-    // Check if any of the settings have already been set.
-    if (stage_options.size() != 0) {
-      sLogger.fatal(
-          "This stage already has parameters set so it can't be initialized.",
-          new RuntimeException("Already initialitized"));
-    }
-
-    if (getConf() != null) {
-      sLogger.fatal(
-          "This stage already has a hadoop configuration.",
-          new RuntimeException("Already initialitized"));
-    }
-
-    // Initialize the hadoop configuration so we inherit hadoop variables
-    // like number of map tasks.
-    setConf(other.getConf());
-
-    // Get the parameters.
-    stage_options.putAll(ContrailParameters.extractParameters(
-        other.stage_options, this.definitions.values()));
-
-    infoWriter = other.infoWriter;
   }
 
   /**
@@ -414,8 +336,9 @@ public abstract class Stage extends Configured implements Tool  {
 
     parseCommandLine(args);
 
-    if (stage_options.containsKey("log_file")) {
-      String logFile = (String) (stage_options.get("log_file"));
+    String logFile = (String) stage_options.get("log_file");
+
+    if (logFile.length() > 0) {
       FileAppender fileAppender = new FileAppender();
       fileAppender.setFile(logFile);
       PatternLayout layout = new PatternLayout();
@@ -524,16 +447,6 @@ public abstract class Stage extends Configured implements Tool  {
       }
     }
     return info;
-  }
-
-  /**
-   * Return the stage info.
-   * @return
-   */
-  public StageInfo getStageInfo() {
-    // TODO(jeremy@lewi.us) We should make this an abstract method once
-    // Stage becomes an abstract class.
-    return new StageInfo();
   }
 
   /**

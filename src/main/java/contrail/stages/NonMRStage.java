@@ -35,7 +35,7 @@ import org.apache.log4j.Logger;
  * provide hooks at various points in stage execution which can be overloaded
  * to allow the subclass to customize functionality at different points.
  */
-public abstract class NonMRStage extends Stage {
+public abstract class NonMRStage extends StageBase {
   private static final Logger sLogger = Logger.getLogger(NonMRStage.class);
 
   public NonMRStage() {

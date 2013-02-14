@@ -69,8 +69,12 @@ public class CompressChains extends NonMRStage {
   // Seeds to use if any for pairmark avro.
   private ArrayList<Integer> seeds;
 
+
+  private StageInfo stageInfo;
+
   public CompressChains() {
     seeds = new ArrayList<Integer>();
+    stageInfo = super.getStageInfo();
   }
 
   /**
@@ -386,7 +390,7 @@ public class CompressChains extends NonMRStage {
    * Check if the seeds were passed in and if they were make sure they are
    * unique.
    */
-  private void cheackAndParseSeeds() {
+  private void checkAndParseSeeds() {
     if (((String)stage_options.get("seeds")).length() == 0) {
       sLogger.info(
           "No seeds provided. Seeds will be automatically generated.");
@@ -409,8 +413,13 @@ public class CompressChains extends NonMRStage {
   }
 
   @Override
+  public StageInfo getStageInfo() {
+    return stageInfo;
+  }
+
+  @Override
   protected void stageMain() {
-    cheackAndParseSeeds();
+    checkAndParseSeeds();
 
     String input_path = (String) stage_options.get("inputpath");
     String output_path = (String) stage_options.get("outputpath");
