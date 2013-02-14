@@ -58,6 +58,14 @@
                   "type": {"type": "array", "items": "StageInfo"},
                   "doc": ["If this stage runs any stages, this will be ",
                           "filled with info about them."]
+                 },
+                 {"name": "modified_parameters",
+                  "type": {"type": "array", "items": "StageParameter"},
+                  "doc": ["Sometimes parameters are modified by the code. We ",
+                          "want to record the modified values separatly from ",
+                          "the original values. For example, if the output ",
+                          "of a stage is moved this would recorded in ",
+                          "modified_parameters"]
                  }           
                 ]
      }     

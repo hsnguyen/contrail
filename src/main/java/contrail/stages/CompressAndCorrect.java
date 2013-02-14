@@ -431,6 +431,16 @@ public class CompressAndCorrect extends PipelineStage {
     FileHelper.moveDirectoryContents(getConf(), finalGraphPath, outputPath);
     sLogger.info("Final graph saved to:" + outputPath);
 
+    // Record the fact that for the last substage we moved its output.
+    StageInfo lastInfo =
+        stageInfo.getSubStages().get(stageInfo.getSubStages().size() - 1);
+
+    StageParameter finalPathParameter = new StageParameter();
+    finalPathParameter.setName("outputpath");
+    finalPathParameter.setValue(outputPath);
+    lastInfo.getModifiedParameters().add(finalPathParameter);
+
+
     // Clean up the intermediary directories.
     // TODO(jlewi): We might want to add an option to keep the intermediate
     // directories.

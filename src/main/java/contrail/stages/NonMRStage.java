@@ -68,6 +68,7 @@ public abstract class NonMRStage extends StageBase {
     StageInfo info = new StageInfo();
     info.setCounters(new ArrayList<CounterInfo>());
     info.setParameters(new ArrayList<StageParameter>());
+    info.setModifiedParameters(new ArrayList<StageParameter>());
     info.setSubStages(new ArrayList<StageInfo>());
     info.setStageClass(this.getClass().getName());
     info.setState(stageState);

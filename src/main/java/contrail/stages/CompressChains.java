@@ -310,6 +310,14 @@ public class CompressChains extends PipelineStage {
     sLogger.info("Moving graph from: " + latest_path);
     sLogger.info("To: " + final_path);
     FileHelper.moveDirectoryContents(getConf(), latest_path, final_path);
+    // Record the fact that for the last substage we moved its output.
+    StageInfo lastInfo =
+        stageInfo.getSubStages().get(stageInfo.getSubStages().size() - 1);
+
+    StageParameter finalPathParameter = new StageParameter();
+    finalPathParameter.setName("outputpath");
+    finalPathParameter.setValue(final_path);
+    lastInfo.getModifiedParameters().add(finalPathParameter);
   }
 
   /**

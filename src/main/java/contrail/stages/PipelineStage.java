@@ -19,7 +19,7 @@ package contrail.stages;
  */
 abstract public class PipelineStage extends NonMRStage {
   // Keep track of the stage info
-  private StageInfo stageInfo;
+  protected StageInfo stageInfo;
 
 
   // The stage we are currently executing if any.
