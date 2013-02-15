@@ -203,8 +203,7 @@ public class FindLastValidGraph extends PipelineStage {
         PairMergeAvro.class.getName(), RemoveLowCoverageAvro.class.getName(),
         PopBubblesAvro.class.getName(), RemoveTipsAvro.class.getName()));
 
-
-    StageInfo errorStage = null;
+    errorStage = null;
 
     int step = 0;
     while (stageStack.size() > 0 && !foundValid) {
@@ -234,8 +233,7 @@ public class FindLastValidGraph extends PipelineStage {
 
         ValidateGraph validateStage = new ValidateGraph();
         validateStage.initializeAsChild(validateStage);
-        HashMap<String, Object> parameters = new HashMap<String, Object>();
-        parameters.put("inputpath", outputPath);
+        validateStage.setParameter("inputpath", outputPath);
         String subDir = String.format(
             "step-%s-%s",sf.format(step), stageClass);
         validateStage.setParameter(
@@ -257,6 +255,12 @@ public class FindLastValidGraph extends PipelineStage {
         continue;
       }
 
+      if (current.getSubStages().size() > 0) {
+        // Default to checking its substages.
+        sLogger.info("Adding substages of stage:" + stageClass);
+        stageStack.addAll(current.getSubStages());
+        continue;
+      }
       // Do nothing for all other stages.
       sLogger.info("Skipping stage:" + stageClass);
     }

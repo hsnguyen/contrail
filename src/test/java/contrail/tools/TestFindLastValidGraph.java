@@ -47,6 +47,7 @@ public class TestFindLastValidGraph {
     stageInfo.setState(StageState.SUCCESS);
     stageInfo.setCounters(new ArrayList<CounterInfo>());
     stageInfo.setParameters(new ArrayList<StageParameter>());
+    stageInfo.setModifiedParameters(new ArrayList<StageParameter>());
     stageInfo.setSubStages(new ArrayList<StageInfo>());
 
     File outputPathFile = new File(outputPath);
@@ -81,6 +82,7 @@ public class TestFindLastValidGraph {
     pipelineInfo.setCounters(new ArrayList<CounterInfo>());
     pipelineInfo.setParameters(new ArrayList<StageParameter>());
     pipelineInfo.setSubStages(new ArrayList<StageInfo>());
+    pipelineInfo.setModifiedParameters(new ArrayList<StageParameter>());
 
     Integer K = 5;
     StageParameter kParameter = new StageParameter();
@@ -129,7 +131,6 @@ public class TestFindLastValidGraph {
       StageInfo stageInfo = createStage(
           outputPath, nodes, stage.getClass().getName());
       pipelineInfo.getSubStages().add(stageInfo);
-      testCase.errorStage = stageInfo;
     }
     {
       RemoveTipsAvro stage = new RemoveTipsAvro();
@@ -146,6 +147,8 @@ public class TestFindLastValidGraph {
       StageInfo stageInfo = createStage(
           outputPath, nodes, stage.getClass().getName());
       pipelineInfo.getSubStages().add(stageInfo);
+
+      testCase.errorStage = stageInfo;
     }
 
     testCase.jsonFile = FilenameUtils.concat(testDir, "stage_info.json");
@@ -184,10 +187,7 @@ public class TestFindLastValidGraph {
     parameters.put(
         "outputpath", FilenameUtils.concat(testDir, "validation"));
     findStage.setParameters(parameters);
-    try {
-      findStage.execute();
-    } catch (Exception e) {
-      e.printStackTrace();
+    if (!findStage.execute()) {
       fail("Job failed");
     }
    assertEquals(testCase.errorStage, findStage.getErrorStage());

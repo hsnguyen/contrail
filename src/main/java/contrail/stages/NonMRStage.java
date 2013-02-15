@@ -96,10 +96,6 @@ public abstract class NonMRStage extends StageBase {
     checkHasParametersOrDie(getRequiredParameters().toArray(new String[]{}));
     List<InvalidParameter> invalidParameters = validateParameters();
 
-    // LEWI DEBUG: NO COMMIT
-    if (this instanceof CompressAndCorrect) {
-      sLogger.info("debug");
-    }
     stageState = StageState.STARTED;
     if (invalidParameters.size() > 0) {
       for (InvalidParameter parameter : invalidParameters) {
