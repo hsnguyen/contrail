@@ -149,8 +149,9 @@ public class FastQInputFormat extends
     return retrieveSplits(fileName, in,fileSize);
   }
 
-  public List<NumberedFileSplit> retrieveSplits(Path fileName, FSDataInputStream stream, long fileSize) throws IOException
-  {
+  public List<NumberedFileSplit> retrieveSplits(
+      Path fileName, FSDataInputStream stream, long fileSize) throws
+          IOException {
     List<NumberedFileSplit> splits = new ArrayList<NumberedFileSplit>();
     long bytesConsumed = 0;
     long length = 0;

@@ -17,15 +17,16 @@ import org.apache.hadoop.mapred.RecordReader;
 import org.apache.hadoop.util.LineReader;
 import org.apache.log4j.Logger;
 
-/** Creates a FastQRecord.
+/**
+ * Record reader for FastQ files.
  * This record reader reads a 4 line fastq record
  * and passes it to the mapper as FastQText which
  * is a subclass of the Hadoop Text type.
  */
 @SuppressWarnings("unused")
 class FastQRecordReader implements RecordReader<LongWritable, FastQText> {
-  private static final Logger sLogger
-  = Logger.getLogger(FastQRecordReader.class);
+  private static final Logger sLogger =
+      Logger.getLogger(FastQRecordReader.class);
 
   //The constructor gets this as a parameter. This data member stores it in a
   //private member so it can be used to get the number in the getSplitsForFile
@@ -41,7 +42,7 @@ class FastQRecordReader implements RecordReader<LongWritable, FastQText> {
 
   // Created this data member because this is defined in the newer api's
   // 'mapreduce' package which is somehow not accessible from here.
-
+  // TODO(jeremy@lewi.us): Why do we need this?
   public static final String MAX_LINE_LENGTH =
       "mapreduce.input.linerecordreader.line.maxlength";
 
