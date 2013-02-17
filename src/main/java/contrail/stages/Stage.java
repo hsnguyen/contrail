@@ -181,7 +181,9 @@ public abstract class Stage extends Configured implements Tool  {
     ArrayList<String> commandLine = new ArrayList<String>();
     for (String key : keys) {
       commandLine.add(String.format(
-          "--%s=%s", key, stage_options.get(key).toString()));
+          "%s: command: --%s=%s",
+          this.getClass().getSimpleName(), key,
+          stage_options.get(key).toString()));
     }
     // Print out all the parameters on one line. This is convenient
     // for copying and pasting to rerun the stage.
