@@ -16,6 +16,7 @@ package contrail.io;
 
 import java.io.DataInput;
 import java.io.DataOutput;
+import java.io.EOFException;
 import java.io.IOException;
 
 import org.apache.hadoop.io.Writable;
@@ -39,14 +40,23 @@ public class FastQWritable implements Writable {
 
   public void readFields(DataInput in) throws IOException {
     id = in.readLine();
+    if (id == null) {
+      throw new EOFException();
+    }
     // First character should be the @ symbol.
     if (id.charAt(0) == '@') {
       id = id.substring(1);
     }
     dna = in.readLine();
     // Skip the next line.
-    in.readLine();
+    String line = in.readLine();
+    if (line == null) {
+      throw new EOFException();
+    }
     qValue = in.readLine();
+    if (qValue == null) {
+      throw new EOFException();
+    }
   }
 
   public static FastQWritable read(DataInput in) throws IOException {

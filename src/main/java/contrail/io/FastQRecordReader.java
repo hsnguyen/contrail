@@ -72,8 +72,7 @@ class FastQRecordReader implements RecordReader<LongWritable, FastQText> {
     this.pos = start;
   }
 
-  public long getpos()
-  {
+  public long getpos() {
     return pos;
   }
 
@@ -84,6 +83,7 @@ class FastQRecordReader implements RecordReader<LongWritable, FastQText> {
   public FastQText createValue() {
     return new FastQText();
   }
+
   @Override
   public synchronized boolean next(LongWritable key, FastQText value)
       throws IOException {
@@ -94,7 +94,6 @@ class FastQRecordReader implements RecordReader<LongWritable, FastQText> {
       record[i] = new Text();
 
     // We never read past the split boundary.
-
     while (pos < end) {
 
       //System.out.println("pos: "+ pos + "end:"+ end);
@@ -136,9 +135,11 @@ class FastQRecordReader implements RecordReader<LongWritable, FastQText> {
       return Math.min(1.0f, (pos - start) / (float)(end - start));
     }
   }
+
   public  synchronized long getPos() throws IOException {
     return pos;
   }
+
   public synchronized void close() throws IOException {
     if (lr != null) {
       lr.close();
