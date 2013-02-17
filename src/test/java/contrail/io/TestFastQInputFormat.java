@@ -4,36 +4,33 @@ import java.io.File;
 import org.junit.*;
 import static org.junit.Assert.*;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FSInputStream;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.util.LineReader;
 
 import contrail.util.ByteUtil;
+import contrail.util.FileHelper;
 import contrail.util.MockFSDataInputStream;
 
-import java.io.BufferedInputStream;
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
-import java.io.FileOutputStream;
-import java.io.BufferedOutputStream;
 import java.nio.ByteBuffer;
 import java.util.List;
 
 public class TestFastQInputFormat
 {
-   
-  public static final String FastQ_1 = 
+
+  public static final String FastQ_1 =
       "@1/1\n" +
           "GGCGCGGGCCAGTGCGGCAAAGAATTTCGCCGAGATCCCACGCAAGGTGCGCATACCATCACCTACCACCGAGATAATGGCCAGCCGTTCCGTCACTGCC\n" +
-          "+\n" + 
+          "+\n" +
           "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n" +
           "@2/1\n" +
           "GGCTCCGAAGTGTAGCCCAGTTCTTTTAACTCACGCATTGTCTGTTGCGTGGTTTCATCATCCACGGCTGCATAACCCAGCTCTTTCAGTTGCCAGATTT\n" +
@@ -68,7 +65,7 @@ public class TestFastQInputFormat
           "CCTTACCAGAAAACGTAAAA\n" +
           "+\n" +
           "?????????????????????\n";
-          
+
   private JobConf conf;
   private NumberedFileSplit split;
   private File tempfile;
@@ -88,28 +85,25 @@ public class TestFastQInputFormat
     tempfile.delete();
     split = null;
   }
-  
+
   private void fileWrite(String s) throws IOException
   {
     PrintWriter pw = new PrintWriter( new BufferedWriter( new FileWriter(tempfile) ) );
     pw.write(s);
     pw.close();
   }
-  
+
   @Test
-  public void test_takeToNextStart_fromStart() throws IOException
-  {
-    Text buffer = new Text();
+  public void test_takeToNextStart_fromStart() throws IOException {
     long offset;
     fileWrite(FastQ_1);
     FastQInputFormat fqif = new FastQInputFormat();
     ByteBuffer byteBuffer = ByteBuffer.wrap(ByteUtil.stringToBytes(FastQ_1));
     MockFSDataInputStream mock_stream = new MockFSDataInputStream(byteBuffer);
-    FSDataInputStream fstream = new FSDataInputStream(mock_stream);  
-    offset = fqif.takeToNextStart(fstream, 0, FastQ_1.length());
-    LineReader lineReader = new LineReader(fstream);
-    lineReader.readLine(buffer);
-    assertEquals(buffer.toString(), "@1/1");  
+    FSDataInputStream fstream = new FSDataInputStream(mock_stream);
+    offset = fqif.takeToNextStart(fstream, 0);
+    assertEquals(0, offset);
+    assertEquals(0, fstream.getPos());
   }
 
   @Test
@@ -118,12 +112,26 @@ public class TestFastQInputFormat
     Text buffer = new Text();
     FastQInputFormat fqif = new FastQInputFormat();
     ByteBuffer byteBuffer = ByteBuffer.wrap(ByteUtil.stringToBytes(FastQ_1));
-    MockFSDataInputStream mock_stream = new MockFSDataInputStream(byteBuffer);
-    FSDataInputStream fstream = new FSDataInputStream(mock_stream);
-    long offset = fqif.takeToNextStart(fstream, 10, FastQ_1.length());
+
+    File tempDir = FileHelper.createLocalTempDir();
+    File tempFile = new File(tempDir, "input.fastq");
+    PrintStream outStream = new PrintStream(tempFile);
+    outStream.append(FastQ_1);
+    outStream.close();
+
+    Configuration conf = new Configuration();
+    FSDataInputStream fstream = FileSystem.get(conf).open(
+        new Path(tempFile.getPath()));
+
+    long offset = fqif.takeToNextStart(fstream, 10);
+    assertEquals(210, offset);
+    assertEquals(210, fstream.getPos());
+
+    // Double check that when we read the next line we get the start of
+    // a FastQ Record.
     LineReader lineReader = new LineReader(fstream);
-    lineReader.readLine(buffer);    
-    assertEquals(buffer.toString(), "@2/1"); 
+    lineReader.readLine(buffer);
+    assertEquals(buffer.toString(), "@2/1");
   }
 
   @Test
@@ -132,44 +140,53 @@ public class TestFastQInputFormat
     Text buffer = new Text();
     FastQInputFormat fqif = new FastQInputFormat();
     ByteBuffer byteBuffer = ByteBuffer.wrap(ByteUtil.stringToBytes(FastQ_2));
-    MockFSDataInputStream mock_stream = new MockFSDataInputStream(byteBuffer);
-    FSDataInputStream fstream = new FSDataInputStream(mock_stream);  
-    long offset = fqif.takeToNextStart(fstream, 1, FastQ_2.length());  
+
+    File tempDir = FileHelper.createLocalTempDir();
+    File tempFile = new File(tempDir, "input.fastq");
+    PrintStream outStream = new PrintStream(tempFile);
+    outStream.append(FastQ_1);
+    outStream.close();
+
+    Configuration conf = new Configuration();
+    FSDataInputStream fstream = FileSystem.get(conf).open(
+        new Path(tempFile.getPath()));
+
+    long offset = fqif.takeToNextStart(fstream, 1);
     LineReader lineReader = new LineReader(fstream);
-    lineReader.readLine(buffer);    
+    lineReader.readLine(buffer);
     assertEquals(buffer.toString(), "@2/1");
   }
 
-  
+
   @Test
   public void test_retrieveSplits() throws IOException
   {
     List<NumberedFileSplit> numberedSplitList;
-    
+
     long streamLength = FastQ_3.length();
-    
+
     Text buffer = new Text();
     FastQInputFormat fqif = new FastQInputFormat();
     ByteBuffer byteBuffer = ByteBuffer.wrap(ByteUtil.stringToBytes(FastQ_3));
     MockFSDataInputStream mock_stream = new MockFSDataInputStream(byteBuffer);
-    FSDataInputStream fstream = new FSDataInputStream(mock_stream);  
-    
+    FSDataInputStream fstream = new FSDataInputStream(mock_stream);
+
     JobConf conf = new JobConf();
-    conf.setInt("splitSize",60); 
-    FastQInputFormat fastQInputFormat = new FastQInputFormat();   
+    conf.setInt("splitSize",60);
+    FastQInputFormat fastQInputFormat = new FastQInputFormat();
     fastQInputFormat.configure(conf);
-    
+
     long bytes = 0;
     for (NumberedFileSplit split: fastQInputFormat.retrieveSplits(new Path("dummy"), fstream, streamLength))
-      bytes += split.getLength(); 
-    
-    // Check that the total bytes in all splits put together is equal to the 
+      bytes += split.getLength();
+
+    // Check that the total bytes in all splits put together is equal to the
     // number of bytes in file - that is, no bytes are getting 'missed' in the splitting.
     assertEquals(bytes, streamLength);
 
     //TODO:(deepak) - More Test Cases to cover the RecordReader.
   }
-  
+
   public static void main(String args[]) {
     org.junit.runner.JUnitCore.main(TestFastQInputFormat.class.getName());
   }

@@ -1,8 +1,6 @@
 package contrail.io;
 
-import java.io.DataInputStream;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,8 +21,6 @@ import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.util.LineReader;
 import org.apache.log4j.Logger;
 
-import contrail.util.MockFSDataInputStream;
-
 /** InputFormat to read FastQFiles.
  *
  * In general, the algorithm is to seek
@@ -35,23 +31,12 @@ import contrail.util.MockFSDataInputStream;
 
 @SuppressWarnings("deprecation")
 public class FastQInputFormat extends
-FileInputFormat<LongWritable, FastQText> implements JobConfigurable {
-
-  // TODO(deepak): according to the fastq spec, is this the maximum?
-  private static final int MAX_READ_LENGTH = 500;
-
-  private static final Logger sLogger
-  = Logger.getLogger(FastQInputFormat.class);
-
+    FileInputFormat<LongWritable, FastQText> implements JobConfigurable {
+  private static final Logger sLogger =
+      Logger.getLogger(FastQInputFormat.class);
   // Desired size of the split The split is not guaranteed to be exactly this
   // size. It may be a few bytes more.
-
-  public long splitSize;
-
-  private long end;
-  // to keep track of the current offset
-  private long currentOffset;
-
+  private long splitSize;
   private Text buffer = new Text();
 
   @Override
@@ -84,42 +69,64 @@ FileInputFormat<LongWritable, FastQText> implements JobConfigurable {
     return splits.toArray(new NumberedFileSplit[splits.size()]);
   }
 
-  // Given the input data stream, and an offset, take us to the very next start of new record.
-  public long takeToNextStart(FSDataInputStream stream, long start, long end) throws IOException
-  {
+  /**
+   * Advance the stream to first FastQRecord at or after position start.
+   *
+   * @param stream: The stream.
+   * @param start: The position to start searching for the start of a
+   *   fastqrecord
+   * @return: The position of the stream.
+   * @throws IOException
+   *
+   * If a FastQRecord begins at position start then the stream will point
+   * to that record.
+   */
+  protected long takeToNextStart(
+      FSDataInputStream stream, long start) throws IOException {
+    stream.seek(start);
+    LineReader reader = new LineReader(stream);
 
-    if (start > 0)
-    {
-      stream.seek(start);
-      LineReader reader = new LineReader(stream);
+    // We need to keep track of the actual number of bytes read in order
+    // to compute the offset. We can't simply use stream.getPos() because
+    // we are using a buffered reader so the reader could have read past
+    // the end of the line.
+    int bytesRead = 0;
 
-      int bytesRead = 0;
-      do
-      {
-        bytesRead = reader.readLine(buffer, (int) Math.min((end - start),MAX_READ_LENGTH) );
-        if (bytesRead > 0 && buffer.getBytes()[0] != '@')
-          start += bytesRead;
-        else
-        {
-          long endOfCurrentLine = start + bytesRead;
-          // read two lines.
-          bytesRead = reader.readLine(buffer, (int) Math.min((end - start),MAX_READ_LENGTH) );
-          bytesRead = reader.readLine(buffer, (int) Math.min((end - start),MAX_READ_LENGTH) );
-          if (bytesRead > 0 && buffer.getBytes()[0] == '+')
-            break;
-          else
-          {
-            start = endOfCurrentLine;
-            stream.seek(start);
-            reader = new LineReader(stream);
-          }
-        }
-      }while(bytesRead > 0);
+    // Records the start position of the FastQ record.
+    long recordStart = start;
+    boolean foundRecord = false;
 
-      // control comes here from break.
-      stream.seek(start);
+    // We use recordLength to record the number of bytes read since the
+    // last position elgible to be the start of the record.
+    long recordLength = 0;
+    do {
+      recordStart += recordLength;
+      recordLength = 0;
+
+      bytesRead = reader.readLine(buffer);
+      recordLength += bytesRead;
+      // The first line of a FastQ record begins with a '@' but
+      // '@' can also
+      if (bytesRead > 0 && buffer.getBytes()[0] != '@') {
+        continue;
+      }
+
+      // read two lines.
+      bytesRead = reader.readLine(buffer);
+      recordLength += bytesRead;
+      bytesRead = reader.readLine(buffer);
+      recordLength += bytesRead;
+      if (bytesRead > 0 && buffer.getBytes()[0] == '+') {
+        foundRecord = true;
+        break;
+      }
+    } while(bytesRead > 0);
+
+    if (!foundRecord) {
+      recordStart = -1;
     }
-    return start;
+    stream.seek(recordStart);
+    return recordStart;
   }
 
   @SuppressWarnings("deprecation")
@@ -153,7 +160,7 @@ FileInputFormat<LongWritable, FastQText> implements JobConfigurable {
     int counter = 0;
 
     // cast as bytes because LineReader takes a byte array.
-    takeToNextStart(stream, 0, fileSize);
+    takeToNextStart(stream, 0);
     while (bytesConsumed < fileSize) {
       // We allow the last split to be 1.5 times the normal splitSize.
       if (bytesConsumed + (1.5 * splitSize) <= fileSize) {
@@ -161,7 +168,7 @@ FileInputFormat<LongWritable, FastQText> implements JobConfigurable {
         // jump by the length of the split.
         bytesConsumed += splitSize;
 
-        bytesConsumed = takeToNextStart(stream, bytesConsumed, fileSize);
+        bytesConsumed = takeToNextStart(stream, bytesConsumed);
 
         splits.add(new NumberedFileSplit(fileName, begin,
             bytesConsumed - begin, splitNumber, new String[] {}));
