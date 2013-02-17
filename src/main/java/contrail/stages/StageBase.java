@@ -201,7 +201,7 @@ abstract public class StageBase extends Stage {
   protected void setupLogging() {
     String logFile = (String) stage_options.get("log_file");
 
-    if (logFile.length() > 0) {
+    if (logFile != null && logFile.length() > 0) {
       FileAppender fileAppender = new FileAppender();
       fileAppender.setFile(logFile);
       PatternLayout layout = new PatternLayout();
