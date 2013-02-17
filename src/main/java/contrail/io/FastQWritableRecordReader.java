@@ -1,21 +1,12 @@
 package contrail.io;
 import java.io.EOFException;
 import java.io.IOException;
-import java.io.InputStream;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.Seekable;
 import org.apache.hadoop.io.LongWritable;
-import org.apache.hadoop.io.Text;
-import org.apache.hadoop.mapred.FileSplit;
-import org.apache.hadoop.mapred.JobConf;
-import org.apache.hadoop.mapred.LineRecordReader;
 import org.apache.hadoop.mapred.RecordReader;
-import org.apache.hadoop.util.LineReader;
 import org.apache.log4j.Logger;
 
 /**
@@ -24,7 +15,6 @@ import org.apache.log4j.Logger;
  * and passes it to the mapper as FastQWritable which
  * is a subclass of the Hadoop Text type.
  */
-@SuppressWarnings("unused")
 class FastQWritableRecordReader implements
     RecordReader<LongWritable, FastQWritable> {
   private static final Logger sLogger =
@@ -33,23 +23,12 @@ class FastQWritableRecordReader implements
   //The constructor gets this as a parameter. This data member stores it in a
   //private member so it can be used to get the number in the getSplitsForFile
   //method.
-  private NumberedFileSplit  fileSplit;
   private long               start;
-  private long               pos;
   private long               end;
-  private LineReader         lr;
   private FSDataInputStream  fileIn;
-
-  // Created this data member because this is defined in the newer api's
-  // 'mapreduce' package which is somehow not accessible from here.
-  // TODO(jeremy@lewi.us): Why do we need this?
-  //public static final String MAX_LINE_LENGTH =
-  //    "mapreduce.input.linerecordreader.line.maxlength";
 
   public FastQWritableRecordReader(Configuration job, NumberedFileSplit split)
       throws IOException {
-    //this(job, split, null);
-    fileSplit = split;
     start = split.getStart();
     end = start + split.getLength();
     final Path file = split.getPath();
@@ -58,30 +37,6 @@ class FastQWritableRecordReader implements
     final FileSystem fs = file.getFileSystem(job);
     fileIn = fs.open(file);
     fileIn.seek(start);
-  }
-
-  // TODO(jeremy@lewi.us): Why is this constructor taking a recordDelimiter
-  // as an argument?
-//  public FastQWritableRecordReader(Configuration job, NumberedFileSplit split,
-//      byte[] recordDelimiter) throws IOException {
-//
-//    fileSplit = split;
-//    //this.maxLineLength = job.getInt(MAX_LINE_LENGTH, Integer.MAX_VALUE);
-//    start = split.getStart();
-//    end = start + split.getLength();
-//    final Path file = split.getPath();
-//
-//    // Open the file and seek to the start of the split
-//    final FileSystem fs = file.getFileSystem(job);
-//    fileIn = fs.open(file);
-//    fileIn.seek(start);
-//    //lr = new LineReader(fileIn);
-//
-//    this.pos = start;
-//  }
-
-  public long getpos() {
-    return pos;
   }
 
   public LongWritable createKey() {
@@ -95,60 +50,39 @@ class FastQWritableRecordReader implements
   @Override
   public synchronized boolean next(LongWritable key, FastQWritable value)
       throws IOException {
-
     try {
       value.readFields(fileIn);
     } catch (EOFException e) {
       return false;
     }
-    // We never read past the split boundary.
-//    while (pos < end) {
-//
-//      //System.out.println("pos: "+ pos + "end:"+ end);
-//      key.set(fileSplit.getNumber());
-//      for (int i = 0; i< 4; i++)
-//      {
-//        int newSize = lr.readLine(record[i]);
-//
-//        if (newSize == 0 && i == 0)
-//        {
-//          return false;
-//        }
-//
-//        if (newSize == 0 && i>0)
-//        {
-//          sLogger.info("[ERROR]: Malformed Data");
-//          System.out.println("Malformed Data");
-//          throw new IOException("ERROR: Malformed Data");
-//        }
-//        pos = pos + newSize;
-//      }
-//
-//      value.set(record[0].toString(), record[1].toString(),
-//          record[3].toString());
-//
-//      return true;
-//    }
     return true;
   }
 
   /**
    * Get the progress within the split
    */
-
   public float getProgress() {
     if (start == end) {
       return 0.0f;
     } else {
+      long pos = start;
+      try {
+        pos = getPos();
+      } catch (IOException e) {
+        // Do nothing..
+      }
       return Math.min(1.0f, (pos - start) / (float)(end - start));
     }
   }
-  public  synchronized long getPos() throws IOException {
-    return pos;
+
+  public long getPos() throws IOException {
+    // TODO(jeremy@lewi.us): Does pos return the correct possition even
+    // if we buffered the input?
+    return fileIn.getPos();
+
   }
-  public synchronized void close() throws IOException {
-    if (lr != null) {
-      lr.close();
-    }
+
+  public void close() throws IOException {
+    fileIn.close();
   }
 }
