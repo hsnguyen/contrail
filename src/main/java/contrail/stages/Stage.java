@@ -405,6 +405,19 @@ public abstract class Stage extends Configured implements Tool  {
         stage_options.put(def.getName(), def.getDefault());
       }
     }
+
+
+    if (!(this instanceof StageBase)) {
+      // TODO(jeremy@lewi.us): For backwards compatibility with classes
+      // which are subclasses of Stage and not StageBase. if WriteConfig
+      // is the empty string we need to remove it as a parameter.
+      // This is because the old code assumed that if writeconfig isn't true
+      // it won't be a parameter.
+      String value = (String) stage_options.get("writeconfig");
+      if (value.length() == 0) {
+        stage_options.remove("writeconfig");
+      }
+    }
   }
 
   /**
