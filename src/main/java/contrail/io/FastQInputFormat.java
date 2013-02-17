@@ -213,8 +213,4 @@ public class FastQInputFormat extends
         fileName.toString() + " resulted in " + splits.size() +  " splits ");
     return splits;
   }
-
-//  public static boolean isRecord(char ch) {
-//    return (ch == '+' ? true : false);
-//  }
 }
