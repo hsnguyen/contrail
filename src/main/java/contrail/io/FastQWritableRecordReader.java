@@ -7,7 +7,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.mapred.RecordReader;
-import org.apache.log4j.Logger;
 
 /**
  * Record reader for FastQ files.
@@ -17,9 +16,6 @@ import org.apache.log4j.Logger;
  */
 class FastQWritableRecordReader implements
     RecordReader<LongWritable, FastQWritable> {
-  private static final Logger sLogger =
-      Logger.getLogger(FastQWritableRecordReader.class);
-
   //The constructor gets this as a parameter. This data member stores it in a
   //private member so it can be used to get the number in the getSplitsForFile
   //method.
@@ -79,7 +75,6 @@ class FastQWritableRecordReader implements
     // TODO(jeremy@lewi.us): Does pos return the correct possition even
     // if we buffered the input?
     return fileIn.getPos();
-
   }
 
   public void close() throws IOException {
