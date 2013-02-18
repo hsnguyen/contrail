@@ -127,14 +127,14 @@ public class FindLastValidGraph extends PipelineStage {
     for (StageParameter parameter  : stage.getModifiedParameters()) {
       if (parameter.getName().toString().equals(name)) {
         value = parameter.getValue().toString();
-        break;
+        return value;
       }
     }
 
     for (StageParameter parameter  : stage.getParameters()) {
       if (parameter.getName().toString().equals(name)) {
         value = parameter.getValue().toString();
-        break;
+        return value;
       }
     }
     return value;
