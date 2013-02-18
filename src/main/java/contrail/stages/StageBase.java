@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.hadoop.mapred.RunningJob;
+import org.apache.log4j.Appender;
 import org.apache.log4j.FileAppender;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PatternLayout;
@@ -205,9 +206,9 @@ abstract public class StageBase extends Stage {
     if (logFile != null && logFile.length() > 0) {
       boolean hasAppender = false;
 
-      for (Enumeration<Logger> e = Logger.getRootLogger().getAllAppenders();
+      for (Enumeration<Appender> e = Logger.getRootLogger().getAllAppenders();
            e.hasMoreElements(); ) {
-        Logger logger = e.nextElement();
+        Appender logger = e.nextElement();
         if (logger.getName().equals(logFile)) {
           // We've already setup the logger to the file so we don't setup
           // another one because that would cause messages to be logged multiple
