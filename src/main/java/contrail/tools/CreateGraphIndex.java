@@ -31,13 +31,12 @@ import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
 import contrail.stages.ContrailParameters;
+import contrail.stages.NonMRStage;
 import contrail.stages.ParameterDefinition;
-import contrail.stages.Stage;
 import contrail.graph.GraphNodeData;
 
 /**
@@ -50,9 +49,11 @@ import contrail.graph.GraphNodeData;
  *
  * Note: This code requies Avro 1.7
  */
-public class CreateGraphIndex extends Stage {
+public class CreateGraphIndex extends NonMRStage {
   private static final Logger sLogger =
       Logger.getLogger(CreateGraphIndex.class);
+
+  ArrayList<FSDataInputStream> streams;
 
   protected Map<String, ParameterDefinition>
   createParameterDefinitions() {
@@ -146,59 +147,37 @@ public class CreateGraphIndex extends Stage {
     }
   }
 
-  @Override
-  public RunningJob runJob() throws Exception {
-    String[] required_args = {"inputpath", "outputpath"};
-    checkHasParametersOrDie(required_args);
-
-    String inputPath = (String) stage_options.get("inputpath");
-    String outputPath = (String) stage_options.get("outputpath");
-
-    List<String> graphFiles = getGraphFiles();
-    if (graphFiles.size() == 0) {
-      sLogger.fatal(
-          "No .avro files found in:" + inputPath,
-          new RuntimeException("No files matched."));
-      System.exit(-1);
-    }
-
-    SortedKeyValueFile.Writer.Options writerOptions =
-        new SortedKeyValueFile.Writer.Options();
-
-    GraphNodeData nodeData = new GraphNodeData();
-    writerOptions.withConfiguration(getConf());
-    writerOptions.withKeySchema(Schema.create(Schema.Type.STRING));
-    writerOptions.withValueSchema(nodeData.getSchema());
-    writerOptions.withPath(new Path(outputPath));
-
-    SortedKeyValueFile.Writer<CharSequence, GraphNodeData> writer =
-        new SortedKeyValueFile.Writer<CharSequence,GraphNodeData>(
-            writerOptions);
-
-    FileSystem fs = null;
-    try{
-      fs = FileSystem.get(getConf());
-    } catch (IOException e) {
-      sLogger.fatal(e.getMessage(), e);
-      System.exit(-1);
-    }
-
-    ArrayList<FSDataInputStream> streams = new ArrayList<FSDataInputStream>();
+  /**
+   * Construct a sorted set of streams to read from.
+   * @return
+   */
+  private TreeSet<GraphStream> buildStreamSet(
+      FileSystem fs,  List<String> graphFiles) {
+    streams = new ArrayList<FSDataInputStream>();
     ArrayList<SpecificDatumReader<GraphNodeData>> readers = new
         ArrayList<SpecificDatumReader<GraphNodeData>>();
-
-    int numNodes = 0;
     TreeSet<GraphStream> graphStreams = new TreeSet<GraphStream>();
     for (String inputFile : graphFiles) {
-      FSDataInputStream inStream = fs.open(new Path(inputFile));
+      FSDataInputStream inStream = null;
+      try {
+        inStream = fs.open(new Path(inputFile));
+      } catch (IOException e) {
+        sLogger.fatal("Could not open file:" + inputFile, e);
+        System.exit(-1);
+      }
       SpecificDatumReader<GraphNodeData> reader =
           new SpecificDatumReader<GraphNodeData>(GraphNodeData.class);
 
       streams.add(inStream);
       readers.add(reader);
 
-      DataFileStream<GraphNodeData> avroStream =
-          new DataFileStream<GraphNodeData>(inStream, reader);
+      DataFileStream<GraphNodeData> avroStream = null;
+      try {
+        avroStream = new DataFileStream<GraphNodeData>(inStream, reader);
+      } catch (IOException e) {
+        sLogger.fatal("Could not create avro stream.", e);
+        System.exit(-1);
+      }
 
       GraphStream graphStream = new GraphStream(avroStream);
 
@@ -209,27 +188,86 @@ public class CreateGraphIndex extends Stage {
 
       graphStreams.add(graphStream);
     }
+    return graphStreams;
+  }
 
+  private void writeSortedGraph(TreeSet<GraphStream> graphStreams) {
+    String outputPath = (String) stage_options.get("outputpath");
+    SortedKeyValueFile.Writer.Options writerOptions =
+        new SortedKeyValueFile.Writer.Options();
+
+    GraphNodeData nodeData = new GraphNodeData();
+    writerOptions.withConfiguration(getConf());
+    writerOptions.withKeySchema(Schema.create(Schema.Type.STRING));
+    writerOptions.withValueSchema(nodeData.getSchema());
+    writerOptions.withPath(new Path(outputPath));
+
+    SortedKeyValueFile.Writer<CharSequence, GraphNodeData> writer = null;
+
+    try {
+      writer = new SortedKeyValueFile.Writer<CharSequence,GraphNodeData>(
+          writerOptions);
+    } catch (IOException e) {
+      sLogger.fatal("There was a problem creating file:" + outputPath, e);
+      System.exit(-1);
+    }
+
+    int numNodes = 0;
     while (graphStreams.size() > 0) {
-      GraphStream stream = graphStreams.first();
-      graphStreams.remove(stream);
-
-      writer.append(stream.getData().getNodeId().toString(), stream.getData());
+      GraphStream stream = graphStreams.pollFirst();
+      try {
+        writer.append(
+            stream.getData().getNodeId().toString(), stream.getData());
+      } catch (IOException e) {
+        sLogger.fatal("There was a problem writing to file:" + outputPath, e);
+        System.exit(-1);
+      }
       ++numNodes;
       if (stream.hasNext()) {
         stream.next();
         graphStreams.add(stream);
       }
-
     }
 
-    writer.close();
+    try {
+      writer.close();
+    } catch (IOException e) {
+      sLogger.fatal("There was a problem closing file:" + outputPath, e);
+      System.exit(-1);
+    }
     sLogger.info("Number of nodes written:" + numNodes);
-    for (FSDataInputStream stream : streams) {
-      stream.close();
+  }
+
+  @Override
+  protected void stageMain () {
+    String inputPath = (String) stage_options.get("inputpath");
+    List<String> graphFiles = getGraphFiles();
+    if (graphFiles.size() == 0) {
+      sLogger.fatal(
+          "No .avro files found in:" + inputPath,
+          new RuntimeException("No files matched."));
+      System.exit(-1);
     }
 
-    return null;
+    FileSystem fs = null;
+    try{
+      fs = FileSystem.get(getConf());
+    } catch (IOException e) {
+      sLogger.fatal(e.getMessage(), e);
+      System.exit(-1);
+    }
+
+    TreeSet<GraphStream> graphStreams  = buildStreamSet(fs, graphFiles);
+    writeSortedGraph(graphStreams);
+
+    for (FSDataInputStream stream : streams) {
+      try {
+        stream.close();
+      } catch(IOException e) {
+        sLogger.fatal("Couldn't close stream", e);
+        System.exit(-1);
+      }
+    }
   }
 
   public static void main(String[] args) throws Exception {

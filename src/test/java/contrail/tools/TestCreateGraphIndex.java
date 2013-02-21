@@ -20,7 +20,6 @@ import contrail.sequences.DNAAlphabetFactory;
 import contrail.util.FileHelper;
 
 public class TestCreateGraphIndex {
-
   @Test
   public void testRun() {
     // Create a graph and write it to a file.
@@ -71,11 +70,8 @@ public class TestCreateGraphIndex {
     stage.setParameters(params);
 
     // Catch the following after debugging.
-    try {
-      stage.runJob();
-    } catch (Exception exception) {
-      exception.printStackTrace();
-      fail("Exception occured:" + exception.getMessage());
+    if (!stage.execute()) {
+      fail("Stage failed");
     }
   }
 }
