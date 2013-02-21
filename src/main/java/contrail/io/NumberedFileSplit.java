@@ -8,11 +8,11 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.InputSplit;
 
-/** NumberedFileSplit extends FileSplit. The only thing that it does differently
+/** 
+ * NumberedFileSplit extends FileSplit. The only thing that it does differently
  * from FileSplit is that is has a new member called "number" which stores
  * information about what split 'number' is the current split.
  */
-
 public class NumberedFileSplit extends FileSplit implements InputSplit {
 
   private Path file;

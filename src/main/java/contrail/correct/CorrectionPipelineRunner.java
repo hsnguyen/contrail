@@ -21,7 +21,6 @@ import contrail.correct.InvokeFlash;
 import contrail.correct.InvokeQuake;
 import contrail.correct.JoinReads;
 import contrail.correct.KmerCounter;
-import contrail.correct.RekeyReads;
 import contrail.stages.ContrailParameters;
 import contrail.stages.NotImplementedException;
 import contrail.stages.ParameterDefinition;
@@ -74,10 +73,8 @@ public class CorrectionPipelineRunner extends Stage{
     definitions.putAll(super.createParameterDefinitions());
     // We add all the options for the stages we depend on.
     Stage[] substages =
-      {
-        new RekeyReads(), new JoinReads(), new InvokeFlash(), new KmerCounter(), new ConvertKMerCountsToText(), new CutOffCalculation(),
-        new BuildBitVector(), new InvokeQuake()
-      };
+      {new JoinReads(), new InvokeFlash(), new KmerCounter(), new ConvertKMerCountsToText(), new CutOffCalculation(),
+       new BuildBitVector(), new InvokeQuake()};
 
     for (Stage stage: substages) {
       definitions.putAll(stage.getParameterDefinitions());
@@ -202,7 +199,17 @@ public class CorrectionPipelineRunner extends Stage{
     vectorOptions.put("outputpath", bitVectorPath);
     vectorOptions.put("cutoff", cutoff);
     bitVectorStage.setParameters(vectorOptions);
-    runStage(bitVectorStage);
+    if (!bitVectorStage.execute()) {
+      sLogger.fatal(
+          "Stage: " +  bitVectorStage.getClass().getSimpleName() + " failed.",
+          new RuntimeException("Stage failure."));
+      System.exit(-1);
+    }
+    if (!bitVectorStage.execute()) {
+      sLogger.fatal(
+          "BuildBitVector failed.", new RuntimeException("Stage failur"));
+      System.exit(-1);
+    }
 
     sLogger.info("Running Quake.");
     InvokeQuake quakeStage = new InvokeQuake();
