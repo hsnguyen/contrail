@@ -485,10 +485,10 @@ public class BuildGraphAvro extends MRStage {
           mertag = tag;
         }
 
+        cov++;
         ReadState state = edge.getState();
         // Update coverage and offsets.
         if (state != ReadState.I) {
-          cov++;
           if (state == ReadState.END6) {
             graphnode.addR5(tag, K - 1, DNAStrand.REVERSE, MAXR5);
           } else if (state == ReadState.END5) {
