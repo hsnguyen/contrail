@@ -38,6 +38,7 @@ import org.apache.hadoop.mapred.OutputCollector;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.mapred.TextOutputFormat;
+import org.apache.hadoop.mapred.lib.IdentityReducer;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
@@ -139,6 +140,10 @@ public class WriteGraphToCSV extends Stage {
     conf.setOutputKeyClass(Text.class);
     conf.setOutputValueClass(NullWritable.class);
 
+    // We need to set the comparator because AvroJob.setInputSchema will
+    // set it automatically to a comparator for an Avro class which we don't
+    // want. We could also change the code to use an AvroMapper.
+    conf.setOutputKeyComparatorClass(Text.Comparator.class);
     // We use a single reducer because it is convenient to have all the data
     // in one output file to facilitate uploading to helix.
     // TODO(jlewi): Once we have an easy way of uploading multiple files to
@@ -148,9 +153,9 @@ public class WriteGraphToCSV extends Stage {
     //AvroJob.setMapOutputSchema(conf, pair);
     // This is a mapper only job. To facilitate upload to BigQuery you
     // should probably join the part files together.
-    conf.setNumReduceTasks(0);
+    conf.setNumReduceTasks(1);
     conf.setMapperClass(ToCSVMapper.class);
-    //conf.setReducerClass(IdentityReducer.class);
+    conf.setReducerClass(IdentityReducer.class);
 
     // Delete the output directory if it exists already
     Path out_path = new Path(outputPath);
