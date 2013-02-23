@@ -71,7 +71,7 @@ public class WriteGraphToCSV extends Stage {
     public void configure(JobConf job) {
       graphNode = new GraphNode();
 
-      columns = new String[5];
+      columns = new String[6];
       outKey = new Text();
     }
 
@@ -90,7 +90,7 @@ public class WriteGraphToCSV extends Stage {
           DNAStrand.FORWARD, EdgeDirection.INCOMING));
       columns[3] = Integer.toString(graphNode.getSequence().size());
       columns[4] = Float.toString(graphNode.getCoverage());
-
+      columns[5] = graphNode.getSequence().toString();
       outKey.set(StringUtils.join(columns, ","));
       output.collect(outKey, NullWritable.get());
    }
@@ -162,10 +162,6 @@ public class WriteGraphToCSV extends Stage {
       FileSystem.get(conf).delete(out_path, true);
     }
 
-    sLogger.info(
-        "You can use the following schema with big query:\n" +
-         "nodeId:string, out_degree:integer, in_degree:integer, " +
-         "length:integer, coverage:float");
 
     long starttime = System.currentTimeMillis();
     RunningJob job = JobClient.runJob(conf);
@@ -173,6 +169,10 @@ public class WriteGraphToCSV extends Stage {
 
     float diff = (float) ((endtime - starttime) / 1000.0);
     System.out.println("Runtime: " + diff + " s");
+    sLogger.info(
+        "You can use the following schema with big query:\n" +
+        "nodeId:string, out_degree:integer, in_degree:integer, " +
+        "length:integer, coverage:float, sequence:string");
     return job;
   }
 
