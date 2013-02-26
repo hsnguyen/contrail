@@ -60,6 +60,8 @@ import contrail.graph.GraphNodeData;
  * lookup nodes in the files.
  */
 public class WalkGraph extends Stage {
+  // TODO(jlewi): Use Indexed graph rather than implementing the methods
+  // lookup and createreader.
   private static final Logger sLogger =
       Logger.getLogger(WalkGraph.class);
 
