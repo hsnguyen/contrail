@@ -58,7 +58,7 @@ import contrail.util.IndexedGraph;
  * This stage uses an indexed graph to split the graph into connected
  * components.
  */
-public class FindConnectedComponents extends NonMRStage{
+public class FindConnectedComponents extends NonMRStage {
   private static final Logger sLogger = Logger.getLogger(
       FindConnectedComponents.class);
   // Set of the nodeids that have already been visited.
@@ -271,6 +271,9 @@ public class FindConnectedComponents extends NonMRStage{
     int numSorted = 0;
     int numUnsorted = 0;
 
+    int dagNodes = 0;
+    int nonDagNodes = 0;
+
     while (kvIterator.hasNext()) {
       // AvroKeyValue uses generic records so we just discard the
       // GraphNodeData and look it back up using IndexGraph to handle the
@@ -288,11 +291,14 @@ public class FindConnectedComponents extends NonMRStage{
       // Output the connected component.
       sLogger.info("Sorting component from node:" + nodeId);
       ConnectedComponentData component = createComponent(subgraph);
+      sLogger.info("Component size:" +  component.getNodes().size());
 
       if (component.getSorted()) {
         ++numSorted;
+        dagNodes += component.getNodes().size();
       } else {
         ++numUnsorted;
+        nonDagNodes += component.getNodes().size();
       }
 
       try {
@@ -308,8 +314,11 @@ public class FindConnectedComponents extends NonMRStage{
       sLogger.fatal("Couldn't close:" + outPath.toString(), e);
     }
 
-    sLogger.info("Number sorted components:" + numSorted);
-    sLogger.info("Number components which aren't dags:" + numUnsorted);
+    sLogger.info(String.format(
+        "Number sorted components:%d \t total nodes:%d", numSorted, dagNodes));
+    sLogger.info(String.format(
+        "Number components which aren't dags:%d \t total nodes:%d",
+        numUnsorted, nonDagNodes));
   }
 
   public static void main(String[] args) throws Exception {
