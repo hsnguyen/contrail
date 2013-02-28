@@ -19,6 +19,7 @@
 package contrail.tools;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -65,8 +66,44 @@ public class PrintComponents extends NonMRStage {
   int dagNodes = 0;
   int nonDagNodes = 0;
 
+  /**
+   * Class for storing summary statistics about a component.
+   */
+  private static class ComponentInfo implements Comparable<ComponentInfo> {
+    public boolean sorted;
+    public EdgeTerminal start;
+    public EdgeTerminal end;
+    public int size;
+
+    public int compareTo(ComponentInfo other) {
+      // Unsorted go first and then we sort by size
+      if (sorted != other.sorted) {
+        if (sorted) {
+          return 1;
+        } else {
+          return -1;
+        }
+      }
+
+      return this.size - other.size;
+    }
+
+    public String toString() {
+      if (sorted) {
+        return String.format(
+            "num nodes: %d start: %s end: %s", size, start, end);
+      } else {
+        return String.format(
+            "num nodes: %d not a tree", size);
+      }
+    }
+  }
+
   protected void stageMain() {
     Path inPath = new Path((String) this.stage_options.get("inputpath"));
+
+    ArrayList<ComponentInfo> info = new ArrayList<ComponentInfo>();
+
     try {
       FSDataInputStream inStream = inPath.getFileSystem(getConf()).open(
           inPath);
@@ -75,9 +112,12 @@ public class PrintComponents extends NonMRStage {
       DataFileStream<ConnectedComponentData> fileReader =
           new DataFileStream<ConnectedComponentData>(inStream, reader);
 
-      int num = 0;
       while (fileReader.hasNext()) {
         ConnectedComponentData component = fileReader.next();
+        ComponentInfo thisInfo = new ComponentInfo();
+        info.add(thisInfo);
+        thisInfo.size = component.getNodes().size();
+        thisInfo.sorted = component.getSorted();
         if (component.getSorted()) {
           GraphNode node = new GraphNode(component.getNodes().get(0));
           EdgeTerminal start = null;
@@ -96,22 +136,15 @@ public class PrintComponents extends NonMRStage {
             end = new EdgeTerminal(node.getNodeId(), DNAStrand.REVERSE);
           }
 
-          System.out.println(String.format(
-              "Component %d: num nodes: %d start: %s end: %s", num,
-              component.getNodes().size(), start, end));
-
+          thisInfo.start = start;
+          thisInfo.end = end;
           ++numSorted;
           dagNodes += component.getNodes().size();
 
         } else {
-          System.out.println(String.format(
-              "Component %d: num nodes: %d not a tree", num,
-              component.getNodes().size()));
-
           ++numUnsorted;
           nonDagNodes += component.getNodes().size();
         }
-        ++num;
       }
     } catch (IOException e) {
       sLogger.fatal("There was a problem reading the connected components", e);
@@ -122,6 +155,12 @@ public class PrintComponents extends NonMRStage {
     System.out.println(String.format(
         "Number components which aren't dags:%d \t total nodes:%d",
         numUnsorted, nonDagNodes));
+
+    Collections.sort(info);
+    Collections.reverse(info);
+    for (ComponentInfo thisInfo : info) {
+      System.out.println(thisInfo);
+    }
   }
 
   public static void main(String[] args) throws Exception {
