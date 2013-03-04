@@ -158,8 +158,10 @@ public class PrintComponents extends NonMRStage {
 
     Collections.sort(info);
     Collections.reverse(info);
+    int index = 0;
     for (ComponentInfo thisInfo : info) {
-      System.out.println(thisInfo);
+      ++index;
+      System.out.println(Integer.toString(index) +":\t" + thisInfo);
     }
   }
 
