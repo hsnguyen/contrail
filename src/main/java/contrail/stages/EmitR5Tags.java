@@ -15,35 +15,17 @@
 package contrail.stages;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-
-import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroCollector;
-import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroMapper;
-import org.apache.avro.mapred.AvroReducer;
-import org.apache.avro.mapred.Pair;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.FileInputFormat;
-import org.apache.hadoop.mapred.FileOutputFormat;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
-import contrail.QuickMarkMessage;
-import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
 import contrail.graph.R5Tag;
-import contrail.sequences.KMerReadTag;
-import contrail.sequences.StrandsForEdge;
-import contrail.stages.QuickMarkAvro.QuickMarkMapper;
-import contrail.stages.QuickMarkAvro.QuickMarkReducer;
+import contrail.graph.R5TagNodeIdPair;
 
 /**
  * This stage emits the R5Tags in each node keyed by the read id.
@@ -54,7 +36,7 @@ public class EmitR5Tags extends MRStage {
   private static final Logger sLogger = Logger.getLogger(EmitR5Tags.class);
 
   public static class EmitR5TagsMapper extends
-    AvroMapper<GraphNodeData, R5TagNodeIdPair>> {
+    AvroMapper<GraphNodeData, R5TagNodeIdPair> {
       private R5TagNodeIdPair outPair;
 
       public void configure(JobConf job) {
@@ -62,7 +44,7 @@ public class EmitR5Tags extends MRStage {
       }
 
       public void map(GraphNodeData nodeData,
-          AvroCollector<Pair<CharSequence, R5Tag>> collector,
+          AvroCollector<R5TagNodeIdPair> collector,
           Reporter reporter) throws IOException {
         for (R5Tag tag : nodeData.getR5Tags()) {
           // Output key is the id of the read.
@@ -165,7 +147,7 @@ public class EmitR5Tags extends MRStage {
 //  }
 
   public static void main(String[] args) throws Exception {
-    int res = ToolRunner.run(new Configuration(), new EmitR%Tags(), args);
+    int res = ToolRunner.run(new Configuration(), new EmitR5Tags(), args);
     System.exit(res);
   }
 }
