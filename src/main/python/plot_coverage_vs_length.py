@@ -88,6 +88,19 @@ def main(argv):
 
   data = data[0:num_nodes]
 
+  # Make a 2-d histogram.
+  H, xedges, yedges = np.histogram2d(data["length"], data["coverage"])
+  hf_hist = pylab.figure()
+  extent = [yedges[0], yedges[-1], xedges[-1], xedges[0]]
+  ha_hist = hf_hist.add_subplot(1, 1, 1)
+  hm = ha_hist.matshow(np.log10(H + 1), extent=extent)
+  ha_hist.invert_yaxis()
+  ha_hist.set_title("Histogram (log10(counts +1))")
+  ha_hist.set_xlabel("Length")
+  ha_hist.set_ylabel("Coverage")
+  hf_hist.colorbar(hm, ax=ha_hist)
+  ha_hist.xaxis.set_ticks_position("bottom")
+
   hf = pylab.figure()
   ha = hf.add_subplot(1, 1, 1)
   ha.plot(data["length"], data["coverage"], '.')
@@ -96,7 +109,11 @@ def main(argv):
   ha.set_xlabel("Length")
   ha.set_ylabel("Coverage")
 
-  hf.savefig(FLAGS.outputpath)
+  if not os.path.exists(FLAGS.outputpath):
+    os.makedirs(FLAGS.outputpath)
+
+  hf.savefig(os.path.join(FLAGS.outputpath, "cov_vs_length_scatter.png"));
+  hf_hist.savefig(os.path.join(FLAGS.outputpath, "cov_vs_length_hist.png"));
 
 if __name__ == "__main__":
   logging.basicConfig(level=logging.INFO)
