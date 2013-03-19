@@ -41,6 +41,10 @@ import contrail.graph.GraphNodeData;
  * Provides random access to a graph stored in a sorted/indexed avro file.
  */
 public class IndexedGraph {
+  // TODO(jeremy@lewi.us): Move this into contrail.graph
+  // TODO(jeremy@lewi.us): IndexedGraph should be an abstract base class
+  // one subclass could be backed by a sorted avro file, another could be
+  // backed by a hashmap.
   // TODO(jeremy@lewi.us): Should we implement a cache to cache recently looked
   // up nodes? If we do we should probably clone the node before returning it.
   private static final Logger sLogger = Logger.getLogger(IndexedGraph.class);
