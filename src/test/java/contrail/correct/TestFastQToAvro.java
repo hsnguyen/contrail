@@ -15,6 +15,7 @@
 package contrail.correct;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
 
 import java.io.File;
@@ -28,6 +29,8 @@ import org.apache.avro.file.DataFileReader;
 import org.apache.avro.io.DatumReader;
 import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RunningJob;
 import org.junit.Test;
 
@@ -41,7 +44,7 @@ public class TestFastQToAvro {
   @Test
   public void testRun() {
     Random generator = new Random();
-    int numFiles = 2;
+    int numFiles = 1;
     int numReads = 100;
     int readLength = 2000;
 
@@ -78,6 +81,15 @@ public class TestFastQToAvro {
     // Run it.
     FastQToAvro stage = new FastQToAvro();
 
+    // Set the split size because we want to divide the input into multiple
+    // splits to test that input splits are correct.
+    Configuration conf = stage.getConf();
+    if (conf == null) {
+      conf = new JobConf();
+    }
+    conf.setLong("FastQInputFormat.splitSize", 50000);
+    stage.setConf(conf);
+
     HashMap<String, Object> stageOptions = new HashMap<String, Object>();
     stageOptions.put("inputpath", tempDir.toURI().toString());
     stageOptions.put("outputpath", outputPath);
@@ -88,6 +100,7 @@ public class TestFastQToAvro {
     } catch (Exception exception) {
       fail("Exception occured:" + exception.getMessage());
     }
+
     long numInputs = 0;
     long numOutputs = 0;
 
@@ -119,9 +132,9 @@ public class TestFastQToAvro {
         fail("Could not open the output:" + io.getMessage());
       }
 
-
       while (reader.hasNext()) {
         FastQRecord record = reader.next();
+        assertFalse(outReads.containsKey(record.getId().toString()));
         outReads.put(record.getId().toString(), record);
       }
     }
