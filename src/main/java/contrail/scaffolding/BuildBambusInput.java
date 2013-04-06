@@ -505,7 +505,7 @@ public class BuildBambusInput extends NonMRStage {
     for (String glob : globs.split(",")) {
       ArrayList<String> matches =  FileHelper.matchFiles(glob);
       sLogger.info(String.format("%s matched %d files", glob, matches.size()));
-      readFiles.add(glob);
+      readFiles.addAll(matches);
     }
 
     if (readFiles.isEmpty()) {
