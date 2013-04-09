@@ -50,6 +50,10 @@ public class FileHelper {
    * in which case the created directory will be a sub directory of
    * /some/other/tmpdir
    *
+   * Note: When running hadoop the VM arguments for the main binary are
+   * set via the environment variable HADOOP_OPTS you cannot set them on
+   * the command line.
+   *
    * @return
    */
   static public File createLocalTempDir() {
