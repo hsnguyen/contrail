@@ -18,124 +18,64 @@
 // Author: Jeremy Lewi(jeremy@lewi.us)
 package contrail.util;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-
 import org.apache.avro.Schema;
-import org.apache.avro.generic.GenericDatumWriter;
-import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.hadoop.file.SortedKeyValueFile;
-import org.apache.avro.io.BinaryDecoder;
-import org.apache.avro.io.BinaryEncoder;
-import org.apache.avro.io.DecoderFactory;
-import org.apache.avro.io.EncoderFactory;
-import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
-import org.apache.log4j.Logger;
 
+import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
+import contrail.io.AvroIndexReader;
+import contrail.io.IndexedRecords;
 
 /**
  * Provides random access to a graph stored in a sorted/indexed avro file.
+ *
  */
-public class IndexedGraph {
+public class IndexedGraph implements IndexedRecords<String, GraphNodeData> {
   // TODO(jeremy@lewi.us): Move this into contrail.graph
-  // TODO(jeremy@lewi.us): IndexedGraph should be an abstract base class
-  // one subclass could be backed by a sorted avro file, another could be
-  // backed by a hashmap.
-  // TODO(jeremy@lewi.us): Should we implement a cache to cache recently looked
-  // up nodes? If we do we should probably clone the node before returning it.
-  private static final Logger sLogger = Logger.getLogger(IndexedGraph.class);
-  private SortedKeyValueFile.Reader<CharSequence, GraphNodeData> reader;
+
+  private IndexedRecords<String, GraphNodeData> index;
 
   /**
-   * Create the indexed graph based on the inputpath.
-   * @param inputPath: Path to the graph.
+   * Construct an IndexedGraph using the index passed in.
+   * @param index
    */
-  public IndexedGraph(String inputPath, Configuration conf) {
-    createReader(inputPath, conf);
+  public IndexedGraph(IndexedRecords<String, GraphNodeData> index) {
+    this.index = index;
   }
 
-  private void createReader(String inputPath, Configuration conf) {
-    SortedKeyValueFile.Reader.Options readerOptions =
-        new SortedKeyValueFile.Reader.Options();
+  /**
+   * Construct an index for the specified file.
+   *
+   * @param inputPath
+   * @param conf
+   */
+  public static IndexedGraph buildFromFile(
+      String inputPath, Configuration conf) {
+    AvroIndexReader<String, GraphNodeData> reader = new
+        AvroIndexReader<String, GraphNodeData>(
+            inputPath, conf, Schema.create(Schema.Type.STRING),
+            (new GraphNodeData()).getSchema());
+    return new IndexedGraph(reader);
+  }
 
-    readerOptions.withPath(new Path(inputPath));
+  public GraphNodeData get(String nodeId) {
+    return index.get(nodeId);
+  }
 
-    GraphNodeData nodeData = new GraphNodeData();
-    readerOptions.withConfiguration(conf);
-    readerOptions.withKeySchema(Schema.create(Schema.Type.STRING));
-    readerOptions.withValueSchema(nodeData.getSchema());
-
-    reader = null;
-    try {
-      reader = new SortedKeyValueFile.Reader<CharSequence,GraphNodeData> (
-          readerOptions);
-    } catch (IOException e) {
-      sLogger.fatal("Couldn't open indexed avro file.", e);
-    }
+  public GraphNode getNode(String nodeId) {
+    return new GraphNode(get(nodeId));
   }
 
   /**
    * Read the node from the sorted key value file.
+   *
+   * Deprecated: Use get().
    * @param reader
    * @param nodeId
    * @return
    */
+  @Deprecated
   public GraphNodeData lookupNode(String nodeId) {
-    GenericRecord record = null;
-    GraphNodeData nodeData = new GraphNodeData();
-    try{
-      // The actual type returned by get is a generic record even
-      // though the return type is GraphNodeData. I have no idea
-      // how SortedKeyValueFileReader actually compiles.
-      record =  (GenericRecord) reader.get(nodeId);
-    } catch (IOException e) {
-      sLogger.fatal("There was a problem reading from the file.", e);
-      System.exit(-1);
-    }
-    if (record == null) {
-      sLogger.fatal(
-          "Could not find node:" + nodeId,
-          new RuntimeException("Couldn't find node"));
-      System.exit(-1);
-    }
-
-    // Convert the Generic record to a specific record.
-    try {
-      // TODO(jeremy@lewi.us): We could probably make this code
-      // more efficient by reusing objects.
-      GenericDatumWriter<GenericRecord> datumWriter =
-          new GenericDatumWriter<GenericRecord>(record.getSchema());
-
-      ByteArrayOutputStream outStream = new ByteArrayOutputStream();
-      BinaryEncoder encoder =
-          EncoderFactory.get().binaryEncoder(outStream, null);
-
-      datumWriter.write(record, encoder);
-      // We need to flush the encoder to write the data to the byte
-      // buffer.
-      encoder.flush();
-      outStream.flush();
-
-      // Now read it back in as a specific datum reader.
-      ByteArrayInputStream inStream = new ByteArrayInputStream(
-          outStream.toByteArray());
-
-      BinaryDecoder decoder =
-          DecoderFactory.get().binaryDecoder(inStream, null);
-      SpecificDatumReader<GraphNodeData> specificReader = new
-          SpecificDatumReader<GraphNodeData>(nodeData.getSchema());
-
-      specificReader.read(nodeData, decoder);
-    } catch (IOException e) {
-      sLogger.fatal(
-          "There was a problem converting the GenericRecord to " +
-          "GraphNodeData", e);
-      System.exit(-1);
-    }
-    return nodeData;
+    return get(nodeId);
   }
 }
