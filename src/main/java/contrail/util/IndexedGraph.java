@@ -18,7 +18,10 @@
 // Author: Jeremy Lewi(jeremy@lewi.us)
 package contrail.util;
 
+import java.util.Iterator;
+
 import org.apache.avro.Schema;
+import org.apache.avro.hadoop.io.AvroKeyValue;
 import org.apache.hadoop.conf.Configuration;
 
 import contrail.graph.GraphNode;
@@ -78,4 +81,25 @@ public class IndexedGraph implements IndexedRecords<String, GraphNodeData> {
   public GraphNodeData lookupNode(String nodeId) {
     return get(nodeId);
   }
+
+  /**
+   * @return An iterator over the key value pairs.
+    *
+    * TODO(jeremy@lewi.us): This is very hacky. We should refine the interface
+    * to do a better job.
+    *
+    * TODO(jeremy@lewi.us): We can't actually treat the GraphNodeData
+    * returned by the iterator as a GraphNodeData because its actually a
+    * generic record. This function should return a custom iterator
+    * which wraps the iterator returned by SortedKeyValueReader and handles
+    * the conversions.
+    */
+   public Iterator<AvroKeyValue<CharSequence, GraphNodeData>> iterator() {
+     if (index instanceof AvroIndexReader) {
+       return ((AvroIndexReader) index).iterator();
+     } else {
+       throw new UnsupportedOperationException();
+     }
+
+   }
 }

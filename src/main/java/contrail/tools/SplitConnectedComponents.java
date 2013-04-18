@@ -27,28 +27,19 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.PriorityQueue;
 import org.apache.avro.Schema;
-import org.apache.avro.file.DataFileStream;
 import org.apache.avro.file.DataFileWriter;
-import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.hadoop.io.AvroKeyValue;
 import org.apache.avro.io.DatumWriter;
-import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.commons.io.FilenameUtils;
-import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.log4j.Logger;
 
-import contrail.graph.ConnectedComponentData;
-import contrail.graph.EdgeDirection;
-import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
-import contrail.sequences.DNAStrand;
 import contrail.stages.ContrailParameters;
 import contrail.stages.NonMRStage;
 import contrail.stages.ParameterDefinition;
@@ -87,92 +78,90 @@ public class SplitConnectedComponents extends NonMRStage {
   protected void stageMain() {
     visitedIds = new HashSet<String>();
 
-    graph = new IndexedGraph(
+    graph =  IndexedGraph.buildFromFile(
         (String)stage_options.get("inputpath"), getConf());
 
-    // Writer for the connected components.
-    Path outPath = new Path((String)stage_options.get("outputpath"));
+    int component = -1;
 
-    DataFileWriter<ConnectedComponentData> writer = null;
-    try {
-      FileSystem fs = outPath.getFileSystem(getConf());
-
-      if (fs.exists(outPath) && !fs.isDirectory(outPath)) {
-        sLogger.fatal(
-            "outputpath points to an existing file but it should be a " +
-            "directory.");
-      }
-      FSDataOutputStream outStream = fs.create(outPath, true);
-      Schema schema = (new ConnectedComponentData()).getSchema();
-      DatumWriter<ConnectedComponentData> datumWriter =
-          new SpecificDatumWriter<ConnectedComponentData>(schema);
-      writer =
-          new DataFileWriter<ConnectedComponentData>(datumWriter);
-      writer.create(schema, outStream);
-
-    } catch (IOException exception) {
-      fail("There was a problem writing the components to an avro file. " +
-           "Exception: " + exception.getMessage());
-    }
-
-    int component = 0;
-
-    for (graph.)
-    int numSorted = 0;
-    int numUnsorted = 0;
-
-    int dagNodes = 0;
-    int nonDagNodes = 0;
-
-    while (kvIterator.hasNext()) {
-      // AvroKeyValue uses generic records so we just discard the
-      // GraphNodeData and look it back up using IndexGraph to handle the
-      // conversion to a specific record. This means we end up doing
-      // two lookups for the first record which is inefficient.
-      GenericRecord pair = (GenericRecord) kvIterator.next();
-      String nodeId = pair.get("key").toString();
-      if (visitedIds.contains(nodeId)) {
+    Iterator<AvroKeyValue<CharSequence, GraphNodeData>> iter = graph.iterator();
+    while (iter.hasNext()) {
+      AvroKeyValue<CharSequence, GraphNodeData> pair = iter.next();
+      if (visitedIds.contains(pair.getKey())) {
         continue;
       }
 
-      sLogger.info("Walking component from node:" + nodeId);
-      HashMap<String, NodeItem> subgraph = walkComponent(nodeId);
 
-      // Output the connected component.
-      sLogger.info("Sorting component from node:" + nodeId);
-      ConnectedComponentData component = createComponent(subgraph);
-      sLogger.info("Component size:" +  component.getNodes().size());
 
-      if (component.getSorted()) {
-        ++numSorted;
-        dagNodes += component.getNodes().size();
-      } else {
-        ++numUnsorted;
-        nonDagNodes += component.getNodes().size();
+      // Write the connected component for this node.
+      ++component;
+
+      // Writer for the connected components.
+      Path outPath = new Path((String)stage_options.get("outputpath"));
+
+      DataFileWriter<GraphNodeData> writer = null;
+      try {
+        FileSystem fs = outPath.getFileSystem(getConf());
+
+        if (fs.exists(outPath) && !fs.isDirectory(outPath)) {
+          sLogger.fatal(
+              "outputpath points to an existing file but it should be a " +
+              "directory.");
+        }
+
+        FilenameUtils.concat(
+            outPath.getName(),
+            String.format("component-%03d.avro", component));
+        FSDataOutputStream outStream = fs.create(outPath, true);
+        Schema schema = (new GraphNodeData()).getSchema();
+        DatumWriter<GraphNodeData> datumWriter =
+            new SpecificDatumWriter<GraphNodeData>(schema);
+        writer =
+            new DataFileWriter<GraphNodeData>(datumWriter);
+        writer.create(schema, outStream);
+
+      } catch (IOException exception) {
+        fail("There was a problem writing the components to an avro file. " +
+             "Exception: " + exception.getMessage());
+      }
+
+      sLogger.info(String.format("Writing component: %d", component));
+
+      // List of the nodes to process.
+      ArrayList<String> unprocessed = new ArrayList<String>();
+      unprocessed.add(pair.getKey().toString());
+
+      int numNodes = 0;
+      while (unprocessed.size() > 0) {
+        String nodeId = unprocessed.remove(unprocessed.size() - 1);
+
+        if (visitedIds.contains(nodeId)) {
+          continue;
+        }
+        visitedIds.add(nodeId);
+        ++numNodes;
+        GraphNode node = graph.getNode(nodeId);
+        try {
+          writer.append(node.getData());
+        } catch (IOException e) {
+          sLogger.fatal("Couldn't write node:" + node.getNodeId(), e);
+          System.exit(-1);
+        }
+        unprocessed.addAll(node.getNeighborIds());
       }
 
       try {
-        writer.append(component);
+        writer.close();
       } catch (IOException e) {
-        sLogger.fatal("Couldn't write connected componet", e);
+        sLogger.fatal("Couldn't close:" + outPath.toString(), e);
       }
-    }
 
-    try {
-      writer.close();
-    } catch (IOException e) {
-      sLogger.fatal("Couldn't close:" + outPath.toString(), e);
+      sLogger.info(String.format(
+          "Component:%d \t Number of nodes:%d", component, numNodes));
     }
-
-    sLogger.info(String.format(
-        "Number sorted components:%d \t total nodes:%d", numSorted, dagNodes));
-    sLogger.info(String.format(
-        "Number components which aren't dags:%d \t total nodes:%d",
-        numUnsorted, nonDagNodes));
   }
 
   public static void main(String[] args) throws Exception {
-    FindConnectedComponents stage = new SplitConnectedComponents();
+    SplitConnectedComponents stage = new SplitConnectedComponents();
     int res = stage.run(args);
     System.exit(res);
   }

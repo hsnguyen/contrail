@@ -240,7 +240,7 @@ public class FindConnectedComponents extends NonMRStage {
     visitedIds = new HashSet<String>();
 
     createNodeIterator();
-    graph = new IndexedGraph(
+    graph = IndexedGraph.buildFromFile(
         (String)stage_options.get("inputpath"), getConf());
 
     // Writer for the connected components.

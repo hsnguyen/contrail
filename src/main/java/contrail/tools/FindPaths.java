@@ -192,7 +192,7 @@ public class FindPaths extends NonMRStage {
   }
 
   protected void stageMain() {
-    IndexedGraph graph = new IndexedGraph(
+    IndexedGraph graph = IndexedGraph.buildFromFile(
         (String)stage_options.get("inputpath"), getConf());
 
     EdgeTerminal start = parseTerminal((String)stage_options.get("start"));

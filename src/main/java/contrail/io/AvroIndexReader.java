@@ -17,10 +17,13 @@ package contrail.io;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.Iterator;
+
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.hadoop.file.SortedKeyValueFile;
+import org.apache.avro.hadoop.io.AvroKeyValue;
 import org.apache.avro.io.BinaryDecoder;
 import org.apache.avro.io.BinaryEncoder;
 import org.apache.avro.io.DecoderFactory;
@@ -146,5 +149,13 @@ public class AvroIndexReader<K, V> implements IndexedRecords<K, V> {
      System.exit(-1);
    }
    return recordData;
+ }
+
+ /**
+ * @return An iterator over the key value pairs.
+  *
+  */
+ public Iterator<AvroKeyValue<K, V>> iterator() {
+   return reader.iterator();
  }
 }
