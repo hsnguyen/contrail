@@ -29,6 +29,7 @@ public class TestSplitConnectedComponents {
     // Create a graph and write it to a file.
     SimpleGraphBuilder builder = new SimpleGraphBuilder();
     builder.addKMersForString("TACTGGATT", 3);
+    builder.addKMersForString("AAACCC", 3);
 
     File temp = FileHelper.createLocalTempDir();
     String indexPath = FilenameUtils.concat(temp.getAbsolutePath(), "index");
@@ -85,12 +86,5 @@ public class TestSplitConnectedComponents {
     stage.setParameters(params);
 
     assertTrue(stage.execute());
-
-    // Catch the following after debugging.
-    //try {
-    //  stage.execute();
-    //} catch (Exception exception) {
-    //  exception.printStackTrace();
-    //  fail("Exception occured:" + exception.getMessage());
   }
 }

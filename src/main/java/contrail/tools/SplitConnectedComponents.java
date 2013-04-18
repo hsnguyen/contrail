@@ -86,11 +86,9 @@ public class SplitConnectedComponents extends NonMRStage {
     Iterator<AvroKeyValue<CharSequence, GraphNodeData>> iter = graph.iterator();
     while (iter.hasNext()) {
       AvroKeyValue<CharSequence, GraphNodeData> pair = iter.next();
-      if (visitedIds.contains(pair.getKey())) {
+      if (visitedIds.contains(pair.getKey().toString())) {
         continue;
       }
-
-
 
       // Write the connected component for this node.
       ++component;
