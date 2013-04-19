@@ -36,6 +36,7 @@ import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.log4j.Logger;
 
 import contrail.graph.GraphNode;
@@ -94,21 +95,24 @@ public class SplitConnectedComponents extends NonMRStage {
       ++component;
 
       // Writer for the connected components.
-      Path outPath = new Path((String)stage_options.get("outputpath"));
+      Path outDir = new Path((String)stage_options.get("outputpath"));
 
       DataFileWriter<GraphNodeData> writer = null;
+      Path outPath = new Path(FilenameUtils.concat(
+          outDir.toString(),
+          String.format("component-%03d.avro", component)));
       try {
-        FileSystem fs = outPath.getFileSystem(getConf());
+        FileSystem fs = outDir.getFileSystem(getConf());
 
-        if (fs.exists(outPath) && !fs.isDirectory(outPath)) {
+        if (fs.exists(outDir) && !fs.isDirectory(outDir)) {
           sLogger.fatal(
               "outputpath points to an existing file but it should be a " +
-              "directory.");
+              "directory:" + outDir.getName());
+          System.exit(-1);
+        } else {
+          fs.mkdirs(outDir, FsPermission.getDefault());
         }
 
-        FilenameUtils.concat(
-            outPath.getName(),
-            String.format("component-%03d.avro", component));
         FSDataOutputStream outStream = fs.create(outPath, true);
         Schema schema = (new GraphNodeData()).getSchema();
         DatumWriter<GraphNodeData> datumWriter =
@@ -151,6 +155,7 @@ public class SplitConnectedComponents extends NonMRStage {
         writer.close();
       } catch (IOException e) {
         sLogger.fatal("Couldn't close:" + outPath.toString(), e);
+        System.exit(-1);
       }
 
       sLogger.info(String.format(

@@ -86,5 +86,6 @@ public class TestSplitConnectedComponents {
     stage.setParameters(params);
 
     assertTrue(stage.execute());
+    System.out.println("Files should be in:" + outputPath.toString());
   }
 }
