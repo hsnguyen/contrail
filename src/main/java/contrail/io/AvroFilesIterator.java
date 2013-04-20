@@ -30,7 +30,7 @@ import org.apache.hadoop.fs.Path;
  * AvroFilesIterator provides an iterator for iterating over all the data
  * in a set of avro files.
  */
-public class AvroFilesIterator<T> implements Iterator<T> {
+public class AvroFilesIterator<T> implements Iterator<T>, Iterable<T> {
   private ArrayList<Path> files;
   private Configuration conf;
 
@@ -115,5 +115,10 @@ public class AvroFilesIterator<T> implements Iterator<T> {
   @Override
   public void remove() {
     throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public Iterator<T> iterator() {
+    return new AvroFilesIterator<T>(conf, files);
   }
 }

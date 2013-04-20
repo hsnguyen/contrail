@@ -18,7 +18,6 @@ package contrail.tools;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -54,11 +53,13 @@ import contrail.graph.EdgeDirection;
 import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
+import contrail.graph.GraphNodeFilesIterator;
 import contrail.graph.R5Tag;
 import contrail.sequences.DNAStrand;
 import contrail.sequences.StrandsUtil;
 import contrail.stages.CompressibleNodeData;
 import contrail.stages.ContrailParameters;
+import contrail.stages.NotImplementedException;
 import contrail.stages.ParameterDefinition;
 import contrail.stages.Stage;
 
@@ -193,7 +194,7 @@ public class WriteGephiFile extends Stage {
     ++next_id;
   }
 
-  private void AddNodesToIndex(Collection<GraphNode> nodes) {
+  private void AddNodesToIndex(Iterable<GraphNode> nodes) {
     // A node for both the forward and reverse strands.
     EdgeTerminal terminal;
     for (GraphNode node: nodes) {
@@ -263,7 +264,7 @@ public class WriteGephiFile extends Stage {
     return xml_node;
   }
 
-  public void writeGraph(Map<String, GraphNode> nodes, String xml_file) {
+  public void writeGraph(Iterable <GraphNode> nodes, String xml_file) {
     if ((Boolean)stage_options.get("disallow_tmp")) {
       if (xml_file.startsWith("/tmp")) {
         throw new RuntimeException(
@@ -355,9 +356,15 @@ public class WriteGephiFile extends Stage {
 
     // I think the id's in the gephi xml file need to be string representations
     // of integers so we assign each node an integer.
-    AddNodesToIndex(nodes.values());
+    AddNodesToIndex(nodes);
 
-    for (GraphNode node: nodes.values()) {
+    int count = 0;
+    int progressInterval = 1000;
+    for (GraphNode node: nodes) {
+      ++count;
+      if (count % progressInterval == 0) {
+        sLogger.info(String.format("Processing node: %d", count));
+      }
       for (DNAStrand strand : DNAStrand.values()) {
         EdgeTerminal terminal = new EdgeTerminal(node.getNodeId(), strand);
 
@@ -496,8 +503,17 @@ public class WriteGephiFile extends Stage {
     return nodes;
   }
 
+  private class InputInfo {
+    public ArrayList<Path> files;
+    public InputRecordTypes type;
 
-  private HashMap<String, GraphNode> readNodes() {
+    public InputInfo(ArrayList<Path> inputFiles,  InputRecordTypes inputType) {
+      files = inputFiles;
+      type = inputType;
+    }
+  }
+
+  private InputInfo getInputInfo() {
     String inputPathStr = (String) stage_options.get("inputpath");
     sLogger.info(" - input: "  + inputPathStr);;
 
@@ -516,7 +532,7 @@ public class WriteGephiFile extends Stage {
 
     for (FileStatus status : fileStates) {
      if (status.isDir()) {
-	 sLogger.info("Skipping directory:" + status.getPath());
+         sLogger.info("Skipping directory:" + status.getPath());
          continue;
       }
       sLogger.info("Input file:" + status.getPath()) ;
@@ -529,12 +545,18 @@ public class WriteGephiFile extends Stage {
 
     InputRecordTypes inputType = determineInputType(inputFiles.get(0));
 
-    if (inputType == InputRecordTypes.GraphNodeData) {
-      return readGraphNodes(inputFiles);
+    return new InputInfo(inputFiles, inputType);
+  }
+
+  private HashMap<String, GraphNode> readNodes() {
+    InputInfo info = getInputInfo();
+
+    if (info.type == InputRecordTypes.GraphNodeData) {
+      return readGraphNodes(info.files);
     }
 
-    if (inputType == InputRecordTypes.CompressibleNodeData) {
-      return readCompressibleNodes(inputFiles);
+    if (info.type == InputRecordTypes.CompressibleNodeData) {
+      return readCompressibleNodes(info.files);
     }
     throw new RuntimeException("No handler for this schema type");
   }
@@ -602,22 +624,39 @@ public class WriteGephiFile extends Stage {
     String outputPath = (String) stage_options.get("outputpath");
     sLogger.info(" - output: " + outputPath);
 
-    HashMap<String, GraphNode> nodes = readNodes();
-
-    //TODO(jlewi): Filter the nodes to get the subgraph of interest.
-    if (stage_options.containsKey("num_hops") !=
-        stage_options.containsKey("start_node")) {
-      throw new RuntimeException(
-          "You must supply num_hops and start_node if you want to draw only " +
-          "part of the graph.");
-    }
-
+    Iterable<GraphNode> nodesToPlot;
     if (stage_options.containsKey("start_node")) {
-      nodes = getSubGraph(nodes);
-    }
-    writeGraph(nodes, outputPath);
-    sLogger.info("Wrote: " + outputPath);
+      // If we're plotting a subgraph then we need to be able to load
+      // the particular node. We should really use an indexed AvroFile
+      // to facilitate quick lookups.
+      HashMap<String, GraphNode> nodes = readNodes();
 
+      //TODO(jlewi): Filter the nodes to get the subgraph of interest.
+      if (stage_options.containsKey("num_hops") !=
+          stage_options.containsKey("start_node")) {
+        throw new RuntimeException(
+            "You must supply num_hops and start_node if you want to draw only " +
+            "part of the graph.");
+      }
+
+      nodes = getSubGraph(nodes);
+      nodesToPlot = nodes.values();
+    } else {
+      // We're plotting the entire graph so use an iterator so we don't
+      // need to load the entire graph into memory.
+      InputInfo info = getInputInfo();
+      if (info.type != InputRecordTypes.GraphNodeData) {
+        sLogger.fatal(
+            "Currently only GraphNodeData avro files are supported",
+            new NotImplementedException());
+      }
+
+      nodesToPlot = new GraphNodeFilesIterator(getConf(), info.files);
+    }
+
+    writeGraph(nodesToPlot, outputPath);
+
+    sLogger.info("Wrote: " + outputPath);
     return null;
   }
 
