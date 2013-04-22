@@ -71,21 +71,6 @@
                  }
                ]
     },
-    {"name": "R5TagNodeIdPair",
-     "namespace": "contrail.graph",
-     "type": "record",
-     "doc": ["This tuple links an R5Tag to the contig it belongs to. Its ",
-             "used to join the reads with the contigs to which they are ",
-             "aligned."],
-     "fields": [
-                 {"name": "node_id",
-                  "type": "string"
-                 },
-                 {"name": "r5tag",
-                  "type": "contrail.graph.R5Tag"
-                 }
-               ]
-    },
     {"name": "GraphNodeKMerTag",
      "namespace": "contrail.graph",
      "type": "record",
