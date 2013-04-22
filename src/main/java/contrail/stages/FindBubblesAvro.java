@@ -418,15 +418,20 @@ public class FindBubblesAvro extends MRStage   {
         boolean found = false;
         // Find the strand of major node which has an outgoing edge to the
         // minor node.
-        for(DNAStrand strand: DNAStrand.values())  {
+        for(DNAStrand majorEdge: DNAStrand.values())  {
           Set<EdgeTerminal> terminals = majorNode.getEdgeTerminalsSet(
-              strand, EdgeDirection.OUTGOING);
-          EdgeTerminal temp = new EdgeTerminal(minor.toString(),
-              strand);
-          if(terminals.contains(temp)) {
-            majorStrand = strand;
-            minorStrand = strand;
-            found = true;
+              majorEdge, EdgeDirection.OUTGOING);
+          for (DNAStrand minorEdge: DNAStrand.values()) {
+            EdgeTerminal temp = new EdgeTerminal(minor.toString(),
+                minorEdge);
+            if(terminals.contains(temp)) {
+              this.majorStrand = majorEdge;
+              this.minorStrand = minorEdge;
+              found = true;
+              break;
+            }
+          }
+          if (found) {
             break;
           }
         }
@@ -435,7 +440,6 @@ public class FindBubblesAvro extends MRStage   {
               "No path was found from majorNode: %s to minor Node: %s",
               majorNode.getNodeId(), minor.toString()),
               new RuntimeException("No direct path found"));
-          System.exit(-1);
         }
 
         EdgeTerminal minorTerminal = new EdgeTerminal(minor.toString(),
