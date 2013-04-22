@@ -398,10 +398,10 @@ public class FindBubblesAvro extends MRStage   {
      *
      * DirectPath sequence of X->Y is interpreted as X + Y[K-1:]
      * (where [K-1:] refers to substring from K-1 index to end of sequence)
-     * Since we wish to compare sequences of various Indirect Paths and also
-     * Direct Paths; we do not need to compare X and Y[K-1:] bases of Direct
-     * Path sequence; as they will be same of each path having same majors and
-     * minors (as X and Y).
+     * We want to compare sequences corresponding to the Indirect Paths and
+     * Direct Paths between major and minor node. For these paths we do not
+     * need to include the bases corresponding X and Y[K-1:] because they
+     * are the same for each path between a given major and minor pair.
      *
      * Trimmed Sequence of an Direct Path returns "" (empty) sequence for path
      * X->Y (which is enough to compare various Indirect paths)
@@ -415,19 +415,31 @@ public class FindBubblesAvro extends MRStage   {
       private Sequence trimmedSequence;
 
       public DirectPath(GraphNode majorNode, CharSequence minor, int K)  {
-
+        boolean found = false;
         // Find the strand of major node which has an outgoing edge to the
         // minor node.
-        for(DNAStrand strand: DNAStrand.values())  {
-          List<EdgeTerminal> terminals = majorNode.getEdgeTerminals(
-              strand, EdgeDirection.OUTGOING);
-          EdgeTerminal temp = new EdgeTerminal(minor.toString(),
-              strand);
-          if(terminals.contains(temp)) {
-            majorStrand = strand;
-            minorStrand = strand;
+        for(DNAStrand majorEdge: DNAStrand.values())  {
+          Set<EdgeTerminal> terminals = majorNode.getEdgeTerminalsSet(
+              majorEdge, EdgeDirection.OUTGOING);
+          for (DNAStrand minorEdge: DNAStrand.values()) {
+            EdgeTerminal temp = new EdgeTerminal(minor.toString(),
+                minorEdge);
+            if(terminals.contains(temp)) {
+              this.majorStrand = majorEdge;
+              this.minorStrand = minorEdge;
+              found = true;
+              break;
+            }
+          }
+          if (found) {
             break;
           }
+        }
+        if (!found) {
+          sLogger.fatal(String.format(
+              "No path was found from majorNode: %s to minor Node: %s",
+              majorNode.getNodeId(), minor.toString()),
+              new RuntimeException("No direct path found"));
         }
 
         EdgeTerminal minorTerminal = new EdgeTerminal(minor.toString(),
@@ -537,9 +549,9 @@ public class FindBubblesAvro extends MRStage   {
           distance = highCoveragePath.getTrimmedSequence().computeEditDistance(
               lowCoveragePath.getTrimmedSequence());
 
-          threshold = (int) Math.max(
+          threshold = (int) Math.ceil(Math.max(
               highCoveragePath.getTrimmedSequence().size(),
-              lowCoveragePath.getTrimmedSequence().size() * bubbleEditRate);
+              lowCoveragePath.getTrimmedSequence().size()) * bubbleEditRate);
 
           reporter.incrCounter("Contrail", "pathschecked", 1);
           if (distance <= threshold)  {
@@ -642,9 +654,10 @@ public class FindBubblesAvro extends MRStage   {
             collector.collect(output);
           }
         } else  {
-          DirectPath directPath = (DirectPath) markedPath;
+          // Else its a directpath in which case we would need to remove
+          // the edge to the major node.
           if(markedPath.popped) {
-            deletedNeighbors.add(directPath.minorID);
+            deletedNeighbors.add(majorNode.getNodeId());
           }
         }
       }

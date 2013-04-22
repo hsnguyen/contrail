@@ -137,7 +137,12 @@ public class CorrectionPipelineRunner extends Stage{
       options.put("inputpath", stage_options.get("no_flash_input"));
       options.put("outputpath", inputAvroPath);
       inputToAvro.setParameters(options);
-      runStage(inputToAvro);
+      if (!inputToAvro.execute()) {
+        sLogger.fatal(
+            String.format(
+                "Stage %s had a problem", inputToAvro.getClass().getName()),
+            new RuntimeException("Stage failed"));
+      }
     }
 
     ArrayList<String> inputGlobs = new ArrayList<String>();
@@ -157,7 +162,16 @@ public class CorrectionPipelineRunner extends Stage{
     counterOptions.put("outputpath", kmerCountsPath);
     counterOptions.put("K", stage_options.get("K"));
     kmerCounter.setParameters(counterOptions);
-    runStage(kmerCounter);
+
+    // TODO(jeremy@lewi.us): We should be using executeChild
+    // once CorrectionPipelineRunner is converted to a subclass of
+    // PipelineStage
+    if (!kmerCounter.execute()) {
+      sLogger.fatal(
+          String.format(
+              "Stage %s had a problem", kmerCounter.getClass().getName()),
+          new RuntimeException("Stage failed"));
+    }
 
     // Convert KmerCounts to Text
     sLogger.info("Running ConvertKMerCountsToText");
@@ -248,7 +262,13 @@ public class CorrectionPipelineRunner extends Stage{
       options.put("inputpath", stage_options.get("flash_input"));
       options.put("outputpath", flashInputAvroPath);
       flashInputToAvro.setParameters(options);
-      runStage(flashInputToAvro);
+      if (!flashInputToAvro.execute()) {
+        sLogger.fatal(
+            String.format(
+                "Stage %s had a problem",
+                flashInputToAvro.getClass().getName()),
+            new RuntimeException("Stage failed"));
+      }
     }
 
     // Join mate pairs.
