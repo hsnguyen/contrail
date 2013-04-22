@@ -41,10 +41,10 @@ import org.apache.log4j.Logger;
 
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
+import contrail.graph.IndexedGraph;
 import contrail.stages.ContrailParameters;
 import contrail.stages.NonMRStage;
 import contrail.stages.ParameterDefinition;
-import contrail.util.IndexedGraph;
 
 /**
  * This stage uses an indexed graph to split the graph into connected
