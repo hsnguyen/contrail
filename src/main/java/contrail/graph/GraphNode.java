@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -398,8 +399,7 @@ public class GraphNode {
     CompressedSequence sequence = data.getSequence();
     data.setSequence(null);
 
-    GraphNodeData copy = (GraphNodeData)
-        SpecificData.get().deepCopy(data.getSchema(), data);
+    GraphNodeData copy = SpecificData.get().deepCopy(data.getSchema(), data);
 
     CompressedSequence sequence_copy = new CompressedSequence();
     copy.setSequence(sequence_copy);
@@ -1138,5 +1138,16 @@ public class GraphNode {
       }
     }
     return neighbor;
+  }
+
+  /**
+   * A comparator for sorting nodes by NodeId.
+   */
+  public static class NodeIdComparator implements Comparator<GraphNode> {
+    @Override
+    public int compare(GraphNode o1, GraphNode o2) {
+      return o1.getNodeId().compareTo(o2.getNodeId());
+    }
+
   }
 }

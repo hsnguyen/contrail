@@ -19,26 +19,32 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.TreeSet;
 
 /**
  * Iterator which performs a breadth first search of the graph.
+ *
+ * TODO(jeremy@lewi.us): We should process the nodes in thisHop in alphabetical
+ * order to ensure the order is the same across multiple calls.
  */
 public class GraphBFSIterator
     implements Iterator<GraphNode>, Iterable<GraphNode> {
 
-  private IndexedGraph graph;
+  protected IndexedGraph graph;
 
   // Use two sets so we can keep track of the hops.
   // We use sets because we don't want duplicates because duplicates
-  // make computing hasNext() difficult;
-  private HashSet<String> thisHop;
+  // make computing hasNext() difficult. We use a TreeSet for thisHop
+  // because we want to process the nodes in sorted order.
+  // We use a hashset for nextHop to make testing membership fast.
+  private TreeSet<String> thisHop;
   private HashSet<String> nextHop;
-  private ArrayList<String> seeds;
+  protected ArrayList<String> seeds;
   private HashSet<String> visited;
   private int hop;
 
   public GraphBFSIterator(IndexedGraph graph, Collection<String> seeds) {
-    thisHop = new HashSet<String>();
+    thisHop = new TreeSet<String>();
     nextHop = new HashSet<String>();
     visited = new HashSet<String>();
     this.seeds = new ArrayList<String>();;
@@ -63,9 +69,8 @@ public class GraphBFSIterator
   public GraphNode next() {
     if (thisHop.isEmpty()) {
       ++hop;
-      HashSet<String> temp = thisHop;
-      thisHop = nextHop;
-      nextHop = temp;
+      thisHop.addAll(nextHop);
+      nextHop.clear();
     }
 
     if (thisHop.isEmpty()) {
@@ -73,11 +78,7 @@ public class GraphBFSIterator
     }
 
     // Find the first node that we haven't visited already.
-    String nodeId = thisHop.iterator().next();
-
-    // Remove nodeId from thisHop and nextHop.
-    thisHop.remove(nodeId);
-
+    String nodeId = thisHop.pollFirst();
     // Its possible we were slated to visit this node on the next
     // hop in which case we want to remove it.
     nextHop.remove(nodeId);
@@ -86,7 +87,7 @@ public class GraphBFSIterator
     GraphNode node = graph.getNode(nodeId);
 
     for (String neighborId : node.getNeighborIds()) {
-      if (!visited.contains(neighborId) && !thisHop.contains(neighborId)) {
+      if (!visited.contains(neighborId)) {
         nextHop.add(neighborId);
       }
     }
