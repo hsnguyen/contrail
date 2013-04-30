@@ -19,9 +19,12 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroInputFormat;
 import org.apache.avro.mapred.AvroJob;
+import org.apache.avro.mapred.AvroMapper;
 import org.apache.avro.mapred.AvroWrapper;
+import org.apache.avro.mapred.Pair;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -44,6 +47,7 @@ import contrail.graph.EdgeDirection;
 import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
+import contrail.graph.GraphUtil;
 import contrail.sequences.DNAStrand;
 import contrail.stages.ContrailParameters;
 import contrail.stages.MRStage;
@@ -51,10 +55,11 @@ import contrail.stages.ParameterDefinition;
 import contrail.util.BigQueryField;
 
 /**
- * Write the edges to json file which can then be imported into BigQuery.
+ * Write bubbles to a json file which can then be imported into BigQuery.
+ *
  */
-public class WriteEdgesToJson extends MRStage {
-  private static final Logger sLogger = Logger.getLogger(WriteEdgesToJson.class);
+public class WriteBubblesToJson extends MRStage {
+  private static final Logger sLogger = Logger.getLogger(WriteBubblesToJson.class);
 
   /**
    * Get the options required by this stage.
@@ -72,57 +77,36 @@ public class WriteEdgesToJson extends MRStage {
     return Collections.unmodifiableMap(defs);
   }
 
-  private static class WriteEdgesMapper extends MapReduceBase
-      implements Mapper<AvroWrapper<GraphNodeData>, NullWritable,
-                        Text, NullWritable> {
+  private static class WriteBubblesMapper extends
+      AvroMapper<GraphNodeData, Pair<CharSequence, GraphNodeData>> {
 
     private GraphNode node;
-    private Text outKey;
+    private Pair<CharSequence, GraphNodeData> outPair;
 
-    private ObjectMapper jsonMapper;
     public void configure(JobConf job) {
       node = new GraphNode();
-      outKey = new Text();
-      jsonMapper = new ObjectMapper();
+      outPair = new Pair<CharSequence, GraphNodeData>("", new GraphNodeData());
     }
 
+    public void map(
+        GraphNodeData nodeData,
+        AvroCollector<Pair<CharSequence, GraphNodeData>> collector,
+        Reporter reporter) {
+      node.setData(nodeData);
 
-    private class EdgeInfo {
-      public EdgeTerminal source;
-      public EdgeTerminal dest;
-      public ArrayList<String> tags;
-
-      public EdgeInfo() {
-        tags = new ArrayList<String>();
+      // Check if this node could be a bubble i.e it has indegree=outdegree=1.
+      if (node.degree(DNAStrand.FORWARD, EdgeDirection.OUTGOING) != 1 ||
+          node.degree(DNAStrand.FORWARD, EdgeDirection.INCOMING) != 1) {
+        return;
       }
-    }
 
-    /**
-     * Mapper to do the conversion.
-     */
-    public void map(AvroWrapper<GraphNodeData> key, NullWritable bytes,
-        OutputCollector<Text, NullWritable> collector, Reporter reporter)
-            throws IOException {
-      node.setData(key.datum());
+      // The key is the neighbor ids in sorted order. This ensures all nodes
+      // connecting those two nodes get the same key.
+      String key = StringUtils.join(node.getNeighborIds().toArray(), ":");
+      outPair.key(key);
+      outPair.value(nodeData);
 
-      EdgeInfo info = new EdgeInfo();
-
-      for (DNAStrand strand : DNAStrand.values()) {
-        //info.setSource(node.getNodeId());
-        info.source = new EdgeTerminal(node.getNodeId(), strand);
-        for (EdgeTerminal terminal : node.getEdgeTerminals(
-             strand, EdgeDirection.OUTGOING)) {
-          info.dest = terminal;
-          info.tags.clear();
-          for (CharSequence tag : node.getTagsForEdge(strand, terminal)) {
-            info.tags.add(tag.toString());
-          }
-
-          Collections.sort(info.tags);
-          outKey.set(jsonMapper.writeValueAsString(info));
-          collector.collect(outKey, NullWritable.get());
-        }
-      }
+      collector.collect(outPair);
     }
   }
 
@@ -195,7 +179,7 @@ public class WriteEdgesToJson extends MRStage {
 
   public static void main(String[] args) throws Exception {
     int res = ToolRunner.run(
-        new Configuration(), new WriteEdgesToJson(), args);
+        new Configuration(), new WriteBubblesToJson(), args);
     System.exit(res);
   }
 }
