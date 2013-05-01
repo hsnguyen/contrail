@@ -16,14 +16,19 @@ package contrail.tools;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroInputFormat;
 import org.apache.avro.mapred.AvroJob;
+import org.apache.avro.mapred.AvroKey;
 import org.apache.avro.mapred.AvroMapper;
-import org.apache.avro.mapred.AvroWrapper;
+import org.apache.avro.mapred.AvroValue;
 import org.apache.avro.mapred.Pair;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -34,32 +39,33 @@ import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.FileOutputFormat;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.MapReduceBase;
-import org.apache.hadoop.mapred.Mapper;
 import org.apache.hadoop.mapred.OutputCollector;
+import org.apache.hadoop.mapred.Reducer;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapred.TextOutputFormat;
-import org.apache.hadoop.mapred.lib.IdentityReducer;
 import org.apache.hadoop.util.ToolRunner;
-import org.apache.log4j.Logger;
 import org.codehaus.jackson.map.ObjectMapper;
 
 import contrail.graph.EdgeDirection;
 import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
-import contrail.graph.GraphUtil;
 import contrail.sequences.DNAStrand;
+import contrail.sequences.Sequence;
+import contrail.sequences.StrandsForEdge;
+import contrail.sequences.StrandsUtil;
 import contrail.stages.ContrailParameters;
 import contrail.stages.MRStage;
 import contrail.stages.ParameterDefinition;
-import contrail.util.BigQueryField;
+import contrail.util.ContrailLogger;
 
 /**
  * Write bubbles to a json file which can then be imported into BigQuery.
  *
  */
 public class WriteBubblesToJson extends MRStage {
-  private static final Logger sLogger = Logger.getLogger(WriteBubblesToJson.class);
+  private static final ContrailLogger sLogger =
+      ContrailLogger.getLogger(WriteBubblesToJson.class);
 
   /**
    * Get the options required by this stage.
@@ -91,7 +97,7 @@ public class WriteBubblesToJson extends MRStage {
     public void map(
         GraphNodeData nodeData,
         AvroCollector<Pair<CharSequence, GraphNodeData>> collector,
-        Reporter reporter) {
+        Reporter reporter) throws IOException {
       node.setData(nodeData);
 
       // Check if this node could be a bubble i.e it has indegree=outdegree=1.
@@ -110,6 +116,205 @@ public class WriteBubblesToJson extends MRStage {
     }
   }
 
+  private static class WriteBubblesReducer extends
+      MapReduceBase implements
+          Reducer<AvroKey<CharSequence>, AvroValue<GraphNodeData>,
+                  Text, NullWritable> {
+    private GraphNode node;
+    private ObjectMapper jsonMapper;
+    private Text outKey;
+
+    /**
+     * Information about a single node.
+     */
+    protected class NodeInfo {
+      public String id;
+      public DNAStrand strand;
+      public int length;
+      public float coverage;
+    }
+    /**
+     * Compare two nodes forming a bubble.
+     */
+    protected class PairInfo {
+      public NodeInfo major;
+      public NodeInfo minor;
+      public int editDistance;
+      public float editRate;
+    }
+
+    /**
+     * Represent a path from the major to minor node.
+     */
+    protected class PathInfo {
+      public DNAStrand majorStrand;
+      public DNAStrand minorStrand;
+      public ArrayList<PairInfo> pairs;
+
+      public PathInfo() {
+        pairs = new ArrayList<PairInfo>();
+      }
+    }
+
+    /**
+     * A comparator for sorting terminals by node id.
+     */
+    public static class TerminalNodeIdComparator
+        implements Comparator<EdgeTerminal> {
+      @Override
+      public int compare(EdgeTerminal o1, EdgeTerminal o2) {
+        return o1.nodeId.compareTo(o2.nodeId);
+      }
+    }
+
+    /**
+     * This class represents the output for a pair of nodes.
+     */
+    protected class BubbleInfo {
+      // The id's for the two nodes we are considering.
+      public String majorId;
+      public String minorId;
+      public ArrayList<PathInfo> paths;
+
+      public BubbleInfo() {
+        paths = new ArrayList<PathInfo>();
+        jsonMapper = new ObjectMapper();
+        outKey = new Text();
+      }
+    }
+
+    public void configure(JobConf job) {
+      node = new GraphNode();
+    }
+
+    @Override
+    public void reduce(
+        AvroKey<CharSequence> key,
+        Iterator<AvroValue<GraphNodeData>> values,
+        OutputCollector<Text, NullWritable> collector, Reporter reporter)
+        throws IOException {
+
+      HashMap<String, GraphNode> nodes = new HashMap<String, GraphNode>();
+      while (values.hasNext()) {
+        node.setData(values.next().datum());
+        nodes.put(node.getNodeId(), node.clone());
+      }
+
+      // Find the major and minor nodes for these paths.
+      BubbleInfo bubble = new BubbleInfo();
+
+      // Get the neighbor nodes in sorted order.
+      List<String> neighbors = new ArrayList<String>();
+      neighbors.addAll(nodes.values().iterator().next().getNeighborIds());
+      Collections.sort(neighbors);
+
+      bubble.minorId = neighbors.get(0);
+      bubble.majorId = neighbors.get(1);
+
+      // We align the nodes by finding the path major -> middle -> minor.
+      // We group the nodes based on the strands for the major and minor
+      // node and then the terminal for the middle node.
+      // The key are the strands for the major and minor node. The values
+      // are middle terminals for that path.
+      HashMap<StrandsForEdge, ArrayList<EdgeTerminal>> groups =
+          new HashMap<StrandsForEdge, ArrayList<EdgeTerminal>>();
+
+      for (GraphNode middle : nodes.values()) {
+        Set<StrandsForEdge> majorSet = middle.findStrandsForEdge(
+            bubble.majorId, EdgeDirection.INCOMING);
+
+        if (majorSet.size() != 1) {
+          sLogger.fatal(String.format(
+              "Node: %s couldn't be aligned.", middle.getNodeId()),
+              new RuntimeException("Unable to align node."));
+        }
+
+        Set<StrandsForEdge> minorSet = middle.findStrandsForEdge(
+            bubble.majorId, EdgeDirection.OUTGOING);
+        if (minorSet.size() != 1) {
+          sLogger.fatal(String.format(
+              "Node: %s couldn't be aligned.", middle.getNodeId()),
+              new RuntimeException("Unable to align node."));
+        }
+
+        StrandsForEdge majorStrands = majorSet.iterator().next();
+        StrandsForEdge minorStrands = minorSet.iterator().next();
+        if (StrandsUtil.dest(majorStrands) != StrandsUtil.src(minorStrands)) {
+          sLogger.fatal(String.format(
+              "Node: %s couldn't be aligned.", middle.getNodeId()),
+              new RuntimeException("Unable to align node."));
+        }
+
+        StrandsForEdge strandsKey = StrandsUtil.form(
+            StrandsUtil.src(majorStrands), StrandsUtil.dest(minorStrands));
+
+        if (!groups.containsKey(strandsKey)) {
+          groups.put(strandsKey, new ArrayList<EdgeTerminal>());
+        }
+
+        groups.get(strandsKey).add(new EdgeTerminal(
+            middle.getNodeId(), StrandsUtil.dest(majorStrands)));
+      }
+
+
+      // Iterate over each set of nodes forming a bubble and compare the
+      // paths.
+      for (StrandsForEdge keyStrands : groups.keySet()) {
+        ArrayList<EdgeTerminal> group = groups.get(keyStrands);
+        if (group.size() == 1) {
+          continue;
+        }
+
+        // Sort the group by alphabetical order in descending order by
+        // nodeId. This way when iterating over pairs, the node which comes
+        // first is always the major node.
+        Collections.sort(group, new TerminalNodeIdComparator());
+
+        PathInfo pathInfo = new PathInfo();
+        pathInfo.majorStrand = StrandsUtil.src(keyStrands);
+        pathInfo.minorStrand = StrandsUtil.dest(keyStrands);
+
+        bubble.paths.add(pathInfo);
+        // Compare all pairs.
+        for (int i = 0;  i < group.size(); ++i) {
+          EdgeTerminal major = group.get(i);
+          Sequence majorSequence = nodes.get(major.nodeId).getSequence();
+
+          NodeInfo majorInfo = new NodeInfo();
+          majorInfo.id = major.nodeId;
+          majorInfo.strand = major.strand;
+          majorInfo.length = majorSequence.size();
+          majorInfo.coverage = nodes.get(major.nodeId).getCoverage();
+
+          for (int j = i + 1;  j < group.size(); ++j) {
+            EdgeTerminal minor = group.get(j);
+            Sequence minorSequence = nodes.get(minor.nodeId).getSequence();
+
+            NodeInfo minorInfo = new NodeInfo();
+            minorInfo.id = minor.nodeId;
+            minorInfo.strand = minor.strand;
+            minorInfo.length = minorSequence.size();
+            minorInfo.coverage = nodes.get(major.nodeId).getCoverage();
+
+            PairInfo pairInfo = new PairInfo();
+            pairInfo.major = majorInfo;
+            pairInfo.minor = minorInfo;
+            pairInfo.editDistance = majorSequence.computeEditDistance(
+                majorSequence);
+            // Edit rate is the editDistance divided by the average length.
+            pairInfo.editRate =
+                2.0f * pairInfo.editDistance /
+                (majorInfo.length + minorInfo.length);
+
+            pathInfo.pairs.add(pairInfo);
+          }
+        }
+      }
+      outKey.set(jsonMapper.writeValueAsString(bubble));
+      collector.collect(outKey, NullWritable.get());
+    }
+
+  }
   @Override
   protected void setupConfHook() {
     JobConf conf = (JobConf) getConf();
@@ -118,6 +323,8 @@ public class WriteBubblesToJson extends MRStage {
     String outputPath = (String) stage_options.get("outputpath");
 
     AvroJob.setInputSchema(conf, GraphNodeData.SCHEMA$);
+    AvroJob.setMapperClass(conf, WriteBubblesToJson.WriteBubblesMapper.class);
+    conf.setReducerClass(WriteBubblesToJson.WriteBubblesReducer.class);
 
     FileInputFormat.addInputPath(conf, new Path(inputPath));
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
@@ -128,53 +335,39 @@ public class WriteBubblesToJson extends MRStage {
 
     // The output is a text file.
     conf.setOutputFormat(TextOutputFormat.class);
-
-    conf.setMapOutputKeyClass(Text.class);
-    conf.setMapOutputValueClass(NullWritable.class);
     conf.setOutputKeyClass(Text.class);
     conf.setOutputValueClass(NullWritable.class);
-
-    // We need to set the comparator because AvroJob.setInputSchema will
-    // set it automatically to a comparator for an Avro class which we don't
-    // want. We could also change the code to use an AvroMapper.
-    conf.setOutputKeyComparatorClass(Text.Comparator.class);
-    // We use a single reducer because it is convenient to have all the data
-    // in one output file to facilitate uploading to bigquery.
-    // TODO(jlewi): Once we have an easy way of uploading multiple files to
-    // big query we should get rid of this constraint.
-    conf.setNumReduceTasks(1);
-    conf.setMapperClass(WriteEdgesMapper.class);
-    conf.setReducerClass(IdentityReducer.class);
   }
 
   protected void postRunHook() {
     // Print out the json schema.
-    ArrayList<String> fields = new ArrayList<String>();
-
-    BigQueryField source = new BigQueryField();
-    source.name = "source";
-    source.type = "record";
-    source.fields.add(new BigQueryField("nodeId", "string"));
-    source.fields.add(new BigQueryField("strand", "string"));
-
-    BigQueryField dest = new BigQueryField();
-    dest.name = "dest";
-    dest.type = "record";
-    dest.fields.add(new BigQueryField("nodeId", "string"));
-    dest.fields.add(new BigQueryField("strand", "string"));
-
-
-    BigQueryField tags = new BigQueryField();
-    tags.name = "tags";
-    tags.type = "string";
-    tags.mode = "repeated";
-
-    fields.add(source.toString());
-    fields.add(dest.toString());
-    fields.add(tags.toString());
-
-    String schema = "[" + StringUtils.join(fields, ",") + "]";
-    sLogger.info("Schema:\n" + schema);
+//    ArrayList<String> fields = new ArrayList<String>();
+//
+//    BigQueryField source = new BigQueryField();
+//    source.name = "source";
+//    source.type = "record";
+//    source.fields.add(new BigQueryField("nodeId", "string"));
+//    source.fields.add(new BigQueryField("strand", "string"));
+//
+//    BigQueryField dest = new BigQueryField();
+//    dest.name = "dest";
+//    dest.type = "record";
+//    dest.fields.add(new BigQueryField("nodeId", "string"));
+//    dest.fields.add(new BigQueryField("strand", "string"));
+//
+//
+//    BigQueryField tags = new BigQueryField();
+//    tags.name = "tags";
+//    tags.type = "string";
+//    tags.mode = "repeated";
+//
+//    fields.add(source.toString());
+//    fields.add(dest.toString());
+//    fields.add(tags.toString());
+//
+//    String schema = "[" + StringUtils.join(fields, ",") + "]";
+    //sLogger.info("Schema:\n" + schema);
+    sLogger.info("TODO Write code to output schema");
   }
 
   public static void main(String[] args) throws Exception {

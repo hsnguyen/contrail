@@ -602,6 +602,28 @@ public class GraphNode {
     return strands;
   }
 
+  /**
+   * Find the strands for an edge in the supplied direction to the other
+   * node
+   *
+   * @param otherNode
+   * @return
+   */
+  public Set<StrandsForEdge> findStrandsForEdge(
+      String otherNode, EdgeDirection direction) {
+    HashSet<StrandsForEdge> strands = new HashSet<StrandsForEdge>();
+
+    for (StrandsForEdge s : StrandsForEdge.values()) {
+      DNAStrand src = StrandsUtil.src(s);
+      DNAStrand dest = StrandsUtil.dest(s);
+      EdgeTerminal destTerminal = new EdgeTerminal(otherNode, dest);
+
+      if (this.getEdgeTerminalsSet(src, direction).contains(destTerminal)) {
+        strands.add(s);
+      }
+    }
+    return strands;
+  }
 
   /**
    * Add an outgoing edge to this node.
@@ -1148,6 +1170,5 @@ public class GraphNode {
     public int compare(GraphNode o1, GraphNode o2) {
       return o1.getNodeId().compareTo(o2.getNodeId());
     }
-
   }
 }
