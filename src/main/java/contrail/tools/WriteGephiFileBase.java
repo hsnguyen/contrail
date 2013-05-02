@@ -283,132 +283,132 @@ public abstract class WriteGephiFileBase extends NonMRStage {
     }
 
     try {
-    writer.writeStartDocument();
-    writer.writeStartElement("gexf");
-    writer.writeStartElement("graph");
-    writer.writeAttribute("mode", "static");
-    writer.writeAttribute("defaultedgetype", "directed");
+      writer.writeStartDocument();
+      writer.writeStartElement("gexf");
+      writer.writeStartElement("graph");
+      writer.writeAttribute("mode", "static");
+      writer.writeAttribute("defaultedgetype", "directed");
 
-    nodeAttrIdMap = new HashMap<String, String>();
-    {
-      // Declare some attributes for nodes
-      writer.writeStartElement("attributes");
-      writer.writeAttribute("class", "node");
+      nodeAttrIdMap = new HashMap<String, String>();
+      {
+        // Declare some attributes for nodes
+        writer.writeStartElement("attributes");
+        writer.writeAttribute("class", "node");
 
-      List<String> fields = Arrays.asList(new String[]{
-          "node-id", "out-degree", "in-degree", "length", "coverage"});
+        List<String> fields = Arrays.asList(new String[]{
+            "node-id", "out-degree", "in-degree", "length", "coverage"});
 
-      if ((Boolean)stage_options.get("sequence")) {
-        fields.add("sequence");
-      }
-
-      if ((Boolean)stage_options.get("r5tags")) {
-        fields.add("r5tags");
-      }
-
-      for (int i = 0; i < fields.size(); ++i) {
-        nodeAttrIdMap.put(fields.get(i), Integer.toString(i));
-      }
-
-      for (Entry<String, String> entry : nodeAttrIdMap.entrySet()) {
-        writer.writeStartElement("attribute");
-        writer.writeAttribute("id", entry.getValue());
-        writer.writeAttribute("title", entry.getKey());
-        writer.writeAttribute("type", "string");
-        writer.writeEndElement();
-      }
-      writer.writeEndElement(); // attributes;
-    }
-
-    edgeAttrIdMap = new HashMap<String, String> ();
-    {
-      // Declare some attributes for edge
-      writer.writeStartElement("attributes");
-      writer.writeAttribute("class", "edge");
-
-      List<String> fields = new ArrayList<String>();
-
-      if ((Boolean)stage_options.get("read_ids")) {
-        fields.add("read-ids");
-      }
-
-      for (int i = 0; i < fields.size(); ++i) {
-        edgeAttrIdMap.put(fields.get(i), Integer.toString(i));
-      }
-
-      for (Entry<String, String> entry : edgeAttrIdMap.entrySet()) {
-        writer.writeStartElement("attribute");
-        writer.writeAttribute("id", entry.getValue());
-        writer.writeAttribute("title", entry.getKey());
-        writer.writeAttribute("type", "string");
-
-        // Set the default value to the empty string because if no value
-        // is supplied and the attribute isn't set its an error.
-        writer.writeStartElement("default");
-        writer.writeCharacters("");
-        writer.writeEndElement(); // default
-        writer.writeEndElement(); // attribute
-      }
-      writer.writeEndElement(); // attributes;
-    }
-
-    writer.writeStartElement("nodes");
-    int count = 0;
-    int progressInterval = 1000;
-    for (GraphNode node: createNodesIterable()) {
-      ++count;
-      if (count % progressInterval == 0) {
-        sLogger.info(String.format("Processing node: %d", count));
-      }
-      AddNodeToIndex(node);
-      for (DNAStrand strand : DNAStrand.values()) {
-        EdgeTerminal terminal = new EdgeTerminal(node.getNodeId(), strand);
-        writeTerminal(terminal, node);
-      }
-    }
-    writer.writeEndElement(); // nodes
-
-    writer.writeStartElement("edges");
-    count = 0;
-    // We assign each edge a unique id.
-    int edge_id = 0;
-    for (GraphNode node : createNodesIterable()) {
-      ++count;
-      if (count % progressInterval == 0) {
-        sLogger.info(String.format("Processing edges for node: %d", count));
-      }
-      for (DNAStrand strand : DNAStrand.values()) {
-        EdgeTerminal terminal = new EdgeTerminal(node.getNodeId(), strand);
-        List<EdgeTerminal> edges =
-            node.getEdgeTerminals(strand, EdgeDirection.OUTGOING);
-        for (EdgeTerminal other_terminal: edges){
-          // If the node for the edge isn't provided skip it.
-          // TODO(jlewi): It would be nice to visually indicate those
-          // terminals which are actually terminal's in the node (i.e
-          // we don't have GraphNode's for them.)
-          if (IdForTerminal(other_terminal) == null) {
-            continue;
-            //AddTerminalToIndex(other_terminal);
-            //Element new_node = CreateTerminal(other_terminal, node);
-            //xml_nodes.appendChild(new_node);
-          }
-          ArrayList<String> readIds = new ArrayList<String>();
-          for (CharSequence tag : node.getTagsForEdge(strand, other_terminal)) {
-            readIds.add(tag.toString());
-          }
-          writeEdge(++edge_id, terminal, other_terminal, readIds);
+        if ((Boolean)stage_options.get("sequence")) {
+          fields.add("sequence");
         }
 
-        // TODO(jlewi): Should we also plot any incoming edges if the
-        // edge terminates on a node which isn't in nodes?
-      }
-    }
-    writer.writeEndElement(); // edges
+        if ((Boolean)stage_options.get("r5tags")) {
+          fields.add("r5tags");
+        }
 
-    writer.writeEndElement(); // graph
-    writer.writeEndElement(); // gexf
-    writer.flush();
-    writer.close();
+        for (int i = 0; i < fields.size(); ++i) {
+          nodeAttrIdMap.put(fields.get(i), Integer.toString(i));
+        }
+
+        for (Entry<String, String> entry : nodeAttrIdMap.entrySet()) {
+          writer.writeStartElement("attribute");
+          writer.writeAttribute("id", entry.getValue());
+          writer.writeAttribute("title", entry.getKey());
+          writer.writeAttribute("type", "string");
+          writer.writeEndElement();
+        }
+        writer.writeEndElement(); // attributes;
+      }
+
+      edgeAttrIdMap = new HashMap<String, String> ();
+      {
+        // Declare some attributes for edge
+        writer.writeStartElement("attributes");
+        writer.writeAttribute("class", "edge");
+
+        List<String> fields = new ArrayList<String>();
+
+        if ((Boolean)stage_options.get("read_ids")) {
+          fields.add("read-ids");
+        }
+
+        for (int i = 0; i < fields.size(); ++i) {
+          edgeAttrIdMap.put(fields.get(i), Integer.toString(i));
+        }
+
+        for (Entry<String, String> entry : edgeAttrIdMap.entrySet()) {
+          writer.writeStartElement("attribute");
+          writer.writeAttribute("id", entry.getValue());
+          writer.writeAttribute("title", entry.getKey());
+          writer.writeAttribute("type", "string");
+
+          // Set the default value to the empty string because if no value
+          // is supplied and the attribute isn't set its an error.
+          writer.writeStartElement("default");
+          writer.writeCharacters("");
+          writer.writeEndElement(); // default
+          writer.writeEndElement(); // attribute
+        }
+        writer.writeEndElement(); // attributes;
+      }
+
+      writer.writeStartElement("nodes");
+      int count = 0;
+      int progressInterval = 1000;
+      for (GraphNode node: createNodesIterable()) {
+        ++count;
+        if (count % progressInterval == 0) {
+          sLogger.info(String.format("Processing node: %d", count));
+        }
+        AddNodeToIndex(node);
+        for (DNAStrand strand : DNAStrand.values()) {
+          EdgeTerminal terminal = new EdgeTerminal(node.getNodeId(), strand);
+          writeTerminal(terminal, node);
+        }
+      }
+      writer.writeEndElement(); // nodes
+
+      writer.writeStartElement("edges");
+      count = 0;
+      // We assign each edge a unique id.
+      int edge_id = 0;
+      for (GraphNode node : createNodesIterable()) {
+        ++count;
+        if (count % progressInterval == 0) {
+          sLogger.info(String.format("Processing edges for node: %d", count));
+        }
+        for (DNAStrand strand : DNAStrand.values()) {
+          EdgeTerminal terminal = new EdgeTerminal(node.getNodeId(), strand);
+          List<EdgeTerminal> edges =
+              node.getEdgeTerminals(strand, EdgeDirection.OUTGOING);
+          for (EdgeTerminal other_terminal: edges){
+            // If the node for the edge isn't provided skip it.
+            // TODO(jlewi): It would be nice to visually indicate those
+            // terminals which are actually terminal's in the node (i.e
+            // we don't have GraphNode's for them.)
+            if (IdForTerminal(other_terminal) == null) {
+              continue;
+              //AddTerminalToIndex(other_terminal);
+              //Element new_node = CreateTerminal(other_terminal, node);
+              //xml_nodes.appendChild(new_node);
+            }
+            ArrayList<String> readIds = new ArrayList<String>();
+            for (CharSequence tag : node.getTagsForEdge(strand, other_terminal)) {
+              readIds.add(tag.toString());
+            }
+            writeEdge(++edge_id, terminal, other_terminal, readIds);
+          }
+
+          // TODO(jlewi): Should we also plot any incoming edges if the
+          // edge terminates on a node which isn't in nodes?
+        }
+      }
+      writer.writeEndElement(); // edges
+
+      writer.writeEndElement(); // graph
+      writer.writeEndElement(); // gexf
+      writer.flush();
+      writer.close();
     } catch (XMLStreamException e) {
       sLogger.fatal("XML write error", e);
       System.exit(-1);
