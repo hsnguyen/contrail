@@ -58,6 +58,9 @@ import contrail.graph.GraphNodeData;
  * and walking outwards. All nodes visited are then outputted.
  * The input files must be SortedKeyValueFile's so that we can efficiently
  * lookup nodes in the files.
+ *
+ * TODO(jeremy@lewi.us): We should probably use the GraphBFSIterator
+ * in this code.
  */
 public class WalkGraph extends Stage {
   // TODO(jlewi): Use Indexed graph rather than implementing the methods
