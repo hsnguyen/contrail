@@ -57,6 +57,8 @@ import contrail.sequences.StrandsUtil;
 import contrail.stages.ContrailParameters;
 import contrail.stages.MRStage;
 import contrail.stages.ParameterDefinition;
+import contrail.util.BigQueryField;
+import contrail.util.BigQuerySchema;
 import contrail.util.ContrailLogger;
 
 /**
@@ -116,6 +118,122 @@ public class WriteBubblesToJson extends MRStage {
     }
   }
 
+  /**
+   * Information about a single node.
+   */
+  protected static class NodeInfo {
+    public String nodeId;
+    public DNAStrand strand;
+    public int length;
+    public float coverage;
+
+    /**
+     * Returns a schema describing this record.
+     * @return
+     */
+    public static BigQuerySchema bigQuerySchema() {
+      BigQuerySchema schema = new BigQuerySchema();
+
+      schema.add(new BigQueryField("nodeId", "string"));
+      schema.add(new BigQueryField("strand", "string"));
+      schema.add(new BigQueryField("length", "integer"));
+      schema.add(new BigQueryField("coverage", "float"));
+
+      return schema;
+    }
+  }
+
+  /**
+   * Compare two nodes forming a bubble.
+   */
+  protected static class PairInfo {
+    public NodeInfo major;
+    //public NodeInfo minor;
+    public int editDistance;
+    public float editRate;
+
+    /**
+     * Returns a schema describing this record.
+     * @return
+     */
+    public static BigQuerySchema bigQuerySchema() {
+      BigQuerySchema schema = new BigQuerySchema();
+
+      BigQueryField major = new BigQueryField("major", "record");
+      major.fields.addAll(NodeInfo.bigQuerySchema());
+      schema.add(major);
+
+      /*BigQueryField minor = new BigQueryField("minor", "record");
+      minor.fields.addAll(NodeInfo.bigQuerySchema());
+      schema.add(minor);*/
+
+      schema.add(new BigQueryField("editDistance", "integer"));
+      schema.add(new BigQueryField("editRate", "float"));
+
+      return schema;
+    }
+  }
+
+  /**
+   * Represent a path from the major to minor node.
+   */
+  protected static class PathInfo {
+    public DNAStrand majorStrand;
+    public DNAStrand minorStrand;
+    public ArrayList<PairInfo> pairs;
+
+    public PathInfo() {
+      pairs = new ArrayList<PairInfo>();
+    }
+
+    /**
+     * Returns a schema describing this record.
+     * @return
+     */
+    public static BigQuerySchema bigQuerySchema() {
+      BigQuerySchema schema = new BigQuerySchema();
+      schema.add(new BigQueryField("majorStrand", "string"));
+      schema.add(new BigQueryField("minorStrand", "string"));
+
+      BigQueryField pairs = new BigQueryField("pairs", "record");
+      pairs.mode = "repeated";
+      pairs.fields.addAll(PairInfo.bigQuerySchema());
+
+      schema.add(pairs);
+      return schema;
+    }
+  }
+
+  /**
+   * This class represents the output for a pair of nodes.
+   */
+  protected static class BubbleInfo {
+    // The id's for the two nodes we are considering.
+    public String majorId;
+    public String minorId;
+    public ArrayList<PathInfo> paths;
+
+    public BubbleInfo() {
+      paths = new ArrayList<PathInfo>();
+    }
+
+    /**
+     * Returns a schema describing this record.
+     * @return
+     */
+    public static BigQuerySchema bigQuerySchema() {
+      BigQuerySchema schema = new BigQuerySchema();
+      schema.add(new BigQueryField("majorId", "string"));
+      schema.add(new BigQueryField("minorId", "string"));
+
+      BigQueryField pairs = new BigQueryField("paths", "record");
+      pairs.mode = "repeated";
+      pairs.fields.addAll(PathInfo.bigQuerySchema());
+      schema.add(pairs);
+     return schema;
+    }
+  }
+
   private static class WriteBubblesReducer extends
       MapReduceBase implements
           Reducer<AvroKey<CharSequence>, AvroValue<GraphNodeData>,
@@ -123,38 +241,6 @@ public class WriteBubblesToJson extends MRStage {
     private GraphNode node;
     private ObjectMapper jsonMapper;
     private Text outKey;
-
-    /**
-     * Information about a single node.
-     */
-    protected class NodeInfo {
-      public String id;
-      public DNAStrand strand;
-      public int length;
-      public float coverage;
-    }
-    /**
-     * Compare two nodes forming a bubble.
-     */
-    protected class PairInfo {
-      public NodeInfo major;
-      public NodeInfo minor;
-      public int editDistance;
-      public float editRate;
-    }
-
-    /**
-     * Represent a path from the major to minor node.
-     */
-    protected class PathInfo {
-      public DNAStrand majorStrand;
-      public DNAStrand minorStrand;
-      public ArrayList<PairInfo> pairs;
-
-      public PathInfo() {
-        pairs = new ArrayList<PairInfo>();
-      }
-    }
 
     /**
      * A comparator for sorting terminals by node id.
@@ -167,24 +253,10 @@ public class WriteBubblesToJson extends MRStage {
       }
     }
 
-    /**
-     * This class represents the output for a pair of nodes.
-     */
-    protected class BubbleInfo {
-      // The id's for the two nodes we are considering.
-      public String majorId;
-      public String minorId;
-      public ArrayList<PathInfo> paths;
-
-      public BubbleInfo() {
-        paths = new ArrayList<PathInfo>();
-        jsonMapper = new ObjectMapper();
-        outKey = new Text();
-      }
-    }
-
     public void configure(JobConf job) {
       node = new GraphNode();
+      jsonMapper = new ObjectMapper();
+      outKey = new Text();
     }
 
     @Override
@@ -230,7 +302,7 @@ public class WriteBubblesToJson extends MRStage {
         }
 
         Set<StrandsForEdge> minorSet = middle.findStrandsForEdge(
-            bubble.majorId, EdgeDirection.OUTGOING);
+            bubble.minorId, EdgeDirection.OUTGOING);
         if (minorSet.size() != 1) {
           sLogger.fatal(String.format(
               "Node: %s couldn't be aligned.", middle.getNodeId()),
@@ -256,7 +328,6 @@ public class WriteBubblesToJson extends MRStage {
             middle.getNodeId(), StrandsUtil.dest(majorStrands)));
       }
 
-
       // Iterate over each set of nodes forming a bubble and compare the
       // paths.
       for (StrandsForEdge keyStrands : groups.keySet()) {
@@ -269,6 +340,7 @@ public class WriteBubblesToJson extends MRStage {
         // nodeId. This way when iterating over pairs, the node which comes
         // first is always the major node.
         Collections.sort(group, new TerminalNodeIdComparator());
+        Collections.reverse(group);
 
         PathInfo pathInfo = new PathInfo();
         pathInfo.majorStrand = StrandsUtil.src(keyStrands);
@@ -281,7 +353,7 @@ public class WriteBubblesToJson extends MRStage {
           Sequence majorSequence = nodes.get(major.nodeId).getSequence();
 
           NodeInfo majorInfo = new NodeInfo();
-          majorInfo.id = major.nodeId;
+          majorInfo.nodeId = major.nodeId;
           majorInfo.strand = major.strand;
           majorInfo.length = majorSequence.size();
           majorInfo.coverage = nodes.get(major.nodeId).getCoverage();
@@ -291,30 +363,30 @@ public class WriteBubblesToJson extends MRStage {
             Sequence minorSequence = nodes.get(minor.nodeId).getSequence();
 
             NodeInfo minorInfo = new NodeInfo();
-            minorInfo.id = minor.nodeId;
+            minorInfo.nodeId = minor.nodeId;
             minorInfo.strand = minor.strand;
             minorInfo.length = minorSequence.size();
-            minorInfo.coverage = nodes.get(major.nodeId).getCoverage();
+            minorInfo.coverage = nodes.get(minor.nodeId).getCoverage();
 
             PairInfo pairInfo = new PairInfo();
             pairInfo.major = majorInfo;
-            pairInfo.minor = minorInfo;
+            //pairInfo.minor = minorInfo;
             pairInfo.editDistance = majorSequence.computeEditDistance(
-                majorSequence);
+                minorSequence);
             // Edit rate is the editDistance divided by the average length.
             pairInfo.editRate =
                 2.0f * pairInfo.editDistance /
                 (majorInfo.length + minorInfo.length);
 
-            pathInfo.pairs.add(pairInfo);
+           pathInfo.pairs.add(pairInfo);
           }
         }
       }
       outKey.set(jsonMapper.writeValueAsString(bubble));
       collector.collect(outKey, NullWritable.get());
     }
-
   }
+
   @Override
   protected void setupConfHook() {
     JobConf conf = (JobConf) getConf();
@@ -323,6 +395,9 @@ public class WriteBubblesToJson extends MRStage {
     String outputPath = (String) stage_options.get("outputpath");
 
     AvroJob.setInputSchema(conf, GraphNodeData.SCHEMA$);
+    Pair<CharSequence, GraphNodeData> pair =
+        new Pair<CharSequence, GraphNodeData>("",  new GraphNodeData());
+    AvroJob.setMapOutputSchema(conf, pair.getSchema());
     AvroJob.setMapperClass(conf, WriteBubblesToJson.WriteBubblesMapper.class);
     conf.setReducerClass(WriteBubblesToJson.WriteBubblesReducer.class);
 
@@ -340,34 +415,7 @@ public class WriteBubblesToJson extends MRStage {
   }
 
   protected void postRunHook() {
-    // Print out the json schema.
-//    ArrayList<String> fields = new ArrayList<String>();
-//
-//    BigQueryField source = new BigQueryField();
-//    source.name = "source";
-//    source.type = "record";
-//    source.fields.add(new BigQueryField("nodeId", "string"));
-//    source.fields.add(new BigQueryField("strand", "string"));
-//
-//    BigQueryField dest = new BigQueryField();
-//    dest.name = "dest";
-//    dest.type = "record";
-//    dest.fields.add(new BigQueryField("nodeId", "string"));
-//    dest.fields.add(new BigQueryField("strand", "string"));
-//
-//
-//    BigQueryField tags = new BigQueryField();
-//    tags.name = "tags";
-//    tags.type = "string";
-//    tags.mode = "repeated";
-//
-//    fields.add(source.toString());
-//    fields.add(dest.toString());
-//    fields.add(tags.toString());
-//
-//    String schema = "[" + StringUtils.join(fields, ",") + "]";
-    //sLogger.info("Schema:\n" + schema);
-    sLogger.info("TODO Write code to output schema");
+    sLogger.info("Schema:\n" + BubbleInfo.bigQuerySchema().toString());
   }
 
   public static void main(String[] args) throws Exception {

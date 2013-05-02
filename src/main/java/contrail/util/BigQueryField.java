@@ -14,6 +14,10 @@
 package contrail.util;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.apache.commons.lang.StringUtils;
 
@@ -37,7 +41,24 @@ public class BigQueryField {
 
   public ArrayList<BigQueryField> fields;
 
+  protected static Set<String> reserved;
+
+  public static Set<String> getReserevedKeywords() {
+    if (reserved == null) {
+      reserved = new HashSet<String>();
+      reserved.addAll(Arrays.asList(
+          "float", "integer", "boolean", "string", "repeated",
+          "record"));
+      reserved = Collections.unmodifiableSet(reserved);
+    }
+    return reserved;
+  }
+
   public String toString() {
+    // Make sure name isn't a reserved field.
+    if (BigQueryField.getReserevedKeywords().contains(name.toLowerCase())) {
+      throw new RuntimeException("Name: " + name + " is a reserved keyword.");
+    }
     StringBuilder builder = new StringBuilder();
     builder.append("{");
     ArrayList<String> pairs = new ArrayList<String>();
