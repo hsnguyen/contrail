@@ -234,7 +234,8 @@ public class WriteBubblesToJson extends MRStage {
     }
   }
 
-  private static class WriteBubblesReducer extends
+  
+  protected static class WriteBubblesReducer extends
       MapReduceBase implements
           Reducer<AvroKey<CharSequence>, AvroValue<GraphNodeData>,
                   Text, NullWritable> {
@@ -259,6 +260,57 @@ public class WriteBubblesToJson extends MRStage {
       outKey = new Text();
     }
 
+    protected class Alignment {
+  	  public DNAStrand major;
+  	  public DNAStrand middle;
+  	  public DNAStrand minor;
+    }
+    
+    /**
+     * Find the strands for the major, middle and minor nodes such that their is a
+     * path from major->middle->minor
+     * 
+     * @param node
+     * @param majorId
+     * @param minorId
+     * @return
+     */
+    protected Alignment alignMiddle(GraphNode middle, String majorId, String minorId) {
+    	Set<StrandsForEdge> majorSet = middle.findStrandsForEdge(
+    			majorId, EdgeDirection.INCOMING);
+
+    	if (majorSet.size() != 1) {
+    		sLogger.fatal(String.format(
+    			"Node: %s couldn't be aligned. No incoming edge from majorID: %s", middle.getNodeId(), 
+    			majorId),
+    			new RuntimeException("Unable to align node."));
+    	}
+
+    	Set<StrandsForEdge> minorSet = middle.findStrandsForEdge(
+    			minorId, EdgeDirection.OUTGOING);
+    	if (minorSet.size() != 1) {
+    		sLogger.fatal(String.format(
+    			"Node: %s couldn't be aligned. No outgoing edge to minorId: %s.", 
+    			middle.getNodeId(), minorId),
+    			new RuntimeException("Unable to align node."));
+    	}
+    	
+    	StrandsForEdge majorStrands = majorSet.iterator().next();
+    	StrandsForEdge minorStrands = minorSet.iterator().next();
+    	if (StrandsUtil.dest(majorStrands) != StrandsUtil.src(minorStrands)) {
+    		sLogger.fatal(String.format(
+    			"Node: %s couldn't be aligned. Strands don't match: %s %s", middle.getNodeId(),
+    			StrandsUtil.dest(majorStrands), StrandsUtil.src(minorStrands)),
+    			new RuntimeException("Unable to align node."));
+    	}
+    	
+    	Alignment alignment = new Alignment();
+    	alignment.major= StrandsUtil.src(majorStrands);
+    	alignment.middle = StrandsUtil.dest(majorStrands);
+    	alignment.minor= StrandsUtil.dest(minorStrands);
+    	return alignment;
+    }
+    
     @Override
     public void reduce(
         AvroKey<CharSequence> key,
@@ -291,41 +343,16 @@ public class WriteBubblesToJson extends MRStage {
       HashMap<StrandsForEdge, ArrayList<EdgeTerminal>> groups =
           new HashMap<StrandsForEdge, ArrayList<EdgeTerminal>>();
 
-      for (GraphNode middle : nodes.values()) {
-        Set<StrandsForEdge> majorSet = middle.findStrandsForEdge(
-            bubble.majorId, EdgeDirection.INCOMING);
-
-        if (majorSet.size() != 1) {
-          sLogger.fatal(String.format(
-              "Node: %s couldn't be aligned.", middle.getNodeId()),
-              new RuntimeException("Unable to align node."));
-        }
-
-        Set<StrandsForEdge> minorSet = middle.findStrandsForEdge(
-            bubble.minorId, EdgeDirection.OUTGOING);
-        if (minorSet.size() != 1) {
-          sLogger.fatal(String.format(
-              "Node: %s couldn't be aligned.", middle.getNodeId()),
-              new RuntimeException("Unable to align node."));
-        }
-
-        StrandsForEdge majorStrands = majorSet.iterator().next();
-        StrandsForEdge minorStrands = minorSet.iterator().next();
-        if (StrandsUtil.dest(majorStrands) != StrandsUtil.src(minorStrands)) {
-          sLogger.fatal(String.format(
-              "Node: %s couldn't be aligned.", middle.getNodeId()),
-              new RuntimeException("Unable to align node."));
-        }
-
-        StrandsForEdge strandsKey = StrandsUtil.form(
-            StrandsUtil.src(majorStrands), StrandsUtil.dest(minorStrands));
+      for (GraphNode middle : nodes.values()) {        
+    	Alignment alignment = alignMiddle(middle, bubble.majorId, bubble.minorId);
+    	
+        StrandsForEdge strandsKey = StrandsUtil.form(alignment.major, alignment.minor);
 
         if (!groups.containsKey(strandsKey)) {
           groups.put(strandsKey, new ArrayList<EdgeTerminal>());
         }
 
-        groups.get(strandsKey).add(new EdgeTerminal(
-            middle.getNodeId(), StrandsUtil.dest(majorStrands)));
+        groups.get(strandsKey).add(new EdgeTerminal(middle.getNodeId(), alignment.middle));
       }
 
       // Iterate over each set of nodes forming a bubble and compare the
