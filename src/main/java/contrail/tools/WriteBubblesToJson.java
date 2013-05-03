@@ -148,7 +148,7 @@ public class WriteBubblesToJson extends MRStage {
    */
   protected static class PairInfo {
     public NodeInfo major;
-    //public NodeInfo minor;
+    public NodeInfo minor;
     public int editDistance;
     public float editRate;
 
@@ -163,9 +163,9 @@ public class WriteBubblesToJson extends MRStage {
       major.fields.addAll(NodeInfo.bigQuerySchema());
       schema.add(major);
 
-      /*BigQueryField minor = new BigQueryField("minor", "record");
+      BigQueryField minor = new BigQueryField("minor", "record");
       minor.fields.addAll(NodeInfo.bigQuerySchema());
-      schema.add(minor);*/
+      schema.add(minor);
 
       schema.add(new BigQueryField("editDistance", "integer"));
       schema.add(new BigQueryField("editRate", "float"));
@@ -397,7 +397,7 @@ public class WriteBubblesToJson extends MRStage {
 
             PairInfo pairInfo = new PairInfo();
             pairInfo.major = majorInfo;
-            //pairInfo.minor = minorInfo;
+            pairInfo.minor = minorInfo;
             pairInfo.editDistance = majorSequence.computeEditDistance(
                 minorSequence);
             // Edit rate is the editDistance divided by the average length.

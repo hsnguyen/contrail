@@ -613,19 +613,19 @@ public class GraphNode {
       String otherNode, EdgeDirection direction) {
     HashSet<StrandsForEdge> strands = new HashSet<StrandsForEdge>();
 
-    for (StrandsForEdge s : StrandsForEdge.values()) {
-      DNAStrand src = StrandsUtil.src(s);
-      DNAStrand dest = StrandsUtil.dest(s);
-      DNAStrand thisStrand = null;
-      if (direction == EdgeDirection.OUTGOING) {
-        thisStrand = src;
-      } else {
-        thisStrand = dest;
-      }
-      EdgeTerminal destTerminal = new EdgeTerminal(otherNode, dest);
-
-      if (this.getEdgeTerminalsSet(thisStrand, direction).contains(destTerminal)) {
-        strands.add(s);
+    for (DNAStrand thisStrand : DNAStrand.values()) {
+      for (DNAStrand otherStrand : DNAStrand.values()) {
+        EdgeTerminal destTerminal = new EdgeTerminal(otherNode, otherStrand);
+  
+        if (this.getEdgeTerminalsSet(thisStrand, direction).contains(destTerminal)) {
+          StrandsForEdge s = null;
+          if (direction == EdgeDirection.OUTGOING) {
+            s = StrandsUtil.form(thisStrand, otherStrand);
+          } else {
+            s = StrandsUtil.form(otherStrand, thisStrand);
+          }
+          strands.add(s);
+        }
       }
     }
     return strands;
