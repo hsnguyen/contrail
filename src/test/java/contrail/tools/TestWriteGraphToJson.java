@@ -28,14 +28,9 @@ public class TestWriteGraphToJson extends WriteBubblesToJson {
   public void testAlign() {
     WriteBubblesReducer reducer = new WriteBubblesReducer();
     
-//    for (DNAStrand majorStrand : DNAStrand.values()) {
-//      for (DNAStrand midStrand : DNAStrand.values()) {
-//        for (DNAStrand minorStrand : DNAStrand.values()) {
-//          
-    for (DNAStrand majorStrand : Arrays.asList(DNAStrand.FORWARD)) {
-      for (DNAStrand midStrand : Arrays.asList(DNAStrand.FORWARD)) {
-        for (DNAStrand minorStrand : Arrays.asList(DNAStrand.REVERSE)) {
-   
+    for (DNAStrand majorStrand : DNAStrand.values()) {
+      for (DNAStrand midStrand : DNAStrand.values()) {
+        for (DNAStrand minorStrand : DNAStrand.values()) {   
           GraphNode head = GraphTestUtil.createNode("head", "ACTG");
           GraphNode middle = GraphTestUtil.createNode("mid1", "CTGACTG");          
           GraphNode tail = GraphTestUtil.createNode("tail", "CTGT");         
