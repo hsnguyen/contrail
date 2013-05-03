@@ -616,9 +616,15 @@ public class GraphNode {
     for (StrandsForEdge s : StrandsForEdge.values()) {
       DNAStrand src = StrandsUtil.src(s);
       DNAStrand dest = StrandsUtil.dest(s);
+      DNAStrand thisStrand = null;
+      if (direction == EdgeDirection.OUTGOING) {
+        thisStrand = src;
+      } else {
+        thisStrand = dest;
+      }
       EdgeTerminal destTerminal = new EdgeTerminal(otherNode, dest);
 
-      if (this.getEdgeTerminalsSet(src, direction).contains(destTerminal)) {
+      if (this.getEdgeTerminalsSet(thisStrand, direction).contains(destTerminal)) {
         strands.add(s);
       }
     }
