@@ -17,71 +17,34 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.JobConf;
 import org.junit.Test;
 
+import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphTestUtil;
 import contrail.graph.GraphUtil;
+import contrail.graph.SimpleGraphBuilder;
 import contrail.sequences.DNAStrand;
 import contrail.util.FileHelper;
 
-public class TestWriteGraphToJson extends WriteBubblesToJson {
-  @Test 
-  public void testAlign() {
-    WriteBubblesReducer reducer = new WriteBubblesReducer();
-    
-    for (DNAStrand majorStrand : DNAStrand.values()) {
-      for (DNAStrand midStrand : DNAStrand.values()) {
-        for (DNAStrand minorStrand : DNAStrand.values()) {   
-          GraphNode head = GraphTestUtil.createNode("head", "ACTG");
-          GraphNode middle = GraphTestUtil.createNode("mid1", "CTGACTG");          
-          GraphNode tail = GraphTestUtil.createNode("tail", "CTGT");         
-
-          GraphUtil.addBidirectionalEdge(head, majorStrand, middle, midStrand);
-          GraphUtil.addBidirectionalEdge(middle, midStrand, tail, minorStrand);
-          WriteBubblesReducer.Alignment alignment = 
-              reducer.alignMiddle(middle, head.getNodeId(), tail.getNodeId());
-          assertEquals(majorStrand, alignment.major);
-          assertEquals(midStrand, alignment.middle);
-          assertEquals(minorStrand, alignment.minor);
-        }
-      }
-    }
-  }
-
+public class TestWriteGraphToJson {
   @Test
   public void testWrite() {
-    // Create a graph with a bubble.
-    GraphNode head = GraphTestUtil.createNode("head", "ACTG");
-    GraphNode tail = GraphTestUtil.createNode("tail", "CTGT");
-
-    GraphNode middle1 = GraphTestUtil.createNode("mid1", "CTGACTG");
-    middle1.setCoverage(5.0f);
-
-    GraphNode middle2 = GraphTestUtil.createNode("mid2", "CTGTCTG");
-    middle2.setCoverage(7.0f);
-
-    GraphUtil.addBidirectionalEdge(
-        head, DNAStrand.FORWARD, middle1, DNAStrand.FORWARD);
-    GraphUtil.addBidirectionalEdge(
-        head, DNAStrand.FORWARD, middle2, DNAStrand.FORWARD);
-
-    GraphUtil.addBidirectionalEdge(
-        middle1, DNAStrand.FORWARD, tail, DNAStrand.FORWARD);
-    GraphUtil.addBidirectionalEdge(
-        middle2, DNAStrand.FORWARD, tail, DNAStrand.FORWARD);
-
+    GraphNode nodeA = GraphTestUtil.createNode("nodeA", "ACTG");
+    GraphNode nodeB = GraphTestUtil.createNode("nodeB", "CTGTT");
+    nodeA.addOutgoingEdgeWithTags(
+        DNAStrand.FORWARD, new EdgeTerminal("nodeB", DNAStrand.REVERSE), 
+       Arrays.asList("thread1", "thread2"), 10);
+    
     File tempDir = FileHelper.createLocalTempDir();
     Path avroPath = new Path(
         FilenameUtils.concat(tempDir.getPath(), "graph.avro"));
-    GraphUtil.writeGraphToFile(
-        new File(avroPath.toString()),
-        Arrays.asList(head, middle1, middle2, tail));
+    GraphUtil.writeGraphToFile(new File(avroPath.toString()), Arrays.asList(nodeA, nodeB));
 
     HashMap<String, Object> parameters = new HashMap<String, Object>();
     parameters.put("inputpath", avroPath.toString());
     String outPath = FilenameUtils.concat(tempDir.getPath(), "json");
     parameters.put("outputpath", outPath);
 
-    WriteBubblesToJson stage = new WriteBubblesToJson();
+    WriteGraphToJson stage = new WriteGraphToJson();
     stage.setParameters(parameters);
     stage.setConf(new JobConf());
 
@@ -97,7 +60,6 @@ public class TestWriteGraphToJson extends WriteBubblesToJson {
       String expected =
           "{\"majorId\":\"tail\",\"minorId\":\"head\",\"paths\":[" +
           "{\"majorStrand\":\"REVERSE\",\"minorStrand\":\"REVERSE\",\"pairs\":[{\"major\":{\"id\":\"mid2\",\"strand\":\"REVERSE\",\"length\":7,\"coverage\":7.0},\"minor\":{\"id\":\"mid1\",\"strand\":\"REVERSE\",\"length\":7,\"coverage\":5.0},\"editDistance\":1,\"editRate\":0.14285715}]}]}";
-      //assertEquals(line, expected);
     } catch(FileNotFoundException e) {
       fail(e.getMessage());
     } catch (IOException e) {
