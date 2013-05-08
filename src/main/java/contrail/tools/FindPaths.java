@@ -31,12 +31,12 @@ import contrail.graph.EdgeDirection;
 import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
+import contrail.graph.IndexedGraph;
 import contrail.sequences.DNAStrand;
 import contrail.stages.ContrailParameters;
 import contrail.stages.NonMRStage;
 import contrail.stages.ParameterDefinition;
 import contrail.stages.QuickMergeUtil;
-import contrail.util.IndexedGraph;
 
 /**
  * Find all paths between two nodes.

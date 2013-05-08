@@ -16,7 +16,7 @@
  * permissions and limitations under the License.
  */
 // Author: Jeremy Lewi(jeremy@lewi.us)
-package contrail.util;
+package contrail.graph;
 
 import java.util.Iterator;
 
@@ -24,7 +24,6 @@ import org.apache.avro.Schema;
 import org.apache.avro.hadoop.io.AvroKeyValue;
 import org.apache.hadoop.conf.Configuration;
 
-import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
 import contrail.io.AvroIndexReader;
 import contrail.io.IndexedRecords;
@@ -100,6 +99,5 @@ public class IndexedGraph implements IndexedRecords<String, GraphNodeData> {
      } else {
        throw new UnsupportedOperationException();
      }
-
    }
 }

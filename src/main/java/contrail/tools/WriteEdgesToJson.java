@@ -48,6 +48,7 @@ import contrail.sequences.DNAStrand;
 import contrail.stages.ContrailParameters;
 import contrail.stages.MRStage;
 import contrail.stages.ParameterDefinition;
+import contrail.util.BigQueryField;
 
 /**
  * Write the edges to json file which can then be imported into BigQuery.
@@ -160,51 +161,6 @@ public class WriteEdgesToJson extends MRStage {
     conf.setNumReduceTasks(1);
     conf.setMapperClass(WriteEdgesMapper.class);
     conf.setReducerClass(IdentityReducer.class);
-  }
-
-  private class BigQueryField {
-    public String name;
-    public String type;
-    public String mode;
-
-    public BigQueryField(String name, String type) {
-      this.name = name;
-      this.type = type;
-      fields = new ArrayList<BigQueryField>();
-    }
-
-    public BigQueryField() {
-      fields = new ArrayList<BigQueryField>();
-    }
-
-    public ArrayList<BigQueryField> fields;
-
-    public String toString() {
-      StringBuilder builder = new StringBuilder();
-      builder.append("{");
-      ArrayList<String> pairs = new ArrayList<String>();
-
-      pairs.add(String.format("\"name\":\"%s\"", name));
-      pairs.add(String.format("\"type\":\"%s\"", type));
-
-      if (mode != null) {
-        pairs.add(String.format("\"mode\":\"%s\"", mode));
-      }
-
-      ArrayList<String> subFields = new ArrayList<String>();
-      for (BigQueryField subField : fields) {
-        subFields.add(subField.toString());
-      }
-
-      if (subFields.size() > 0) {
-        pairs.add(String.format(
-            "\"fields\":[%s]", StringUtils.join(subFields, ",")));
-      }
-
-      builder.append(StringUtils.join(pairs, ","));
-      builder.append("}");
-      return builder.toString();
-    }
   }
 
   protected void postRunHook() {
