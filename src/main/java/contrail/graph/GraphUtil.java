@@ -33,6 +33,8 @@ import org.apache.avro.hadoop.file.SortedKeyValueFile;
 import org.apache.avro.io.DatumWriter;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import contrail.sequences.DNAStrand;
 import contrail.sequences.DNAUtil;
@@ -138,6 +140,43 @@ public class GraphUtil {
       sLogger.fatal(
           "There was a problem writing the graph to an avro file. ",
           exception);
+    }
+  }
+
+  /**
+   * Write the nodes to the path.
+   *
+   * @param conf
+   * @param path
+   * @param nodes
+   */
+  public static void writeGraphToPath(
+      Configuration conf, Path path, Iterable<GraphNode> nodes) {
+    FileSystem fs = null;
+    try{
+      fs = FileSystem.get(conf);
+    } catch (IOException e) {
+      sLogger.fatal("Can't get filesystem: " + e.getMessage(), e);
+    }
+
+    // Write the data to the file.
+    Schema schema = (new GraphNodeData()).getSchema();
+    DatumWriter<GraphNodeData> datumWriter =
+        new SpecificDatumWriter<GraphNodeData>(schema);
+    DataFileWriter<GraphNodeData> writer =
+        new DataFileWriter<GraphNodeData>(datumWriter);
+
+    try {
+      FSDataOutputStream outputStream = fs.create(path);
+      writer.create(schema, outputStream);
+      for (GraphNode node : nodes) {
+        writer.append(node.getData());
+      }
+      writer.close();
+    } catch (IOException exception) {
+      sLogger.fatal(
+          "There was a problem writing the N50 stats to an avro file. " +
+          "Exception: " + exception.getMessage(), exception);
     }
   }
 
