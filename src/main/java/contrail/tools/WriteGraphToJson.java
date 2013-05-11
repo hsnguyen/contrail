@@ -24,21 +24,17 @@ import java.util.Map;
 import org.apache.avro.mapred.AvroInputFormat;
 import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroWrapper;
-import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.FileOutputFormat;
-import org.apache.hadoop.mapred.JobClient;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.MapReduceBase;
 import org.apache.hadoop.mapred.Mapper;
 import org.apache.hadoop.mapred.OutputCollector;
 import org.apache.hadoop.mapred.Reporter;
-import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.mapred.TextOutputFormat;
 import org.apache.hadoop.mapred.lib.IdentityReducer;
 import org.apache.hadoop.util.ToolRunner;
@@ -53,8 +49,6 @@ import contrail.sequences.DNAStrand;
 import contrail.stages.ContrailParameters;
 import contrail.stages.MRStage;
 import contrail.stages.ParameterDefinition;
-import contrail.stages.Stage;
-import contrail.tools.WriteBubblesToJson.BubbleInfo;
 import contrail.util.BigQueryField;
 import contrail.util.BigQuerySchema;
 
@@ -77,11 +71,11 @@ public class WriteGraphToJson extends MRStage {
     public int inDegree;
     public String sequence;
     public HashSet<String> threads;
-         
+
     public Node() {
       threads = new HashSet<String>();
     }
-    
+
     public void clear() {
       nodeId = "";
       outDegree = -1;
@@ -91,7 +85,7 @@ public class WriteGraphToJson extends MRStage {
       sequence = "";
       threads.clear();
     }
-    
+
     /**
      * Returns a schema describing this record.
      * @return
@@ -112,7 +106,7 @@ public class WriteGraphToJson extends MRStage {
       return schema;
     }
   }
-  
+
   private static class ToJsonMapper extends MapReduceBase
     implements Mapper<AvroWrapper<GraphNodeData>, NullWritable,
                       Text, NullWritable> {
@@ -123,13 +117,13 @@ public class WriteGraphToJson extends MRStage {
     private ObjectMapper jsonMapper;
     private boolean sequence;
     private boolean threads;
-    
+
     public void configure(JobConf job) {
       graphNode = new GraphNode();
       jsonNode = new Node();
       outKey = new Text();
       jsonMapper = new ObjectMapper();
-      
+
       WriteGraphToJson stage = new WriteGraphToJson();
       sequence = (Boolean) stage.getParameterDefinitions().get("sequence").parseJobConf(job);
       threads = (Boolean) stage.getParameterDefinitions().get("threads").parseJobConf(job);
@@ -151,15 +145,15 @@ public class WriteGraphToJson extends MRStage {
         jsonNode.sequence = graphNode.getSequence().toString();
       }
       jsonNode.coverage = graphNode.getCoverage();
-      
+
       if (threads) {
         for (DNAStrand strand : DNAStrand.values()) {
           for (EdgeTerminal terminal : graphNode.getEdgeTerminals(strand, EdgeDirection.OUTGOING)) {
             for (CharSequence tag : graphNode.getTagsForEdge(strand, terminal)) {
               jsonNode.threads.add(tag.toString());
-            }            
+            }
           }
-        }        
+        }
       }
       outKey.set(jsonMapper.writeValueAsString(jsonNode));
       collector.collect(outKey, NullWritable.get());
@@ -179,13 +173,13 @@ public class WriteGraphToJson extends MRStage {
       ContrailParameters.getInputOutputPathOptions()) {
       defs.put(def.getName(), def);
     }
-    
+
     ParameterDefinition seq = new ParameterDefinition(
         "sequence", "Whether to include the sequence associated with each node.", Boolean.class, false);
-    
+
     ParameterDefinition threads = new ParameterDefinition(
         "threads", "Whether to include the threads associated with each node.", Boolean.class, true);
-    
+
     defs.put(seq.getName(), seq);
     defs.put(threads.getName(), threads);
     return Collections.unmodifiableMap(defs);
@@ -227,6 +221,10 @@ public class WriteGraphToJson extends MRStage {
     conf.setNumReduceTasks(1);
     conf.setMapperClass(ToJsonMapper.class);
     conf.setReducerClass(IdentityReducer.class);
+  }
+
+  protected void postRunHook() {
+    sLogger.info("Schema:\n" + Node.bigQuerySchema().toString());
   }
 
   protected void postRunHook() {
