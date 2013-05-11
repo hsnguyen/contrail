@@ -1,5 +1,6 @@
 package contrail.tools;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -20,9 +21,58 @@ import contrail.graph.GraphNode;
 import contrail.graph.GraphTestUtil;
 import contrail.graph.GraphUtil;
 import contrail.sequences.DNAStrand;
+import contrail.sequences.DNAStrandUtil;
 import contrail.util.FileHelper;
 
-public class TestWriteBubblesToJson {
+public class TestWriteBubblesToJson extends WriteBubblesToJson {
+  @Test 
+  public void testAlign() {
+    WriteBubblesReducer reducer = new WriteBubblesReducer();
+
+    for (DNAStrand majorStrand : DNAStrand.values()) {
+      for (DNAStrand midStrand : DNAStrand.values()) {
+        for (DNAStrand minorStrand : DNAStrand.values()) {
+          GraphNode head = GraphTestUtil.createNode("head", "ACTG");
+          GraphNode middle = GraphTestUtil.createNode("mid1", "CTGACTG");          
+          GraphNode tail = GraphTestUtil.createNode("tail", "CTGT");         
+
+          GraphUtil.addBidirectionalEdge(head, majorStrand, middle, midStrand);
+          GraphUtil.addBidirectionalEdge(middle, midStrand, tail, minorStrand);
+          WriteBubblesReducer.Alignment alignment = 
+              reducer.alignMiddle(middle, head.getNodeId(), tail.getNodeId());
+          assertEquals(majorStrand, alignment.major);
+          assertEquals(midStrand, alignment.middle);
+          assertEquals(minorStrand, alignment.minor);
+        }
+      }
+    }
+  }
+
+  @Test 
+  public void testAlignCycle() {
+    // Test we properly align cycles.
+    WriteBubblesReducer reducer = new WriteBubblesReducer();
+
+    for (DNAStrand majorStrand : DNAStrand.values()) {
+      for (DNAStrand midStrand : DNAStrand.values()) {
+        GraphNode head = GraphTestUtil.createNode("head", "ACTG");
+        GraphNode middle = GraphTestUtil.createNode("mid1", "CTGTTACT");          
+             
+        GraphUtil.addBidirectionalEdge(head, majorStrand, middle, midStrand);
+        GraphUtil.addBidirectionalEdge(middle, midStrand, head, majorStrand);
+        WriteBubblesReducer.Alignment alignment = 
+            reducer.alignMiddle(middle, head.getNodeId(), head.getNodeId());
+        assertEquals(DNAStrand.FORWARD, alignment.major);
+        if (majorStrand == DNAStrand.FORWARD) {
+          assertEquals(midStrand, alignment.middle);
+        } else {
+          assertEquals(midStrand, DNAStrandUtil.flip(alignment.middle));
+        }
+        assertEquals(DNAStrand.FORWARD, alignment.minor);
+      }
+    }
+  }
+  
   @Test
   public void testWrite() {
     // Create a graph with a bubble.
@@ -73,14 +123,10 @@ public class TestWriteBubblesToJson {
       String expected =
           "{\"majorId\":\"tail\",\"minorId\":\"head\",\"paths\":[" +
           "{\"majorStrand\":\"REVERSE\",\"minorStrand\":\"REVERSE\",\"pairs\":[{\"major\":{\"id\":\"mid2\",\"strand\":\"REVERSE\",\"length\":7,\"coverage\":7.0},\"minor\":{\"id\":\"mid1\",\"strand\":\"REVERSE\",\"length\":7,\"coverage\":5.0},\"editDistance\":1,\"editRate\":0.14285715}]}]}";
-      //assertEquals(line, expected);
     } catch(FileNotFoundException e) {
       fail(e.getMessage());
     } catch (IOException e) {
       fail(e.getMessage());
     }
-
-
-
   }
 }

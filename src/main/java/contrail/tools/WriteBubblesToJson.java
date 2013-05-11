@@ -148,7 +148,7 @@ public class WriteBubblesToJson extends MRStage {
    */
   protected static class PairInfo {
     public NodeInfo major;
-    //public NodeInfo minor;
+    public NodeInfo minor;
     public int editDistance;
     public float editRate;
 
@@ -163,9 +163,9 @@ public class WriteBubblesToJson extends MRStage {
       major.fields.addAll(NodeInfo.bigQuerySchema());
       schema.add(major);
 
-      /*BigQueryField minor = new BigQueryField("minor", "record");
+      BigQueryField minor = new BigQueryField("minor", "record");
       minor.fields.addAll(NodeInfo.bigQuerySchema());
-      schema.add(minor);*/
+      schema.add(minor);
 
       schema.add(new BigQueryField("editDistance", "integer"));
       schema.add(new BigQueryField("editRate", "float"));
@@ -234,7 +234,8 @@ public class WriteBubblesToJson extends MRStage {
     }
   }
 
-  private static class WriteBubblesReducer extends
+  
+  protected static class WriteBubblesReducer extends
       MapReduceBase implements
           Reducer<AvroKey<CharSequence>, AvroValue<GraphNodeData>,
                   Text, NullWritable> {
@@ -259,6 +260,84 @@ public class WriteBubblesToJson extends MRStage {
       outKey = new Text();
     }
 
+    protected class Alignment {
+  	  public DNAStrand major;
+  	  public DNAStrand middle;
+  	  public DNAStrand minor;
+    }
+    
+    /**
+     * Find the strands for the major, middle and minor nodes such that their is a
+     * path from major->middle->minor
+     * 
+     * @param node
+     * @param majorId
+     * @param minorId
+     * @return
+     */
+    protected Alignment alignMiddle(GraphNode middle, String majorId, String minorId) {
+      if (majorId.equals(minorId)) {
+        // We have a cycle: A->B->A. Thus R(A)->R(B)-R(A) so the middle
+        // node has incoming edges from both strands of the major node so we can't use
+        // that as our criterion. In this case we align using the forward strand of the major node.
+        Set<DNAStrand> majorStrands = middle.findStrandsWithEdgeToTerminal(
+            new EdgeTerminal(majorId, DNAStrand.FORWARD), EdgeDirection.INCOMING);
+        DNAStrand majorStrand = DNAStrand.FORWARD;        
+        if (majorStrands.size() == 0) {
+          // We have the special case R(A)->{B, R(B)} ->A
+          majorStrands = middle.findStrandsWithEdgeToTerminal(
+              new EdgeTerminal(majorId, DNAStrand.REVERSE), EdgeDirection.INCOMING);
+          majorStrand = DNAStrand.REVERSE;
+          
+          if (majorStrands.size() == 0) {
+            sLogger.fatal(String.format(
+                "Couldn't align node:%s, major=minor=%s. Couldn't find an incoming edge from " +
+                "the forward strand of the major node.", middle.getNodeId(), majorId),
+                new RuntimeException("Couldn't align middle node."));
+          }
+        }
+        Alignment alignment = new Alignment();
+        alignment.major = majorStrand;
+        alignment.minor = majorStrand;
+        alignment.middle = majorStrands.iterator().next();
+        return alignment;
+      }
+      
+      Set<StrandsForEdge> majorSet = middle.findStrandsForEdge(
+          majorId, EdgeDirection.INCOMING);
+
+      if (majorSet.size() != 1) {
+        sLogger.fatal(String.format(
+            "Node: %s couldn't be aligned. No incoming edge from majorID: %s", middle.getNodeId(), 
+            majorId),
+            new RuntimeException("Unable to align node."));
+      }
+
+      Set<StrandsForEdge> minorSet = middle.findStrandsForEdge(
+          minorId, EdgeDirection.OUTGOING);
+      if (minorSet.size() != 1) {
+        sLogger.fatal(String.format(
+            "Node: %s couldn't be aligned. No outgoing edge to minorId: %s.", 
+            middle.getNodeId(), minorId),
+            new RuntimeException("Unable to align node."));
+      }
+
+      StrandsForEdge majorStrands = majorSet.iterator().next();
+      StrandsForEdge minorStrands = minorSet.iterator().next();
+      if (StrandsUtil.dest(majorStrands) != StrandsUtil.src(minorStrands)) {
+        sLogger.fatal(String.format(
+            "Node: %s couldn't be aligned. Strands don't match: %s %s", middle.getNodeId(),
+            StrandsUtil.dest(majorStrands), StrandsUtil.src(minorStrands)),
+            new RuntimeException("Unable to align node."));
+      }
+
+      Alignment alignment = new Alignment();
+      alignment.major= StrandsUtil.src(majorStrands);
+      alignment.middle = StrandsUtil.dest(majorStrands);
+      alignment.minor = StrandsUtil.dest(minorStrands);
+      return alignment;
+    }
+    
     @Override
     public void reduce(
         AvroKey<CharSequence> key,
@@ -280,8 +359,14 @@ public class WriteBubblesToJson extends MRStage {
       neighbors.addAll(nodes.values().iterator().next().getNeighborIds());
       Collections.sort(neighbors);
 
-      bubble.minorId = neighbors.get(0);
-      bubble.majorId = neighbors.get(1);
+      if (neighbors.size() == 1) {
+        // We have a cycle. Major and minor node are the same.
+        bubble.minorId = neighbors.get(0);
+        bubble.majorId = bubble.minorId;
+      } else {
+        bubble.minorId = neighbors.get(0);
+        bubble.majorId = neighbors.get(1);
+      }
 
       // We align the nodes by finding the path major -> middle -> minor.
       // We group the nodes based on the strands for the major and minor
@@ -291,41 +376,16 @@ public class WriteBubblesToJson extends MRStage {
       HashMap<StrandsForEdge, ArrayList<EdgeTerminal>> groups =
           new HashMap<StrandsForEdge, ArrayList<EdgeTerminal>>();
 
-      for (GraphNode middle : nodes.values()) {
-        Set<StrandsForEdge> majorSet = middle.findStrandsForEdge(
-            bubble.majorId, EdgeDirection.INCOMING);
-
-        if (majorSet.size() != 1) {
-          sLogger.fatal(String.format(
-              "Node: %s couldn't be aligned.", middle.getNodeId()),
-              new RuntimeException("Unable to align node."));
-        }
-
-        Set<StrandsForEdge> minorSet = middle.findStrandsForEdge(
-            bubble.minorId, EdgeDirection.OUTGOING);
-        if (minorSet.size() != 1) {
-          sLogger.fatal(String.format(
-              "Node: %s couldn't be aligned.", middle.getNodeId()),
-              new RuntimeException("Unable to align node."));
-        }
-
-        StrandsForEdge majorStrands = majorSet.iterator().next();
-        StrandsForEdge minorStrands = minorSet.iterator().next();
-        if (StrandsUtil.dest(majorStrands) != StrandsUtil.src(minorStrands)) {
-          sLogger.fatal(String.format(
-              "Node: %s couldn't be aligned.", middle.getNodeId()),
-              new RuntimeException("Unable to align node."));
-        }
-
-        StrandsForEdge strandsKey = StrandsUtil.form(
-            StrandsUtil.src(majorStrands), StrandsUtil.dest(minorStrands));
+      for (GraphNode middle : nodes.values()) {        
+    	Alignment alignment = alignMiddle(middle, bubble.majorId, bubble.minorId);
+    	
+        StrandsForEdge strandsKey = StrandsUtil.form(alignment.major, alignment.minor);
 
         if (!groups.containsKey(strandsKey)) {
           groups.put(strandsKey, new ArrayList<EdgeTerminal>());
         }
 
-        groups.get(strandsKey).add(new EdgeTerminal(
-            middle.getNodeId(), StrandsUtil.dest(majorStrands)));
+        groups.get(strandsKey).add(new EdgeTerminal(middle.getNodeId(), alignment.middle));
       }
 
       // Iterate over each set of nodes forming a bubble and compare the
@@ -370,9 +430,8 @@ public class WriteBubblesToJson extends MRStage {
 
             PairInfo pairInfo = new PairInfo();
             pairInfo.major = majorInfo;
-            //pairInfo.minor = minorInfo;
-            pairInfo.editDistance = majorSequence.computeEditDistance(
-                minorSequence);
+            pairInfo.minor = minorInfo;
+            pairInfo.editDistance = majorSequence.computeEditDistance(minorSequence);
             // Edit rate is the editDistance divided by the average length.
             pairInfo.editRate =
                 2.0f * pairInfo.editDistance /
@@ -381,6 +440,10 @@ public class WriteBubblesToJson extends MRStage {
            pathInfo.pairs.add(pairInfo);
           }
         }
+      }
+      
+      if (bubble.paths.size() == 0) {
+        return;
       }
       outKey.set(jsonMapper.writeValueAsString(bubble));
       collector.collect(outKey, NullWritable.get());
