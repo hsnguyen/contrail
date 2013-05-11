@@ -324,6 +324,21 @@ public class GraphNode {
 
   protected DerivedData derived_data;
 
+  private NodeDiff lastDiff = null;
+  
+  /**
+   * Enumeration is used to provide additional information when comparing two nodes.
+   */
+  public enum NodeDiff {
+    NONE, // Nodes are the same
+    KMERTAG,
+    NODEID,
+    COVERAGE,
+    NEIGHBORS,
+    R5TAGS,
+    SEQUENCE, EDGETERMINALS, EDGETAGS, 
+  }
+  
   /**
    * Construct a new object with a new GraphNodeData to store the data.
    */
@@ -341,6 +356,7 @@ public class GraphNode {
     data = graph_data;
     derived_data = new DerivedData(data);
   }
+
 
   /**
    * Clears the data and ensures all fields are initialized to empty values.
@@ -821,6 +837,7 @@ public class GraphNode {
    */
   @Override
   public boolean equals(Object otherObject) {
+    lastDiff = null;
     if (!(otherObject instanceof GraphNode)) {
       throw new RuntimeException(
           "Can only compare GraphNode's to other GraphNode's");
@@ -831,28 +848,34 @@ public class GraphNode {
     // GraphNodeData's won't be equal if they have the same edges but in
     // different order in the lists.
     if (!this.getNodeId().equals(other.getNodeId())) {
+      lastDiff = NodeDiff.NODEID;
       return false;
     }
     if (this.getCoverage() != other.getCoverage()) {
+      lastDiff = NodeDiff.COVERAGE;
       return false;
     }
 
     if (!this.getSequence().equals(other.getSequence())) {
+      lastDiff = NodeDiff.SEQUENCE;
       return false;
     }
 
     if (!R5TagUtil.listsAreEqual(
           this.data.getR5Tags(), other.data.getR5Tags())) {
+      lastDiff = NodeDiff.R5TAGS;
       return false;
     }
 
     // Check edges.
     if (!this.getNeighborIds().equals(other.getNeighborIds())) {
+      lastDiff = NodeDiff.NEIGHBORS;
       return false;
     }
     for (DNAStrand strand : DNAStrand.values()) {
       if (!this.getEdgeTerminalsSet(strand, EdgeDirection.OUTGOING).equals(
             other.getEdgeTerminalsSet(strand, EdgeDirection.OUTGOING))) {
+        lastDiff = NodeDiff.EDGETERMINALS;
         return false;
       }
     }
@@ -867,6 +890,7 @@ public class GraphNode {
         List<CharSequence> thisTags = this.getTagsForEdge(strand, terminal);
         List<CharSequence> otherTags = other.getTagsForEdge(strand, terminal);
         if (thisTags.size() != otherTags.size()) {
+          lastDiff = NodeDiff.EDGETAGS;
           return false;
         }
         thisSet.clear();
@@ -878,6 +902,7 @@ public class GraphNode {
           otherSet.add(tag.toString());
         }
         if (!thisSet.equals(otherSet)) {
+          lastDiff = NodeDiff.EDGETAGS;
           return false;
         }
       }
@@ -888,11 +913,14 @@ public class GraphNode {
     GraphNodeKMerTag otherMerTag = other.data.getMertag();
 
     if (!thisMerTag.equals(otherMerTag)) {
+      lastDiff = NodeDiff.KMERTAG;
       return false;
     }
 
+    lastDiff = NodeDiff.NONE;
     return true;
   }
+  
   public String getNodeId() {
     return data.getNodeId().toString();
   }
@@ -914,6 +942,20 @@ public class GraphNode {
     }
   }
 
+  /**
+   * Check if two nodes are equal and if not return information about where the functions differed.
+   * 
+   * This function is primarily useful for debugging and unittests.
+   * @param other
+   * @return
+   */
+  public NodeDiff equalsWithInfo(GraphNode other) {
+    if (equals(other)) {
+      return NodeDiff.NONE;
+    }
+    return lastDiff;
+  }
+  
   /**
    * Return a list of the canonical compressed sequences for the specific
    * link direction;
@@ -1020,7 +1062,8 @@ public class GraphNode {
 
   /**
    * Returns an unmodifiable view of all of the tags for which this terminal
-   * came from.
+   * came from. This assumes the edge is an outgoing edge.
+   *
    * @param strand: Which strand of this node to get the tags for.
    * @param terminal: The other end of the edge for which we want the tags.
    * @return: An unmodifiable list of the tags for these edges.
