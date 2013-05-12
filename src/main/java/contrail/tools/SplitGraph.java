@@ -179,6 +179,9 @@ public class SplitGraph extends NonMRStage {
       }
     }
 
+    sLogger.info(
+        String.format(
+            "Ouputted %d nodes in %d components", totalNodes, component));
     try {
       writer.close();
     } catch (IOException e) {
