@@ -25,18 +25,20 @@ public class TestSplitGraph {
   public void testMain() {
     // Create a graph and write it to a file.
     SimpleGraphBuilder builder = new SimpleGraphBuilder();
-    builder.addKMersForString("TACTGGATT", 3);
-    builder.addKMersForString("AAACCC", 3);
+    builder.addKMersForString("GATT", 3);
+    //builder.addKMersForString("TACTGGATT", 3);
+    //builder.addKMersForString("AAACCC", 3);
+    //builder.addKMersForString("AAA", 3);
 
     File temp = FileHelper.createLocalTempDir();
-    String indexPath = FilenameUtils.concat(temp.getAbsolutePath(), "index");
+    String graphPath = FilenameUtils.concat(temp.getAbsolutePath(), "graph");
 
     //Output the nodes in sorted order
     ArrayList<GraphNode> nodes = new ArrayList<GraphNode>();
     nodes.addAll(builder.getAllNodes().values());
 
-    GraphUtil.writeGraphToIndexedFile(
-        new Configuration(), new Path(indexPath), nodes);
+    GraphUtil.writeGraphToPath(
+        new Configuration(), new Path(graphPath), nodes);
 
     // Run it.
     SplitGraph stage = new SplitGraph();
@@ -45,8 +47,8 @@ public class TestSplitGraph {
     // exception. Normally the initialization happens in main.
     //stage.setConf(new Configuration());
     HashMap<String, Object> params = new HashMap<String, Object>();
-    params.put("inputpath", indexPath);
-    params.put("max_size", 3);
+    params.put("inputpath", graphPath);
+    params.put("max_size", 10);
     File outputPath = new File(temp, "output");
     params.put("outputpath", outputPath.toString());
 
