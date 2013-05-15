@@ -1,11 +1,16 @@
 package contrail.tools;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 
+import org.apache.avro.mapred.Pair;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -15,6 +20,8 @@ import org.junit.Test;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphUtil;
 import contrail.graph.SimpleGraphBuilder;
+import contrail.util.AvroFileContentsIterator;
+import contrail.util.CharUtil;
 import contrail.util.FileHelper;
 
 public class TestSplitGraph {
@@ -25,10 +32,8 @@ public class TestSplitGraph {
   public void testMain() {
     // Create a graph and write it to a file.
     SimpleGraphBuilder builder = new SimpleGraphBuilder();
-    builder.addKMersForString("GATT", 3);
-    //builder.addKMersForString("TACTGGATT", 3);
-    //builder.addKMersForString("AAACCC", 3);
-    //builder.addKMersForString("AAA", 3);
+    builder.addKMersForString("TACTGGATT", 3);
+    builder.addKMersForString("AAACCC", 3);
 
     File temp = FileHelper.createLocalTempDir();
     String graphPath = FilenameUtils.concat(temp.getAbsolutePath(), "graph");
@@ -55,6 +60,27 @@ public class TestSplitGraph {
     stage.setParameters(params);
 
     assertTrue(stage.execute());
+
+    AvroFileContentsIterator<Pair<CharSequence, List<CharSequence>>> outIterator
+      = new AvroFileContentsIterator<Pair<CharSequence, List<CharSequence>>>(
+          Arrays.asList(stage.getOutPath().toString()), new Configuration());
+
+    HashMap<String, List<String>> pieces = new HashMap<String, List<String>>();
+
+    HashSet<String> ids = new HashSet<String>();
+    for (Pair<CharSequence, List<CharSequence>> pair : outIterator) {
+      pieces.put(pair.key().toString(), CharUtil.toStringList(pair.value()));
+
+      // Check if any of these nodes have already been seen.
+      HashSet<String> newIds = CharUtil.toStringSet(pair.value());
+      newIds.retainAll(ids);
+      assertEquals(0, newIds.size());
+
+      ids.addAll(CharUtil.toStringList(pair.value()));
+    }
+    assertEquals(2, pieces.size());
+
+
     System.out.println("Files should be in:" + outputPath.toString());
   }
 }

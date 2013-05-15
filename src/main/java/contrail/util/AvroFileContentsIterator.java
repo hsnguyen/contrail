@@ -37,17 +37,17 @@ import org.apache.hadoop.fs.Path;
  *
  * @param <T>: The record type for the records we are iterating over.
  */
-public class AvroFileContentsIterator<T> implements Iterator<T>{
-  private Configuration conf;
+public class AvroFileContentsIterator<T> implements Iterator<T>, Iterable<T> {
+  private final Configuration conf;
 
   // The list of files.
-  private List<String> files;
+  private final List<String> files;
 
   // The iterator for the current file.
   private Iterator<T> currentIterator;
 
   // Iterator over the files.
-  private Iterator<String> fileIterator;
+  private final Iterator<String> fileIterator;
 
   // Keep track of whether we have more values.
   private Boolean hasMoreRecords;
@@ -68,6 +68,7 @@ public class AvroFileContentsIterator<T> implements Iterator<T>{
     hasMoreRecords = null;
   }
 
+  @Override
   public boolean hasNext() {
     if (hasMoreRecords == null) {
       // Need to recompute whether there are more records.
@@ -92,6 +93,7 @@ public class AvroFileContentsIterator<T> implements Iterator<T>{
     return hasMoreRecords;
   }
 
+  @Override
   public T next() {
     // Reset hasMoreRecords so that it will be recomputed.
     hasMoreRecords = null;
@@ -125,7 +127,13 @@ public class AvroFileContentsIterator<T> implements Iterator<T>{
     return avroStream;
   }
 
+  @Override
   public void remove() {
     throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public Iterator<T> iterator() {
+    return new AvroFileContentsIterator<T>(files, conf);
   }
 }

@@ -90,7 +90,7 @@ public class SplitGraph extends NonMRStage {
         Schema.createArray(Schema.create(Schema.Type.STRING)));
   }
 
-  private Path getOutPath() {
+  public Path getOutPath() {
     // Writer for the connected components.
     Path outDir = new Path((String)stage_options.get("outputpath"));
     Path outPath = new Path(FilenameUtils.concat(
@@ -144,12 +144,12 @@ public class SplitGraph extends NonMRStage {
     // make computing hasNext() difficult. We use a TreeSet for thisHop
     // because we want to process the nodes in sorted order.
     // We use a hashset for nextHop to make testing membership fast.
-    private TreeSet<String> thisHop;
-    private HashSet<String> nextHop;
+    private final TreeSet<String> thisHop;
+    private final HashSet<String> nextHop;
     protected String seed;
-    private HashSet<String> visited;
+    private final HashSet<String> visited;
     private int hop;
-    private HashMap<String, ArrayList<String>> graph;
+    private final HashMap<String, ArrayList<String>> graph;
     public BFSIterator(
         HashMap<String, ArrayList<String>> graph, String seed) {
       thisHop = new TreeSet<String>();
