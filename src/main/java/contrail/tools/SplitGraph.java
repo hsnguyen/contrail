@@ -83,7 +83,6 @@ public class SplitGraph extends NonMRStage {
    * The output scheme is a pair containing the id for a subgraph and a list of
    * nodes in the subgraph
    */
-
   private Schema getSchema() {
     return Pair.getPairSchema(
         Schema.create(Schema.Type.STRING),

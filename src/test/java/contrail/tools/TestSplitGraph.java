@@ -66,7 +66,6 @@ public class TestSplitGraph {
           Arrays.asList(stage.getOutPath().toString()), new Configuration());
 
     HashMap<String, List<String>> pieces = new HashMap<String, List<String>>();
-
     HashSet<String> ids = new HashSet<String>();
     for (Pair<CharSequence, List<CharSequence>> pair : outIterator) {
       pieces.put(pair.key().toString(), CharUtil.toStringList(pair.value()));
@@ -79,7 +78,6 @@ public class TestSplitGraph {
       ids.addAll(CharUtil.toStringList(pair.value()));
     }
     assertEquals(2, pieces.size());
-
 
     System.out.println("Files should be in:" + outputPath.toString());
   }

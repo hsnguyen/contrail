@@ -1,6 +1,4 @@
 /**
- * Copyright 2012 Google Inc. All Rights Reserved.
- *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -17,6 +15,7 @@
 package contrail.util;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
@@ -24,8 +23,11 @@ import org.apache.avro.file.DataFileStream;
 import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+
+import contrail.tools.CreateGraphIndex;
 
 /**
  * This class iterates over the contents in a series of avro files.
@@ -38,6 +40,9 @@ import org.apache.hadoop.fs.Path;
  * @param <T>: The record type for the records we are iterating over.
  */
 public class AvroFileContentsIterator<T> implements Iterator<T>, Iterable<T> {
+  private static final ContrailLogger sLogger =
+      ContrailLogger.getLogger(CreateGraphIndex.class);
+
   private final Configuration conf;
 
   // The list of files.
@@ -66,6 +71,39 @@ public class AvroFileContentsIterator<T> implements Iterator<T>, Iterable<T> {
 
     currentIterator = openFile(fileIterator.next());
     hasMoreRecords = null;
+  }
+
+  /**
+   * Create the iterator from a glob expression matching the files to use.
+   * @return
+   */
+  public static <T> AvroFileContentsIterator<T> fromGlob(
+      Configuration conf, String glob) {
+    // TODO(jeremy@lewi.us): We should check if the input path is a directory
+    // and if it is we should use its contents.
+    Path inputPath = new Path(glob);
+
+    FileStatus[] fileStates = null;
+    try {
+      FileSystem fs = inputPath.getFileSystem(conf);
+      fileStates = fs.globStatus(inputPath);
+    } catch (IOException e) {
+      sLogger.fatal("Could not get file status for inputpath:" + inputPath, e);
+      System.exit(-1);
+    }
+
+    ArrayList<String> inputFiles = new ArrayList<String>();
+
+    for (FileStatus status : fileStates) {
+     if (status.isDir()) {
+       sLogger.info("Skipping directory:" + status.getPath());
+         continue;
+      }
+      sLogger.info("Input file:" + status.getPath()) ;
+      inputFiles.add(status.getPath().toString());
+    }
+
+    return new AvroFileContentsIterator<T>(inputFiles, conf);
   }
 
   @Override
