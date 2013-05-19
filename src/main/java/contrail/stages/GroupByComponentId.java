@@ -36,16 +36,11 @@ import contrail.graph.GraphNodeData;
 import contrail.util.ContrailLogger;
 
 /**
- * Rekey the graph nodes by component id.
- *
- * This MR takes two inputs 1. avro files containing GraphNodeData records and
- * 2. avro files containing Pair<String, List<String>>. The pairs assign
- * a key to a group of nodes. This MR job keys the GraphNodeData by
- * by that id so the output is Pair<String, GraphNodeData>.
+ * Group nodes according to some id.
  */
-public class RekeyByComponentId extends MRStage {
+public class GroupByComponentId extends MRStage {
   private static final ContrailLogger sLogger =
-      ContrailLogger.getLogger(RekeyByComponentId.class);
+      ContrailLogger.getLogger(GroupByComponentId.class);
 
   @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
@@ -149,7 +144,7 @@ public class RekeyByComponentId extends MRStage {
 
   public static void main(String[] args) throws Exception {
     int res = ToolRunner.run(
-        new Configuration(), new RekeyByComponentId(), args);
+        new Configuration(), new GroupByComponentId(), args);
     System.exit(res);
   }
 }
