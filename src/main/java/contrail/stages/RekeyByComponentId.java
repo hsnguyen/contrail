@@ -23,10 +23,14 @@ import java.util.Map;
 
 import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroCollector;
+import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroMapper;
 import org.apache.avro.mapred.AvroReducer;
 import org.apache.avro.mapred.Pair;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapred.FileInputFormat;
+import org.apache.hadoop.mapred.FileOutputFormat;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.util.ToolRunner;
@@ -41,7 +45,7 @@ import contrail.util.ContrailLogger;
  * This MR takes two inputs 1. avro files containing GraphNodeData records and
  * 2. avro files containing Pair<String, List<String>>. The pairs assign
  * a key to a group of nodes. This MR job keys the GraphNodeData by
- * by that id so the output is Pair<String, GraphNodeData>.
+ * that id so the output is Pair<String, GraphNodeData>.
  */
 public class RekeyByComponentId extends MRStage {
   private static final ContrailLogger sLogger =
@@ -60,17 +64,24 @@ public class RekeyByComponentId extends MRStage {
     return Collections.unmodifiableMap(defs);
   }
 
-  public static class Mapper extends AvroMapper <Object, Pair<CharSequence, Object>> {
+  protected static Schema getInputSchema() {
+    ArrayList<Schema> schemas = new ArrayList<Schema>();
+    schemas.add(Pair.getPairSchema(
+        Schema.create(Schema.Type.STRING),
+        Schema.createArray(Schema.create(Schema.Type.STRING))));
+    schemas.add(new GraphNodeData().getSchema());
+    Schema union = Schema.createUnion(schemas);
+    return union;
+  }
+
+  public static class Mapper extends
+      AvroMapper<Object, Pair<CharSequence, Object>> {
     private Pair<CharSequence, Object> outPair;
 
     @Override
     public void configure(JobConf job) {
-      ArrayList<Schema> schemas = new ArrayList<Schema>();
-      schemas.add(Schema.create(Schema.Type.STRING));
-      schemas.add(new GraphNodeData().getSchema());
-      Schema union = Schema.createUnion(schemas);
       outPair = new Pair<CharSequence, Object>(
-          Schema.create(Schema.Type.STRING), union);
+          Schema.create(Schema.Type.STRING), getInputSchema());
     }
 
     @Override
@@ -81,6 +92,7 @@ public class RekeyByComponentId extends MRStage {
       if (record instanceof GraphNodeData) {
         outPair.key(((GraphNodeData) record).getNodeId());
         outPair.value(record);
+        collector.collect(outPair);
       } else {
         Pair<CharSequence, List<CharSequence>> component =
             (Pair<CharSequence, List<CharSequence>>) record;
@@ -145,6 +157,34 @@ public class RekeyByComponentId extends MRStage {
              new RuntimeException("Missing node data."));
       }
     }
+  }
+
+  @Override
+  protected void setupConfHook() {
+    JobConf conf = (JobConf) getConf();
+    String inputPath = (String) stage_options.get("inputpath");
+    String outputPath = (String) stage_options.get("outputpath");
+
+    FileInputFormat.addInputPaths(conf, inputPath);
+    FileOutputFormat.setOutputPath(conf, new Path(outputPath));
+
+    // Create the schema for the map output
+    ArrayList<Schema> valueSchemas = new ArrayList<Schema>();
+    valueSchemas.add(Schema.create(Schema.Type.STRING));
+    valueSchemas.add(new GraphNodeData().getSchema());
+    Schema valueSchema = Schema.createUnion(valueSchemas);
+
+    AvroJob.setInputSchema(conf, getInputSchema());
+    AvroJob.setMapOutputSchema(
+        conf,  Pair.getPairSchema(Schema.create(Schema.Type.STRING),
+            valueSchema));
+    AvroJob.setOutputSchema(conf,
+        Pair.getPairSchema(
+            Schema.create(Schema.Type.STRING),
+            new GraphNodeData().getSchema()));
+
+    AvroJob.setMapperClass(conf, Mapper.class);
+    AvroJob.setReducerClass(conf, Reducer.class);
   }
 
   public static void main(String[] args) throws Exception {

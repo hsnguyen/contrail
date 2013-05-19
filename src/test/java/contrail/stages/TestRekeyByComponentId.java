@@ -69,7 +69,7 @@ public class TestRekeyByComponentId {
         new Pair<CharSequence, List<CharSequence>>(ComponentSchema);
     component2.key("2");
     component2.value(Arrays.asList((CharSequence)"nodeB"));
-    components.add(component1);
+    components.add(component2);
 
     Path componentPath = new Path(FilenameUtils.concat(
         temp.getAbsolutePath(), "component.avro"));

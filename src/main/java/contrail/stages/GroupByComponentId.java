@@ -36,7 +36,9 @@ import contrail.graph.GraphNodeData;
 import contrail.util.ContrailLogger;
 
 /**
- * Group nodes according to some id.
+ * Group nodes according to some id. The input are pairs (key, GraphNodeData).
+ * The nodes are grouped by key and outputed as a list of nodes, one
+ * list per key.
  */
 public class GroupByComponentId extends MRStage {
   private static final ContrailLogger sLogger =
@@ -89,56 +91,27 @@ public class GroupByComponentId extends MRStage {
   }
 
   public static class Reducer extends
-      AvroReducer<CharSequence, Object, Pair<CharSequence, GraphNodeData>> {
-    private Pair<CharSequence, GraphNodeData> outPair;
+      AvroReducer<CharSequence, GraphNodeData, List<GraphNodeData>> {
+    private List<GraphNodeData> out;
     private GraphNode node;
 
     @Override
     public void configure(JobConf job) {
-      outPair = new Pair<CharSequence, GraphNodeData>("", new GraphNodeData());
+      out = new ArrayList<GraphNodeData>();
       node = new GraphNode();
     }
 
     @Override
     public void reduce(
-        CharSequence id, Iterable<Object> records,
-        AvroCollector<Pair<CharSequence, GraphNodeData>> collector,
+        CharSequence id, Iterable<GraphNodeData> records,
+        AvroCollector<List<GraphNodeData>> collector,
         Reporter reporter) throws IOException {
-
-      outPair.key(null);
-      outPair.value(null);
-
-      int numRecords = 0;
-      for (Object record : records) {
-        ++numRecords;
-        if (record instanceof CharSequence) {
-          outPair.key(record.toString());
-        } else {
-          node.setData((GraphNodeData)record);
-          outPair.value(node.clone().getData());
-        }
+      out.clear();
+      for (GraphNodeData nodeData : records) {
+        node.setData(nodeData);
+        out.add(node.clone().getData());
       }
-
-      if (numRecords > 2) {
-        // There should be at most 2 records for each key.
-        reporter.incrCounter("contrail", "error-more-than-2-records", 1);
-      }
-
-      if (outPair.key() != null && outPair.value() != null) {
-        collector.collect(outPair);
-      } else if (outPair.key() == null) {
-        reporter.incrCounter("contrail", "error-missing-component-id", 1);
-        sLogger.fatal(
-            String.format(
-                "Node %s wasn't assigned to a component.",
-                outPair.value().getNodeId()),
-                new RuntimeException("Missing component"));
-      } else if (outPair.value() == null) {
-        reporter.incrCounter("contrail", "error-missing-node-data", 1);
-        sLogger.fatal(
-            String.format("No GraphNodeData for node %s", id),
-             new RuntimeException("Missing node data."));
-      }
+      collector.collect(out);
     }
   }
 
