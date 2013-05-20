@@ -23,10 +23,14 @@ import java.util.Map;
 
 import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroCollector;
+import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroMapper;
 import org.apache.avro.mapred.AvroReducer;
 import org.apache.avro.mapred.Pair;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapred.FileInputFormat;
+import org.apache.hadoop.mapred.FileOutputFormat;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.util.ToolRunner;
@@ -57,36 +61,23 @@ public class GroupByComponentId extends MRStage {
     return Collections.unmodifiableMap(defs);
   }
 
-  public static class Mapper extends AvroMapper <Object, Pair<CharSequence, Object>> {
-    private Pair<CharSequence, Object> outPair;
-
+  public static class Mapper extends
+      AvroMapper<Pair<CharSequence, GraphNodeData>,
+                 Pair<CharSequence, GraphNodeData>> {
     @Override
     public void configure(JobConf job) {
       ArrayList<Schema> schemas = new ArrayList<Schema>();
       schemas.add(Schema.create(Schema.Type.STRING));
       schemas.add(new GraphNodeData().getSchema());
       Schema union = Schema.createUnion(schemas);
-      outPair = new Pair<CharSequence, Object>(
-          Schema.create(Schema.Type.STRING), union);
     }
 
     @Override
     public void map(
-        Object record,
-        AvroCollector<Pair<CharSequence, Object>> collector, Reporter reporter)
-            throws IOException {
-      if (record instanceof GraphNodeData) {
-        outPair.key(((GraphNodeData) record).getNodeId());
-        outPair.value(record);
-      } else {
-        Pair<CharSequence, List<CharSequence>> component =
-            (Pair<CharSequence, List<CharSequence>>) record;
-        for (CharSequence nodeId : component.value()) {
-          outPair.key(nodeId);
-          outPair.value(component.key());
-          collector.collect(outPair);
-        }
-      }
+        Pair<CharSequence, GraphNodeData> record,
+        AvroCollector<Pair<CharSequence, GraphNodeData>> collector,
+        Reporter reporter) throws IOException {
+      collector.collect(record);
     }
   }
 
@@ -113,6 +104,28 @@ public class GroupByComponentId extends MRStage {
       }
       collector.collect(out);
     }
+  }
+
+  @Override
+  protected void setupConfHook() {
+    JobConf conf = (JobConf) getConf();
+    String inputPath = (String) stage_options.get("inputpath");
+    String outputPath = (String) stage_options.get("outputpath");
+
+    FileInputFormat.addInputPaths(conf, inputPath);
+    FileOutputFormat.setOutputPath(conf, new Path(outputPath));
+
+    Schema pairSchema = Pair.getPairSchema(
+        Schema.create(Schema.Type.STRING),
+        new GraphNodeData().getSchema());
+
+    AvroJob.setInputSchema(conf, pairSchema);
+    AvroJob.setMapOutputSchema(conf,  pairSchema);
+    AvroJob.setOutputSchema(
+        conf, Schema.createArray(new GraphNodeData().getSchema()));
+
+    AvroJob.setMapperClass(conf, Mapper.class);
+    AvroJob.setReducerClass(conf, Reducer.class);
   }
 
   public static void main(String[] args) throws Exception {

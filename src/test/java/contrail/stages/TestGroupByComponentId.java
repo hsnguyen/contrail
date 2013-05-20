@@ -14,6 +14,60 @@
 // Author: Jeremy Lewi (jeremy@lewi.us)
 package contrail.stages;
 
-public class TestGroupByComponentId {
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import java.io.File;
+import java.util.Arrays;
+import java.util.List;
 
+import org.apache.avro.mapred.Pair;
+import org.apache.commons.io.FilenameUtils;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.junit.Test;
+
+import contrail.graph.GraphNode;
+import contrail.graph.GraphNodeData;
+import contrail.graph.GraphTestUtil;
+import contrail.util.AvroFileContentsIterator;
+import contrail.util.AvroFileUtil;
+import contrail.util.FileHelper;
+
+public class TestGroupByComponentId {
+  @Test
+  public void testMR() {
+    // Create some graph nodes.
+    GraphNode nodeA = GraphTestUtil.createNode("nodeA", "ACTGCT");
+    GraphNode nodeB = GraphTestUtil.createNode("nodeB", "ACTGCT");
+
+    File temp = FileHelper.createLocalTempDir();
+    String graphPath = FilenameUtils.concat(
+        temp.getAbsolutePath(), "nodes.avro");
+
+    // Write componen pairs.
+    Pair<CharSequence, GraphNodeData> pairA =
+        new Pair<CharSequence, GraphNodeData>("1", nodeA.getData());
+    Pair<CharSequence, GraphNodeData> pairB =
+        new Pair<CharSequence, GraphNodeData>("1", nodeB.getData());
+
+    AvroFileUtil.writeRecords(
+        new Configuration(), new Path(graphPath), Arrays.asList(pairA, pairB));
+
+    GroupByComponentId stage = new GroupByComponentId();
+    stage.setParameter(
+        "inputpath", graphPath);
+    stage.setParameter(
+        "outputpath", FilenameUtils.concat(temp.getPath(), "outputpath"));
+
+    assertTrue(stage.execute());
+
+    // Open the output.
+    AvroFileContentsIterator<Pair<CharSequence, List<GraphNodeData>>> outputs =
+        AvroFileContentsIterator.fromGlob(
+            new Configuration(),
+            FilenameUtils.concat(temp.getPath(), "part*avro"));
+
+    Pair<CharSequence, List<GraphNodeData>> component = outputs.next();
+    assertEquals(2, component.value().size());
+  }
 }

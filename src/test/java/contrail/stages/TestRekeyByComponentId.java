@@ -98,6 +98,5 @@ public class TestRekeyByComponentId {
         fail("Component is wrong.");
       }
     }
-
   }
 }
