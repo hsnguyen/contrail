@@ -62,12 +62,12 @@ public class TestGroupByComponentId {
     assertTrue(stage.execute());
 
     // Open the output.
-    AvroFileContentsIterator<Pair<CharSequence, List<GraphNodeData>>> outputs =
+    AvroFileContentsIterator<List<GraphNodeData>> outputs =
         AvroFileContentsIterator.fromGlob(
             new Configuration(),
-            FilenameUtils.concat(temp.getPath(), "part*avro"));
+            FilenameUtils.concat(temp.getPath(), "outputpath/part*avro"));
 
-    Pair<CharSequence, List<GraphNodeData>> component = outputs.next();
-    assertEquals(2, component.value().size());
+    List<GraphNodeData> component = outputs.next();
+    assertEquals(2, component.size());
   }
 }

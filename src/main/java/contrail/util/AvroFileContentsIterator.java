@@ -27,8 +27,6 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
-import contrail.tools.CreateGraphIndex;
-
 /**
  * This class iterates over the contents in a series of avro files.
  *
@@ -41,7 +39,7 @@ import contrail.tools.CreateGraphIndex;
  */
 public class AvroFileContentsIterator<T> implements Iterator<T>, Iterable<T> {
   private static final ContrailLogger sLogger =
-      ContrailLogger.getLogger(CreateGraphIndex.class);
+      ContrailLogger.getLogger(AvroFileContentsIterator.class);
 
   private final Configuration conf;
 
@@ -69,8 +67,13 @@ public class AvroFileContentsIterator<T> implements Iterator<T>, Iterable<T> {
     this.conf = conf;
     fileIterator = this.files.iterator();
 
-    currentIterator = openFile(fileIterator.next());
-    hasMoreRecords = null;
+    if (!files.isEmpty()) {
+      currentIterator = openFile(fileIterator.next());
+      hasMoreRecords = null;
+    } else {
+      currentIterator = new ArrayList<T>().iterator();
+      hasMoreRecords = false;
+    }
   }
 
   /**
