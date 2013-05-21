@@ -16,7 +16,7 @@
  * permissions and limitations under the License.
  */
 // Author: Jeremy Lewi(jeremy@lewi.us)
-package contrail.tools;
+package contrail.stages;
 
 import static org.junit.Assert.fail;
 
@@ -57,9 +57,9 @@ import contrail.stages.ParameterDefinition;
  * because some connected components might be too large to fit in a single
  * piece.
  */
-public class SplitGraph extends NonMRStage {
+public class SplitThreadableGraph extends NonMRStage {
   private static final Logger sLogger = Logger.getLogger(
-      SplitGraph.class);
+      SplitThreadableGraph.class);
   @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
@@ -322,7 +322,7 @@ public class SplitGraph extends NonMRStage {
   }
 
   public static void main(String[] args) throws Exception {
-    SplitGraph stage = new SplitGraph();
+    SplitThreadableGraph stage = new SplitThreadableGraph();
     int res = stage.run(args);
     System.exit(res);
   }

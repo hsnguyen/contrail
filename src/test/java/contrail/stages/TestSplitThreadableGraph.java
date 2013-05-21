@@ -46,7 +46,7 @@ public class TestSplitGraph {
         new Configuration(), new Path(graphPath), nodes);
 
     // Run it.
-    SplitGraph stage = new SplitGraph();
+    SplitThreadableGraph stage = new SplitThreadableGraph();
 
     // We need to initialize the configuration otherwise we will get an
     // exception. Normally the initialization happens in main.
