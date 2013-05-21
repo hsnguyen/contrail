@@ -119,6 +119,58 @@ public class ResolveThreads extends MRStage {
   }
 
   /**
+   * Structure providing information about the spanning reads.
+   */
+  public static class SpanningReads {
+    public HashMap<String, EdgeTerminal> inReads;
+    public HashMap<String, EdgeTerminal> outReads =
+        new HashMap<String, EdgeTerminal>();
+
+    /**
+     * Ids of reads which span the node.
+     */
+    Set<String> spanningIds;
+
+    public SpanningReads() {
+      // Get a list of reads for incoming edges.
+      inReads = new HashMap<String, EdgeTerminal>();
+      outReads = new HashMap<String, EdgeTerminal>();
+    }
+  }
+
+  /**
+   * Find the reads that span the node.
+   *
+   * @param node
+   * @return
+   */
+  public static SpanningReads findSpanningReads(GraphNode node) {
+    SpanningReads info = new SpanningReads();
+    // Get outgoing edges for the forward strand.
+    for (EdgeTerminal terminal : node.getEdgeTerminalsSet(
+        DNAStrand.FORWARD, EdgeDirection.OUTGOING)) {
+      for (CharSequence read :
+           node.getTagsForEdge(DNAStrand.FORWARD, terminal)) {
+        info.outReads.put(read.toString(), terminal);
+      }
+    }
+
+    // To get reads for incoming edges we look at outgoing edges for the
+    // reverse strand. getTagsForEdge assumes the edge is an outgoing edge.
+    for (EdgeTerminal terminal : node.getEdgeTerminalsSet(
+        DNAStrand.REVERSE, EdgeDirection.OUTGOING)) {
+      for (CharSequence read :
+           node.getTagsForEdge(DNAStrand.REVERSE, terminal)) {
+       info.inReads.put(read.toString(), terminal);
+      }
+    }
+
+    info.spanningIds = info.inReads.keySet();
+    info.spanningIds.retainAll(info.outReads.keySet());
+    return info;
+  }
+
+  /**
    * Find the paths consistent with the reads spanning the node.
    *
    * This function modifies the graph so the graph must be in memory.
@@ -138,35 +190,9 @@ public class ResolveThreads extends MRStage {
   public static ResolveStats resolveSpanningReadPaths(
       HashMap<String, GraphNode> graph, String nodeId) {
     GraphNode node = graph.get(nodeId);
-    // Get a list of reads for incoming edges.
-    HashMap<String, EdgeTerminal> inReads =
-        new HashMap<String, EdgeTerminal>();
-    HashMap<String, EdgeTerminal> outReads =
-        new HashMap<String, EdgeTerminal>();
+    SpanningReads spanningReads = findSpanningReads(node);
 
-    // Get outgoing edges for the forward strand.
-    for (EdgeTerminal terminal : node.getEdgeTerminalsSet(
-        DNAStrand.FORWARD, EdgeDirection.OUTGOING)) {
-      for (CharSequence read :
-           node.getTagsForEdge(DNAStrand.FORWARD, terminal)) {
-        outReads.put(read.toString(), terminal);
-      }
-    }
-
-    // To get reads for incoming edges we look at outgoing edges for the
-    // reverse strand. getTagsForEdge assumes the edge is an outgoing edge.
-    for (EdgeTerminal terminal : node.getEdgeTerminalsSet(
-        DNAStrand.REVERSE, EdgeDirection.OUTGOING)) {
-      for (CharSequence read :
-           node.getTagsForEdge(DNAStrand.REVERSE, terminal)) {
-       inReads.put(read.toString(), terminal);
-      }
-    }
-
-    Set<String> spanningReads = inReads.keySet();
-    spanningReads.retainAll(outReads.keySet());
-
-    if (spanningReads.size() == 0) {
+    if (spanningReads.spanningIds.size() == 0) {
       return null;
     }
 
@@ -178,9 +204,9 @@ public class ResolveThreads extends MRStage {
     HashMap<GraphPath, ArrayList<String>> pairs =
         new HashMap<GraphPath, ArrayList<String>> ();
 
-    for (String read : spanningReads) {
-      EdgeTerminal inTerminal = inReads.get(read).flip();
-      EdgeTerminal outTerminal = outReads.get(read);
+    for (String read : spanningReads.spanningIds) {
+      EdgeTerminal inTerminal = spanningReads.inReads.get(read).flip();
+      EdgeTerminal outTerminal = spanningReads.outReads.get(read);
 
       GraphPath path = new GraphPath();
 

@@ -1,4 +1,4 @@
-package contrail.tools;
+package contrail.stages;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -24,9 +24,9 @@ import contrail.util.AvroFileContentsIterator;
 import contrail.util.CharUtil;
 import contrail.util.FileHelper;
 
-public class TestSplitGraph {
+public class TestSplitThreadableGraph {
   private static final Logger sLogger =
-      Logger.getLogger(TestSplitGraph.class);
+      Logger.getLogger(TestSplitThreadableGraph.class);
 
   @Test
   public void testMain() {

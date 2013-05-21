@@ -29,6 +29,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.TreeSet;
 
 import org.apache.avro.Schema;
@@ -45,9 +46,11 @@ import org.apache.log4j.Logger;
 
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeFilesIterator;
+import contrail.graph.UndirectedNode;
 import contrail.stages.ContrailParameters;
 import contrail.stages.NonMRStage;
 import contrail.stages.ParameterDefinition;
+import contrail.stages.ResolveThreads.SpanningReads;
 
 /**
  * This stage splits the graph by doing a breadth first search.
@@ -72,9 +75,6 @@ public class SplitThreadableGraph extends NonMRStage {
       defs.put(def.getName(), def);
     }
 
-    ParameterDefinition max = new ParameterDefinition(
-        "max_size", "Maximum number of nodes in a group.", Integer.class,
-        10000);
     defs.put(max.getName(), max);
     return Collections.unmodifiableMap(defs);
   }
@@ -95,6 +95,35 @@ public class SplitThreadableGraph extends NonMRStage {
     Path outPath = new Path(FilenameUtils.concat(
         outDir.toString(), "graph.avro"));
     return outPath;
+  }
+
+  /**
+   * Used for storing the minimal information needed for this stage.
+   */
+  private static class ThreadableNode implements UndirectedNode {
+    private String nodeId;
+    private Set<String> neighborIds;
+    private boolean threadable;
+
+    public ThreadableNode(
+        String nodeId, Set<String> neighborIds, boolean threadable) {
+      this.nodeId = nodeId;
+      this.neighborIds = new HashSet<String>();
+      this.neighborIds.addAll(neighborIds);
+      this.threadable = threadable;
+    }
+
+    public String getNodeId() {
+      return nodeId;
+    }
+
+    public Set<String> getNeighborIds() {
+      return neighborIds;
+    }
+
+    public boolean isThreadable() {
+      return threadable;
+    }
   }
 
   /**
@@ -135,110 +164,34 @@ public class SplitThreadableGraph extends NonMRStage {
     return writer;
   }
 
-  private static class BFSIterator
-      implements Iterator<String>, Iterable<String> {
-
-    // Use two sets so we can keep track of the hops.
-    // We use sets because we don't want duplicates because duplicates
-    // make computing hasNext() difficult. We use a TreeSet for thisHop
-    // because we want to process the nodes in sorted order.
-    // We use a hashset for nextHop to make testing membership fast.
-    private final TreeSet<String> thisHop;
-    private final HashSet<String> nextHop;
-    protected String seed;
-    private final HashSet<String> visited;
-    private int hop;
-    private final HashMap<String, ArrayList<String>> graph;
-    public BFSIterator(
-        HashMap<String, ArrayList<String>> graph, String seed) {
-      thisHop = new TreeSet<String>();
-      nextHop = new HashSet<String>();
-      visited = new HashSet<String>();
-      this.seed = seed;
-
-      thisHop.add(seed);
-      hop = 0;
-
-      this.graph = graph;
-    }
-
-    @Override
-    public Iterator<String> iterator() {
-      return new BFSIterator(graph, seed);
-    }
-
-    @Override
-    public boolean hasNext() {
-      return (!thisHop.isEmpty() || !nextHop.isEmpty());
-    }
-
-    @Override
-    public String next() {
-      if (thisHop.isEmpty()) {
-        ++hop;
-        thisHop.addAll(nextHop);
-        nextHop.clear();
-      }
-
-      if (thisHop.isEmpty()) {
-        throw new NoSuchElementException();
-      }
-
-      // Find the first node that we haven't visited already.
-      String nodeId = thisHop.pollFirst();
-      // Its possible we were slated to visit this node on the next
-      // hop in which case we want to remove it.
-      nextHop.remove(nodeId);
-
-      visited.add(nodeId);
-
-
-      for (String neighborId : graph.get(nodeId)) {
-        if (!visited.contains(neighborId)) {
-          nextHop.add(neighborId);
-        }
-      }
-
-      return nodeId;
-    }
-
-    @Override
-    public void remove() {
-      throw new UnsupportedOperationException();
-    }
-
-    /**
-     * Return the number of hops since the seeds. The seeds correspond to hop 0.
-     *
-     * @return
-     */
-    public int getHop() {
-      return hop;
-    }
-  }
-
   @Override
   protected void stageMain() {
     GraphNodeFilesIterator nodeIterator = GraphNodeFilesIterator.fromGlob(
         getConf(), (String)stage_options.get("inputpath"));
     // The edge graph
-    HashMap<String, ArrayList<String>> graph =
-        new HashMap<String, ArrayList<String>>();
+    HashMap<String, ThreadableNode> graph =
+        new HashMap<String, ThreadableNode>();
     DataFileWriter<Pair<CharSequence, List<CharSequence>>> writer =
         createWriter();
+
+    // The list of nodes which are threadable.
+    ArrayList<String> threadableIds = new ArrayList<String>();
 
     Pair<CharSequence, List<CharSequence>> outPair = new Pair(getSchema());
     outPair.value(new ArrayList<CharSequence>());
 
     int component = -1;
 
-    int totalNodes = 0;
-    int writtenNodes = 0;
+    int islands = 0;
+    // Number of threadable nodes outputted with neighbors.
+    int numResolvable = 0;
+
+    // Number of nodes which are neighbors of resolvable.
+    int numNeighbors = 0;
 
     // Load a compressed edge graph into memory.
     int readNodes = 0;
     for (GraphNode node : nodeIterator) {
-      ArrayList<String> neighbors = new ArrayList<String>();
       ++readNodes;
       if (readNodes % 1000 == 0) {
         sLogger.info(String.format("Read %d nodes.", readNodes));
@@ -255,40 +208,80 @@ public class SplitThreadableGraph extends NonMRStage {
         } catch (IOException e) {
           sLogger.fatal("Couldn't write component:", e);
         }
+        ++islands;
         continue;
       }
 
-      neighbors.clear();
-      neighbors.addAll(node.getNeighborIds());
-      graph.put(node.getNodeId(), neighbors);
+      SpanningReads spanningReads = ResolveThreads.findSpanningReads(node);
+      boolean isThreadable = (spanningReads.spanningIds.size() > 0);
+      ThreadableNode compressed = new ThreadableNode(
+          node.getNodeId(), node.getNeighborIds(), isThreadable);
+
+      if (isThreadable) {
+        threadableIds.add(node.getNodeId());
+      }
+      graph.put(node.getNodeId(), compressed);
     }
 
-    int maxSize = (Integer) stage_options.get("max_size");
-
-    Iterator<String> idIterator = graph.keySet().iterator();
-    HashSet<String> visitedIds = new HashSet<String>();
-    while (idIterator.hasNext()) {
-      String nodeId = idIterator.next();
-      ++totalNodes;
-      if (visitedIds.contains(nodeId)) {
+    // Iterate over all threadable nodes. For each threadable node,
+    // check if its already been outputted. If it hasn't then check if
+    // any of its neighbors have been outputted. If no neighbors have been
+    // outputted group the threadable node with its neighbors.
+    for (String threadableId : threadableIds) {
+      if (!graph.containsKey(threadableId)) {
+        // Node was already outputted.
         continue;
       }
 
-      // Write the connected component for this node.
+      ThreadableNode node = graph.remove(threadableId);
+      // Check if all of the neighbors are still there.
+      boolean hasNeighbors = true;
+      for (String neighborId : node.getNeighborIds()) {
+        if (!graph.containsKey(neighborId)) {
+          hasNeighbors = false;
+        }
+      }
+
+      if (!hasNeighbors) {
+        // Just output this node.
+        ++component;
+        outPair.key(String.format("%05d", component));
+        outPair.value().clear();
+        outPair.value().add(node.getNodeId());
+        try {
+          writer.append(outPair);
+        } catch (IOException e) {
+          sLogger.fatal("Couldn't write component:", e);
+        }
+        continue;
+      }
+
+      // Output this node with its neighbors so we can resolve threads
+      // in a subsequent step.
+      for (String neighborId : node.getNeighborIds()) {
+        graph.remove(neighborId);
+      }
+
+      numNeighbors += node.getNeighborIds().size();
+      ++numResolvable;
       ++component;
       outPair.key(String.format("%05d", component));
-      BFSIterator bfsIterator = new BFSIterator(graph, nodeId);
-
       outPair.value().clear();
-      while (outPair.value().size() < maxSize && bfsIterator.hasNext()) {
-        nodeId = bfsIterator.next();
-        if (visitedIds.contains(nodeId)) {
-          continue;
-        }
-        visitedIds.add(nodeId);
-        outPair.value().add(nodeId);
-        ++writtenNodes;
+      outPair.value().add(node.getNodeId());
+      outPair.value().addAll(node.getNeighborIds());
+      try {
+        writer.append(outPair);
+      } catch (IOException e) {
+        sLogger.fatal("Couldn't write component:", e);
       }
+    }
+
+    // Output all the remaining nodes in the graph.
+    for (String nodeId : graph.keySet()) {
+      ++component;
+      outPair.key(String.format("%05d", component));
+      outPair.value().clear();
+      outPair.value().add(nodeId);
       try {
         writer.append(outPair);
         sLogger.info(String.format(
@@ -300,9 +293,21 @@ public class SplitThreadableGraph extends NonMRStage {
       }
     }
 
+    int totalNodes = islands + numResolvable + numNeighbors + graph.size();
+
+    sLogger.info(
+        String.format(
+            "Read %d nodes.", readNodes));
     sLogger.info(
         String.format(
             "Ouputted %d nodes in %d components", totalNodes, component));
+
+    sLogger.info(
+        String.format(
+            "Total threadable nodes: %d. Resolvable: %d.",
+            threadableIds.size(), numResolvable));
+    sLogger.info(
+        String.format("Number of islands: %d.", islands));
     try {
       writer.close();
     } catch (IOException e) {
