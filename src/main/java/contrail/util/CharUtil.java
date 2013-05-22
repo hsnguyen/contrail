@@ -53,7 +53,7 @@ public class CharUtil {
     String value;
     for (CharSequence item : items) {
       value = item.toString();
-      strings.add(items.toString());
+      strings.add(item.toString());
     }
     return strings;
   }
