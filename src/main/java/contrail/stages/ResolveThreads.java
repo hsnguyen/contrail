@@ -28,8 +28,6 @@ import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroMapper;
-import org.apache.avro.mapred.AvroReducer;
-import org.apache.avro.mapred.Pair;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.FileInputFormat;
@@ -53,8 +51,7 @@ import contrail.sequences.DNAStrand;
  * threads for all nodes whose edges are in the set of the nodes
  * within this list.
  *
- * The reducer collects all nodes with edges across the boundary of the
- * subgraph considered by each mapper.
+ * This is a mapper only job.
  */
 public class ResolveThreads extends MRStage {
   private static final Logger sLogger =
@@ -108,6 +105,7 @@ public class ResolveThreads extends MRStage {
       numIslands += other.numIslands;
     }
 
+    @Override
     public String toString() {
       return String.format(
           "Number of nodes with spanning reads: %d\n" +
@@ -289,6 +287,7 @@ public class ResolveThreads extends MRStage {
   /**
    * Get the parameters used by this stage.
    */
+  @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
       HashMap<String, ParameterDefinition> defs =
         new HashMap<String, ParameterDefinition>();
@@ -307,14 +306,12 @@ public class ResolveThreads extends MRStage {
    * The mapper identifies potential bubbles.
    */
   public static class Mapper extends
-      AvroMapper<List<GraphNodeData>, Pair<CharSequence,GraphNodeData>> {
+      AvroMapper<List<GraphNodeData>, GraphNodeData> {
     HashMap<String, GraphNode> nodes;
 
-    private Pair<CharSequence, GraphNodeData> outPair;
-
+    @Override
     public void configure(JobConf job)    {
       nodes = new HashMap<String, GraphNode>();
-      outPair = new Pair<CharSequence, GraphNodeData>("", new GraphNodeData());
     }
 
     /**
@@ -331,10 +328,16 @@ public class ResolveThreads extends MRStage {
       return false;
     }
 
-    public void map(List<GraphNodeData> nodesData,
-        AvroCollector<Pair<CharSequence, GraphNodeData>> output,
+    @Override
+    public void map(
+        List<GraphNodeData> nodesData, AvroCollector<GraphNodeData> collector,
         Reporter reporter) throws IOException   {
       nodes.clear();
+
+      if (nodesData.size() == 1) {
+        collector.collect(nodesData.get(0));
+        return;
+      }
 
       for (GraphNodeData data: nodesData) {
         nodes.put(data.getNodeId().toString(), new GraphNode(data));
@@ -371,90 +374,7 @@ public class ResolveThreads extends MRStage {
         }
       }
 
-      // Output any nodes which are on the border. If the border node
-      // could have threads to resolve then we need to include all its
-      // neighbors.
-      HashSet<String> nodesToGather = new HashSet<String>();
-      for (String id : borderIds) {
-        nodesToGather.add(id);
-        GraphNode node = nodes.get(id);
-        if (node.degree(DNAStrand.FORWARD, EdgeDirection.INCOMING) >= 1 &&
-            node.degree(DNAStrand.FORWARD, EdgeDirection.OUTGOING) >= 1) {
-          // Since this node could have threads we need to include all
-          // its neighbors.
-          nodesToGather.addAll(node.getNeighborIds());
-        }
-      }
-      // Output the data
-      for (String id : nodes.keySet()) {
-       if (nodesToGather.contains(id)) {
-         outPair.key(GATHER_KEY);
-       } else {
-         outPair.key(id);
-       }
-
-        outPair.value(nodes.get(id).getData());
-        output.collect(outPair);
-      }
-      reporter.incrCounter("Contrail", "clones", totalStats.clones);
-      reporter.incrCounter("Contrail", "islands", totalStats.numIslands);
-      reporter.incrCounter(
-          "Contrail", "nodes-with-threads", totalStats.numNodes);
-    }
-  }
-
-  /**
-   * The reducer.
-   */
-  public static class Reducer
-      extends AvroReducer<CharSequence, GraphNodeData, GraphNodeData> {
-    private HashMap<String, GraphNode> nodes;
-    private GraphNode node;
-
-    public void configure(JobConf job)    {
-      nodes = new HashMap<String, GraphNode>();
-      node = new GraphNode();
-    }
-
-    public void reduce(CharSequence key, Iterable<GraphNodeData> iterable,
-        AvroCollector<GraphNodeData> collector, Reporter reporter)
-            throws IOException {
-      if (!key.toString().equals(GATHER_KEY)) {
-        // Just output the data
-        for (GraphNodeData data : iterable) {
-          collector.collect(data);
-        }
-        return;
-      }
-      nodes.clear();
-
-      for (GraphNodeData data : iterable) {
-        node.setData(data);
-        nodes.put(node.getNodeId(), node.clone());
-      }
-
-      ResolveStats totalStats = new ResolveStats();
-
-      // Process all the interior nodes.
-      // We need to make a copy of the keys because the hasmap will be changing.
-      ArrayList<String> nodeIds = new ArrayList<String>();
-      nodeIds.addAll(nodes.keySet());
-      for (String nodeId : nodeIds) {
-        node = nodes.get(nodeId);
-        // If the indegree and outdegree are both <=1 then there are no paths
-        // that can be resolved for this node.
-        if (node.degree(DNAStrand.FORWARD, EdgeDirection.INCOMING) <= 1 &&
-            node.degree(DNAStrand.FORWARD, EdgeDirection.OUTGOING) <= 1) {
-          continue;
-        }
-        ResolveStats stats = resolveSpanningReadPaths(nodes, nodeId);
-
-        if (stats != null) {
-          totalStats.add(stats);
-        }
-      }
-
-      // Output all the data.
+      // Output the nodes
       for (GraphNode node : nodes.values()) {
         collector.collect(node.getData());
       }
@@ -476,13 +396,12 @@ public class ResolveThreads extends MRStage {
 
     AvroJob.setInputSchema(
         conf, Schema.createArray(new GraphNodeData().getSchema()));
-    AvroJob.setMapOutputSchema(
-        conf,  Pair.getPairSchema(Schema.create(Schema.Type.STRING),
-            (new GraphNodeData()).getSchema()));
+    AvroJob.setMapOutputSchema(conf, (new GraphNodeData()).getSchema());
     AvroJob.setOutputSchema(conf, new GraphNodeData().getSchema());
 
     AvroJob.setMapperClass(conf, Mapper.class);
-    AvroJob.setReducerClass(conf, Reducer.class);
+    // This is a mapper only job.
+    conf.setNumReduceTasks(0);
   }
 
   public static void main(String[] args) throws Exception {

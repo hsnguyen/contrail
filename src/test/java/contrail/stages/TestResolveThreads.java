@@ -344,42 +344,4 @@ public class TestResolveThreads extends ResolveThreads {
     }
     assertEquals(testCase.expected, resolved);
   }
-
-  @Test
-  public void testMRSplit() {
-    // Put each node in a separate list so that we test that the reducer
-    // properly gathers the nodes.
-    TestCase testCase = createBasic();
-    File tempDir = FileHelper.createLocalTempDir();
-    Path avroPath = new Path(
-        FilenameUtils.concat(tempDir.getPath(), "graph.avro"));
-
-    ArrayList<List<GraphNode>> lists = new ArrayList<List<GraphNode>>();
-    for (GraphNode node : testCase.graph.values()) {
-      ArrayList<GraphNode> row = new ArrayList<GraphNode>();
-      row.add(node);
-      lists.add(row);
-    }
-    writeNodeListsToFile(
-        new File(avroPath.toString()), lists);
-
-    ResolveThreads stage = new ResolveThreads();
-    HashMap<String, Object> parameters = new HashMap<String, Object>();
-    parameters.put("inputpath", avroPath.toString());
-
-    String outPath = FilenameUtils.concat(tempDir.getPath(), "output");
-    parameters.put("outputpath", outPath);
-    stage.setParameters(parameters);
-    assertTrue(stage.execute());
-
-    // Load the output.
-    GraphNodeFilesIterator iterator = GraphNodeFilesIterator.fromGlob(
-        new JobConf(), FilenameUtils.concat(outPath, "part-00000.avro"));
-
-    HashMap<String, GraphNode> resolved = new HashMap<String, GraphNode>();
-    for (GraphNode node : iterator) {
-      resolved.put(node.getNodeId(), node.clone());
-    }
-    assertEquals(testCase.expected, resolved);
-  }
 }
