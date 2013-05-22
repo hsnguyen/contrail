@@ -25,12 +25,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.Set;
-import java.util.TreeSet;
 
 import org.apache.avro.Schema;
 import org.apache.avro.file.DataFileWriter;
@@ -46,10 +43,6 @@ import org.apache.log4j.Logger;
 
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeFilesIterator;
-import contrail.graph.UndirectedNode;
-import contrail.stages.ContrailParameters;
-import contrail.stages.NonMRStage;
-import contrail.stages.ParameterDefinition;
 import contrail.stages.ResolveThreads.SpanningReads;
 
 /**
@@ -75,7 +68,6 @@ public class SplitThreadableGraph extends NonMRStage {
       defs.put(def.getName(), def);
     }
 
-    defs.put(max.getName(), max);
     return Collections.unmodifiableMap(defs);
   }
 
@@ -100,10 +92,10 @@ public class SplitThreadableGraph extends NonMRStage {
   /**
    * Used for storing the minimal information needed for this stage.
    */
-  private static class ThreadableNode implements UndirectedNode {
-    private String nodeId;
-    private Set<String> neighborIds;
-    private boolean threadable;
+  private static class ThreadableNode {
+    private final String nodeId;
+    private final Set<String> neighborIds;
+    private final boolean threadable;
 
     public ThreadableNode(
         String nodeId, Set<String> neighborIds, boolean threadable) {
@@ -300,7 +292,7 @@ public class SplitThreadableGraph extends NonMRStage {
             "Read %d nodes.", readNodes));
     sLogger.info(
         String.format(
-            "Ouputted %d nodes in %d components", totalNodes, component));
+            "Ouputted %d nodes in %d components", totalNodes, component + 1));
 
     sLogger.info(
         String.format(
@@ -319,10 +311,10 @@ public class SplitThreadableGraph extends NonMRStage {
       sLogger.fatal(String.format(
           "Number of components is larger than number of nodes"));
     }
-    if (totalNodes != writtenNodes) {
+    if (totalNodes != readNodes) {
       sLogger.fatal(String.format(
-          "Total nodes: %d Number of nodes written:%d", totalNodes,
-          writtenNodes));
+          "Total nodes: %d doesn't equal Number of nodes read:%d", totalNodes,
+          readNodes));
     }
   }
 
