@@ -42,10 +42,11 @@ import contrail.util.ContrailLogger;
 /**
  * Rekey the graph nodes by component id.
  *
- * This MR takes two inputs 1. avro files containing GraphNodeData records and
- * 2. avro files containing Pair<String, List<String>>. The pairs assign
+ * This MR takes two inputs:
+ * 1. avro files containing GraphNodeData records and
+ * 2. avro files containing Pair<key, List<String>>. The pairs assign
  * a key to a group of nodes. This MR job keys the GraphNodeData by
- * that id so the output is Pair<String, GraphNodeData>.
+ * that id so the output is Pair<key, GraphNodeData>.
  */
 public class RekeyByComponentId extends MRStage {
   private static final ContrailLogger sLogger =

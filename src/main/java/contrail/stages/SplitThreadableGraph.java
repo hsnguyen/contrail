@@ -56,6 +56,10 @@ import contrail.stages.ResolveThreads.SpanningReads;
 public class SplitThreadableGraph extends NonMRStage {
   private static final Logger sLogger = Logger.getLogger(
       SplitThreadableGraph.class);
+  // Number of nodes which are threadable.
+  private int numThreadable;
+  private boolean allNodesResolvable;
+
   @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
@@ -215,6 +219,8 @@ public class SplitThreadableGraph extends NonMRStage {
       graph.put(node.getNodeId(), compressed);
     }
 
+    numThreadable = threadableIds.size();
+
     // Iterate over all threadable nodes. For each threadable node,
     // check if its already been outputted. If it hasn't then check if
     // any of its neighbors have been outputted. If no neighbors have been
@@ -297,7 +303,14 @@ public class SplitThreadableGraph extends NonMRStage {
     sLogger.info(
         String.format(
             "Total threadable nodes: %d. Resolvable: %d.",
-            threadableIds.size(), numResolvable));
+            numThreadable, numResolvable));
+
+    if (numThreadable == numResolvable) {
+      allNodesResolvable = true;
+    } else {
+      allNodesResolvable = false;
+    }
+
     sLogger.info(
         String.format("Number of islands: %d.", islands));
     try {
@@ -316,6 +329,33 @@ public class SplitThreadableGraph extends NonMRStage {
           "Total nodes: %d doesn't equal Number of nodes read:%d", totalNodes,
           readNodes));
     }
+  }
+
+  /**
+   * Returns the number of nodes in the graph which are threadable.
+   */
+  public int getNumThreadable() {
+    if (stageState != StageState.SUCCESS) {
+      sLogger.fatal(
+          "Job did not complete successfully or has not been run.",
+          new RuntimeException("Job not run."));
+    }
+
+    return numThreadable;
+  }
+
+  /**
+   * Returns true if all threadable nodes will be resolved when ResolveThreads
+   * is run.
+   */
+  public boolean allResolvable() {
+    if (stageState != StageState.SUCCESS) {
+      sLogger.fatal(
+          "Job did not complete successfully or has not been run.",
+          new RuntimeException("Job not run."));
+    }
+
+    return allNodesResolvable;
   }
 
   public static void main(String[] args) throws Exception {

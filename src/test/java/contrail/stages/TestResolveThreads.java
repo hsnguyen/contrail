@@ -30,7 +30,6 @@ import contrail.sequences.DNAStrand;
 import contrail.util.FileHelper;
 
 public class TestResolveThreads extends ResolveThreads {
-
   private static class TestCase {
     public HashMap<String, GraphNode> graph;
     public HashMap<String, GraphNode> expected;
