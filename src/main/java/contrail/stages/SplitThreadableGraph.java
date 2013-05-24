@@ -41,8 +41,10 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.log4j.Logger;
 
+import contrail.graph.EdgeDirection;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeFilesIterator;
+import contrail.sequences.DNAStrand;
 import contrail.stages.ResolveThreads.SpanningReads;
 
 /**
@@ -187,6 +189,8 @@ public class SplitThreadableGraph extends NonMRStage {
 
     // Load a compressed edge graph into memory.
     int readNodes = 0;
+    int numOutputted = 0;
+
     for (GraphNode node : nodeIterator) {
       ++readNodes;
       if (readNodes % 1000 == 0) {
@@ -205,11 +209,19 @@ public class SplitThreadableGraph extends NonMRStage {
           sLogger.fatal("Couldn't write component:", e);
         }
         ++islands;
+        ++numOutputted;
         continue;
       }
 
-      SpanningReads spanningReads = ResolveThreads.findSpanningReads(node);
-      boolean isThreadable = (spanningReads.spanningIds.size() > 0);
+      boolean isThreadable = false;
+      if (node.degree(DNAStrand.FORWARD, EdgeDirection.INCOMING) <= 1 &&
+          node.degree(DNAStrand.FORWARD, EdgeDirection.OUTGOING) <= 1) {
+        isThreadable = false;
+      } else {
+        SpanningReads spanningReads = ResolveThreads.findSpanningReads(node);
+        isThreadable = (spanningReads.spanningIds.size() > 0);
+      }
+
       ThreadableNode compressed = new ThreadableNode(
           node.getNodeId(), node.getNeighborIds(), isThreadable);
 
@@ -246,6 +258,7 @@ public class SplitThreadableGraph extends NonMRStage {
         outPair.key(String.format("%05d", component));
         outPair.value().clear();
         outPair.value().add(node.getNodeId());
+        ++numOutputted;
         try {
           writer.append(outPair);
         } catch (IOException e) {
@@ -267,6 +280,7 @@ public class SplitThreadableGraph extends NonMRStage {
       outPair.value().clear();
       outPair.value().add(node.getNodeId());
       outPair.value().addAll(node.getNeighborIds());
+      numOutputted += outPair.value().size();
       try {
         writer.append(outPair);
       } catch (IOException e) {
@@ -280,25 +294,26 @@ public class SplitThreadableGraph extends NonMRStage {
       outPair.key(String.format("%05d", component));
       outPair.value().clear();
       outPair.value().add(nodeId);
+      ++numOutputted;
       try {
         writer.append(outPair);
-        sLogger.info(String.format(
-            "Writing component: %d. Size: %d",
-            component, outPair.value().size()));
 
+        if (component % 50000 == 0) {
+          sLogger.info(String.format(
+              "Writing component: %d. Size: %d",
+              component, outPair.value().size()));
+        }
       } catch (IOException e) {
         sLogger.fatal("Couldn't write component:", e);
       }
     }
-
-    int totalNodes = islands + numResolvable + numNeighbors + graph.size();
 
     sLogger.info(
         String.format(
             "Read %d nodes.", readNodes));
     sLogger.info(
         String.format(
-            "Ouputted %d nodes in %d components", totalNodes, component + 1));
+            "Ouputted %d nodes in %d components", numOutputted, component + 1));
 
     sLogger.info(
         String.format(
@@ -320,13 +335,13 @@ public class SplitThreadableGraph extends NonMRStage {
       System.exit(-1);
     }
 
-    if (component > totalNodes) {
+    if (component > numOutputted) {
       sLogger.fatal(String.format(
           "Number of components is larger than number of nodes"));
     }
-    if (totalNodes != readNodes) {
+    if (numOutputted != readNodes) {
       sLogger.fatal(String.format(
-          "Total nodes: %d doesn't equal Number of nodes read:%d", totalNodes,
+          "Total nodes: %d doesn't equal Number of nodes read:%d", numOutputted,
           readNodes));
     }
   }

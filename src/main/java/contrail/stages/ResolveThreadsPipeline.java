@@ -22,6 +22,8 @@ import java.util.Map;
 
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.util.ToolRunner;
 
 import contrail.util.ContrailLogger;
 import contrail.util.FileHelper;
@@ -151,8 +153,14 @@ public class ResolveThreadsPipeline extends PipelineStage {
         finalPathParameter.setValue(outputPath);
         lastInfo.getModifiedParameters().add(finalPathParameter);
       } else {
-        inputPath = resolveOutput;
+        inputPath = FilenameUtils.concat(resolveOutput, "*avro");
       }
     }
+  }
+
+  public static void main(String[] args) throws Exception {
+    int res = ToolRunner.run(
+        new Configuration(), new ResolveThreadsPipeline(), args);
+    System.exit(res);
   }
 }
