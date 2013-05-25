@@ -18,32 +18,27 @@
 // Author: Jeremy Lewi(jeremy@lewi.us)
 package contrail.stages;
 
-import static org.junit.Assert.fail;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.apache.avro.Schema;
-import org.apache.avro.file.DataFileWriter;
-import org.apache.avro.io.DatumWriter;
-import org.apache.avro.mapred.Pair;
-import org.apache.avro.specific.SpecificDatumWriter;
-import org.apache.commons.io.FilenameUtils;
-import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileSystem;
+import org.apache.avro.mapred.AvroCollector;
+import org.apache.avro.mapred.AvroJob;
+import org.apache.avro.mapred.AvroMapper;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.mapred.FileInputFormat;
+import org.apache.hadoop.mapred.FileOutputFormat;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.Reporter;
 import org.apache.log4j.Logger;
 
 import contrail.graph.EdgeDirection;
 import contrail.graph.GraphNode;
-import contrail.graph.GraphNodeFilesIterator;
+import contrail.graph.GraphNodeData;
 import contrail.sequences.DNAStrand;
 import contrail.stages.ResolveThreads.SpanningReads;
 
@@ -55,12 +50,13 @@ import contrail.stages.ResolveThreads.SpanningReads;
  * because some connected components might be too large to fit in a single
  * piece.
  */
-public class SplitThreadableGraph extends NonMRStage {
+public class SplitThreadableGraph extends MRStage {
   private static final Logger sLogger = Logger.getLogger(
       SplitThreadableGraph.class);
   // Number of nodes which are threadable.
   private int numThreadable;
   private boolean allNodesResolvable;
+  private static String THREADABLE_COUNTER = "num-threadable";
 
   @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
@@ -77,140 +73,32 @@ public class SplitThreadableGraph extends NonMRStage {
     return Collections.unmodifiableMap(defs);
   }
 
-  /**
-   * The output scheme is a pair containing the id for a subgraph and a list of
-   * nodes in the subgraph
-   */
-  private Schema getSchema() {
-    return Pair.getPairSchema(
-        Schema.create(Schema.Type.STRING),
-        Schema.createArray(Schema.create(Schema.Type.STRING)));
-  }
+  public static class Mapper extends
+      AvroMapper<GraphNodeData, List<CharSequence>> {
+    private ArrayList<CharSequence> outIds;
+    private GraphNode node;
 
-  public Path getOutPath() {
-    // Writer for the connected components.
-    Path outDir = new Path((String)stage_options.get("outputpath"));
-    Path outPath = new Path(FilenameUtils.concat(
-        outDir.toString(), "graph.avro"));
-    return outPath;
-  }
-
-  /**
-   * Used for storing the minimal information needed for this stage.
-   */
-  private static class ThreadableNode {
-    private final String nodeId;
-    private final Set<String> neighborIds;
-    private final boolean threadable;
-
-    public ThreadableNode(
-        String nodeId, Set<String> neighborIds, boolean threadable) {
-      this.nodeId = nodeId;
-      this.neighborIds = new HashSet<String>();
-      this.neighborIds.addAll(neighborIds);
-      this.threadable = threadable;
+    @Override
+    public void configure(JobConf job) {
+      outIds = new ArrayList<CharSequence>();
+      node = new GraphNode();
     }
 
-    public String getNodeId() {
-      return nodeId;
-    }
+    @Override
+    public void map(
+        GraphNodeData nodeData, AvroCollector<List<CharSequence>> collector,
+        Reporter reporter)
+            throws IOException {
+      outIds.clear();
+      outIds.add(node.getNodeId());
 
-    public Set<String> getNeighborIds() {
-      return neighborIds;
-    }
-
-    public boolean isThreadable() {
-      return threadable;
-    }
-  }
-
-  /**
-   * Create a writer. The output scheme is a pair containing the id for
-   * a subgraph and a list of nodes in the subgraph.
-   */
-  private DataFileWriter<Pair<CharSequence, List<CharSequence>>>
-      createWriter() {
-    DataFileWriter<Pair<CharSequence, List<CharSequence>>> writer = null;
-    Path outDir = new Path((String)stage_options.get("outputpath"));
-    try {
-      FileSystem fs = outDir.getFileSystem(getConf());
-
-      if (fs.exists(outDir) && !fs.isDirectory(outDir)) {
-        sLogger.fatal(
-            "outputpath points to an existing file but it should be a " +
-            "directory:" + outDir.getName());
-        System.exit(-1);
-      } else {
-        fs.mkdirs(outDir, FsPermission.getDefault());
-      }
-
-      FSDataOutputStream outStream = fs.create(getOutPath(), true);
-
-      Schema schema = getSchema();
-      DatumWriter<Pair<CharSequence, List<CharSequence>>> datumWriter =
-          new SpecificDatumWriter<Pair<CharSequence, List<CharSequence>>>(
-              schema);
-      writer =
-          new DataFileWriter<Pair<CharSequence, List<CharSequence>>>(
-              datumWriter);
-      writer.create(schema, outStream);
-
-    } catch (IOException exception) {
-      fail("There was a problem writing the components to an avro file. " +
-           "Exception: " + exception.getMessage());
-    }
-    return writer;
-  }
-
-  @Override
-  protected void stageMain() {
-    GraphNodeFilesIterator nodeIterator = GraphNodeFilesIterator.fromGlob(
-        getConf(), (String)stage_options.get("inputpath"));
-    // The edge graph
-    HashMap<String, ThreadableNode> graph =
-        new HashMap<String, ThreadableNode>();
-    DataFileWriter<Pair<CharSequence, List<CharSequence>>> writer =
-        createWriter();
-
-    // The list of nodes which are threadable.
-    ArrayList<String> threadableIds = new ArrayList<String>();
-
-    Pair<CharSequence, List<CharSequence>> outPair = new Pair(getSchema());
-    outPair.value(new ArrayList<CharSequence>());
-
-    int component = -1;
-
-    int islands = 0;
-    // Number of threadable nodes outputted with neighbors.
-    int numResolvable = 0;
-
-    // Number of nodes which are neighbors of resolvable.
-    int numNeighbors = 0;
-
-    // Load a compressed edge graph into memory.
-    int readNodes = 0;
-    int numOutputted = 0;
-
-    for (GraphNode node : nodeIterator) {
-      ++readNodes;
-      if (readNodes % 1000 == 0) {
-        sLogger.info(String.format("Read %d nodes.", readNodes));
-      }
+      node.setData(nodeData);
       if (node.getNeighborIds().size() == 0) {
         // Output this node as its own component since it isn't connected
         // to anyone.
-        ++component;
-        outPair.key(String.format("%05d", component));
-        outPair.value().clear();
-        outPair.value().add(node.getNodeId());
-        try {
-          writer.append(outPair);
-        } catch (IOException e) {
-          sLogger.fatal("Couldn't write component:", e);
-        }
-        ++islands;
-        ++numOutputted;
-        continue;
+        collector.collect(outIds);
+        reporter.getCounter("contrail", "islands").increment(1);
+        return;
       }
 
       boolean isThreadable = false;
@@ -222,155 +110,40 @@ public class SplitThreadableGraph extends NonMRStage {
         isThreadable = (spanningReads.spanningIds.size() > 0);
       }
 
-      ThreadableNode compressed = new ThreadableNode(
-          node.getNodeId(), node.getNeighborIds(), isThreadable);
-
       if (isThreadable) {
-        threadableIds.add(node.getNodeId());
+        outIds.addAll(node.getNeighborIds());
+        reporter.getCounter("contrail", THREADABLE_COUNTER);
       }
-      graph.put(node.getNodeId(), compressed);
-    }
-
-    numThreadable = threadableIds.size();
-
-    // Iterate over all threadable nodes. For each threadable node,
-    // check if its already been outputted. If it hasn't then check if
-    // any of its neighbors have been outputted. If no neighbors have been
-    // outputted group the threadable node with its neighbors.
-    for (String threadableId : threadableIds) {
-      if (!graph.containsKey(threadableId)) {
-        // Node was already outputted.
-        continue;
-      }
-
-      ThreadableNode node = graph.remove(threadableId);
-      // Check if all of the neighbors are still there.
-      boolean hasNeighbors = true;
-      for (String neighborId : node.getNeighborIds()) {
-        if (!graph.containsKey(neighborId)) {
-          hasNeighbors = false;
-        }
-      }
-
-      if (!hasNeighbors) {
-        // Just output this node.
-        ++component;
-        outPair.key(String.format("%05d", component));
-        outPair.value().clear();
-        outPair.value().add(node.getNodeId());
-        ++numOutputted;
-        try {
-          writer.append(outPair);
-        } catch (IOException e) {
-          sLogger.fatal("Couldn't write component:", e);
-        }
-        continue;
-      }
-
-      // Output this node with its neighbors so we can resolve threads
-      // in a subsequent step.
-      for (String neighborId : node.getNeighborIds()) {
-        graph.remove(neighborId);
-      }
-
-      numNeighbors += node.getNeighborIds().size();
-      ++numResolvable;
-      ++component;
-      outPair.key(String.format("%05d", component));
-      outPair.value().clear();
-      outPair.value().add(node.getNodeId());
-      outPair.value().addAll(node.getNeighborIds());
-      numOutputted += outPair.value().size();
-      try {
-        writer.append(outPair);
-      } catch (IOException e) {
-        sLogger.fatal("Couldn't write component:", e);
-      }
-    }
-
-    // Output all the remaining nodes in the graph.
-    for (String nodeId : graph.keySet()) {
-      ++component;
-      outPair.key(String.format("%05d", component));
-      outPair.value().clear();
-      outPair.value().add(nodeId);
-      ++numOutputted;
-      try {
-        writer.append(outPair);
-
-        if (component % 50000 == 0) {
-          sLogger.info(String.format(
-              "Writing component: %d. Size: %d",
-              component, outPair.value().size()));
-        }
-      } catch (IOException e) {
-        sLogger.fatal("Couldn't write component:", e);
-      }
-    }
-
-    sLogger.info(
-        String.format(
-            "Read %d nodes.", readNodes));
-    sLogger.info(
-        String.format(
-            "Ouputted %d nodes in %d components", numOutputted, component + 1));
-
-    sLogger.info(
-        String.format(
-            "Total threadable nodes: %d. Resolvable: %d.",
-            numThreadable, numResolvable));
-
-    if (numThreadable == numResolvable) {
-      allNodesResolvable = true;
-    } else {
-      allNodesResolvable = false;
-    }
-
-    sLogger.info(
-        String.format("Number of islands: %d.", islands));
-    try {
-      writer.close();
-    } catch (IOException e) {
-      sLogger.fatal("Couldn't close:" + getOutPath().toString(), e);
-      System.exit(-1);
-    }
-
-    if (component > numOutputted) {
-      sLogger.fatal(String.format(
-          "Number of components is larger than number of nodes"));
-    }
-    if (numOutputted != readNodes) {
-      sLogger.fatal(String.format(
-          "Total nodes: %d doesn't equal Number of nodes read:%d", numOutputted,
-          readNodes));
+      collector.collect(outIds);
     }
   }
 
-  /**
+  @Override
+  protected void setupConfHook() {
+    JobConf conf = (JobConf) getConf();
+    String inputPath = (String) stage_options.get("inputpath");
+    String outputPath = (String) stage_options.get("outputpath");
+
+    FileInputFormat.addInputPaths(conf, inputPath);
+    FileOutputFormat.setOutputPath(conf, new Path(outputPath));
+
+    AvroJob.setInputSchema(conf, new GraphNodeData().getSchema());
+    AvroJob.setMapOutputSchema(
+        conf, Schema.createArray(Schema.create(Schema.Type.STRING)));
+
+    AvroJob.setOutputSchema(
+        conf, Schema.createArray(Schema.create(Schema.Type.STRING)));
+
+    AvroJob.setMapperClass(conf, Mapper.class);
+    // This is a mapper only job.
+    conf.setNumReduceTasks(0);
+  }
+
+   /**
    * Returns the number of nodes in the graph which are threadable.
    */
-  public int getNumThreadable() {
-    if (stageState != StageState.SUCCESS) {
-      sLogger.fatal(
-          "Job did not complete successfully or has not been run.",
-          new RuntimeException("Job not run."));
-    }
-
-    return numThreadable;
-  }
-
-  /**
-   * Returns true if all threadable nodes will be resolved when ResolveThreads
-   * is run.
-   */
-  public boolean allResolvable() {
-    if (stageState != StageState.SUCCESS) {
-      sLogger.fatal(
-          "Job did not complete successfully or has not been run.",
-          new RuntimeException("Job not run."));
-    }
-
-    return allNodesResolvable;
+  public long getNumThreadable() {
+    return getCounter("contrail", THREADABLE_COUNTER);
   }
 
   public static void main(String[] args) throws Exception {

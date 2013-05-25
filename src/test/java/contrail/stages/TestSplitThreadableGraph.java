@@ -9,7 +9,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
-import org.apache.avro.mapred.Pair;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -33,11 +32,11 @@ public class TestSplitThreadableGraph {
     public HashMap<String, GraphNode> nodes;
 
     // Maping from component to expected ids in that component.
-    public HashMap<String, ArrayList<String>> expectedOutput;
+    public ArrayList<String> expectedOutput;
 
     public TestCase() {
       nodes = new HashMap<String, GraphNode>();
-      expectedOutput = new HashMap<String, ArrayList<String>>();
+      expectedOutput = new ArrayList<String>();
     }
   }
 
@@ -91,10 +90,7 @@ public class TestSplitThreadableGraph {
       nodes.put(outNode.getNodeId(), outNode);
     }
 
-    ArrayList<String> expectedMembers = new ArrayList<String>();
-    expectedMembers.addAll(nodes.keySet());
-
-    testCase.expectedOutput.put("00000", expectedMembers);
+    testCase.expectedOutput.addAll(nodes.keySet());
     return testCase;
   }
 
@@ -122,16 +118,16 @@ public class TestSplitThreadableGraph {
 
     assertTrue(stage.execute());
 
-    AvroFileContentsIterator<Pair<CharSequence, List<CharSequence>>> outIterator
-      = new AvroFileContentsIterator<Pair<CharSequence, List<CharSequence>>>(
-          Arrays.asList(stage.getOutPath().toString()), new Configuration());
+    AvroFileContentsIterator<List<CharSequence>> outIterator
+      = AvroFileContentsIterator.fromGlob(
+            new Configuration(),
+            FilenameUtils.concat(outputPath.toString(), "*avro"));
 
-    HashMap<String, List<String>> outputs =
-        new HashMap<String, List<String>>();
-    for (Pair<CharSequence, List<CharSequence>> outPair : outIterator) {
-      outputs.put(
-          outPair.key().toString(), CharUtil.toStringList(outPair.value()));
+    ArrayList<List<String>> outputs = new ArrayList<List<String>>();
+    for (List<CharSequence> outIds : outIterator) {
+      outputs.add(CharUtil.toStringList(outIds));
     }
+    assertEquals(1, outputs.size());
     assertEquals(testCase.expectedOutput, outputs);
     System.out.println("Files should be in:" + outputPath.toString());
   }
