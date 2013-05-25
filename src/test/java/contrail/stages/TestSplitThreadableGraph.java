@@ -32,11 +32,11 @@ public class TestSplitThreadableGraph {
     public HashMap<String, GraphNode> nodes;
 
     // Maping from component to expected ids in that component.
-    public ArrayList<String> expectedOutput;
+    public ArrayList<ArrayList<String>> expectedOutput;
 
     public TestCase() {
       nodes = new HashMap<String, GraphNode>();
-      expectedOutput = new ArrayList<String>();
+      expectedOutput = new ArrayList<ArrayList<String>>();
     }
   }
 
@@ -90,7 +90,10 @@ public class TestSplitThreadableGraph {
       nodes.put(outNode.getNodeId(), outNode);
     }
 
-    testCase.expectedOutput.addAll(nodes.keySet());
+    ArrayList<String> allIds = new ArrayList<String>();
+    allIds.addAll(nodes.keySet());
+    testCase.expectedOutput.add(allIds);
+
     return testCase;
   }
 
@@ -99,7 +102,8 @@ public class TestSplitThreadableGraph {
     TestCase testCase = createGraph();
 
     File temp = FileHelper.createLocalTempDir();
-    String graphPath = FilenameUtils.concat(temp.getAbsolutePath(), "graph");
+    String graphPath = FilenameUtils.concat(
+        temp.getAbsolutePath(), "graph.avro");
 
     GraphUtil.writeGraphToPath(
         new Configuration(), new Path(graphPath), testCase.nodes.values());

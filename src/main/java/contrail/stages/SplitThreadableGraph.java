@@ -43,12 +43,9 @@ import contrail.sequences.DNAStrand;
 import contrail.stages.ResolveThreads.SpanningReads;
 
 /**
- * This stage splits the graph by doing a breadth first search.
- *
- * This code splits the graph into pieces that should be small enough to fit
- * into memory. There is no guarantee that each piece is a connected component
- * because some connected components might be too large to fit in a single
- * piece.
+ * For each threadable node this stage outputs a group of ids consisting
+ * of the threadable node and its neighbors. In subsequent steps
+ * we group those nodes together and resolve the threads.
  */
 public class SplitThreadableGraph extends MRStage {
   private static final Logger sLogger = Logger.getLogger(
@@ -90,13 +87,11 @@ public class SplitThreadableGraph extends MRStage {
         Reporter reporter)
             throws IOException {
       outIds.clear();
+      node.setData(nodeData);
       outIds.add(node.getNodeId());
 
-      node.setData(nodeData);
       if (node.getNeighborIds().size() == 0) {
-        // Output this node as its own component since it isn't connected
-        // to anyone.
-        collector.collect(outIds);
+        reporter.getCounter("contrail", "not-threadable").increment(1);
         reporter.getCounter("contrail", "islands").increment(1);
         return;
       }
@@ -110,10 +105,14 @@ public class SplitThreadableGraph extends MRStage {
         isThreadable = (spanningReads.spanningIds.size() > 0);
       }
 
-      if (isThreadable) {
-        outIds.addAll(node.getNeighborIds());
-        reporter.getCounter("contrail", THREADABLE_COUNTER);
+      if (!isThreadable) {
+        // Don't output any information for unthreadable nodes.
+        reporter.getCounter("contrail", "not-threadable").increment(1);
+        return;
       }
+
+      outIds.addAll(node.getNeighborIds());
+      reporter.getCounter("contrail", THREADABLE_COUNTER);
       collector.collect(outIds);
     }
   }
