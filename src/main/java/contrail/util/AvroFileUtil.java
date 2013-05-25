@@ -64,4 +64,41 @@ public class AvroFileUtil {
           "Exception: " + exception.getMessage(), exception);
     }
   }
+
+  /***
+   * Write a collection of records to an avro file.
+   *
+   * Use this function when the schema can't be inferred from the type of
+   * record.
+   * @param conf
+   * @param path
+   * @param records
+   */
+  public static <T extends GenericContainer> void writeRecords(
+      Configuration conf, Path path, Iterable<? extends Object> records,
+      Schema schema) {
+    FileSystem fs = null;
+    try{
+      fs = FileSystem.get(conf);
+    } catch (IOException e) {
+      sLogger.fatal("Can't get filesystem: " + e.getMessage(), e);
+    }
+
+    // Write the data to the file.
+    DatumWriter<Object> datumWriter = new SpecificDatumWriter<Object>(schema);
+    DataFileWriter<Object> writer = new DataFileWriter<Object>(datumWriter);
+
+    try {
+      FSDataOutputStream outputStream = fs.create(path);
+      writer.create(schema, outputStream);
+      for (Object record : records) {
+        writer.append(record);
+      }
+      writer.close();
+    } catch (IOException exception) {
+      sLogger.fatal(
+          "There was a problem writing the N50 stats to an avro file. " +
+          "Exception: " + exception.getMessage(), exception);
+    }
+  }
 }

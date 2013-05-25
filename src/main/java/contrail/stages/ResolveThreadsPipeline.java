@@ -93,12 +93,9 @@ public class ResolveThreadsPipeline extends PipelineStage {
         break;
       }
 
-      if (splitStage.allResolvable()) {
-        // All the threadable nodes will be resolved in this run.
-        done = true;
-      }
-
       // Rekey the nodes by component id.
+      // Nodes which aren't threadable or neighbors of threadable nodes will
+      // just be keyed by their node Id.
       RekeyByComponentId rekeyStage = new RekeyByComponentId();
       List<String> rekeyInputs = Arrays.asList(splitOutput, inputPath);
       rekeyStage.setParameter("inputpath", StringUtils.join(rekeyInputs, ","));

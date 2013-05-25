@@ -47,6 +47,7 @@ import contrail.util.ContrailLogger;
  * 2. avro files containing Pair<key, List<String>>. The pairs assign
  * a key to a group of nodes. This MR job keys the GraphNodeData by
  * that id so the output is Pair<key, GraphNodeData>.
+ * 3. If a node isn't assigned a key then its just keyed by its node id.
  */
 public class RekeyByComponentId extends MRStage {
   private static final ContrailLogger sLogger =
@@ -145,12 +146,13 @@ public class RekeyByComponentId extends MRStage {
       if (outPair.key() != null && outPair.value() != null) {
         collector.collect(outPair);
       } else if (outPair.key() == null) {
-        reporter.incrCounter("contrail", "error-missing-component-id", 1);
-        sLogger.fatal(
-            String.format(
-                "Node %s wasn't assigned to a component.",
-                outPair.value().getNodeId()),
-                new RuntimeException("Missing component"));
+        reporter.incrCounter("contrail", "unassigned-node", 1);
+        // Set the key to the node id.
+        // TODO(jeremy@lewi.us): This behavior, assigning a key of nodeId
+        // to nodes not assigned a key was designed for resolving threads.
+        // In ResolveThreadsPipeline we only assign threadable nodes and their
+        // neighbors to groups.
+        outPair.key(outPair.value().getNodeId());
       } else if (outPair.value() == null) {
         reporter.incrCounter("contrail", "error-missing-node-data", 1);
         sLogger.fatal(

@@ -35,6 +35,8 @@ import org.apache.hadoop.fs.Path;
  * then all the items in the second file and so on until all items have been
  * returned.
  *
+ * TODO(jeremy@lewi.us): Add a close method.
+ *
  * @param <T>: The record type for the records we are iterating over.
  */
 public class AvroFileContentsIterator<T> implements Iterator<T>, Iterable<T> {
