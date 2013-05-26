@@ -168,6 +168,8 @@ public class SelectThreadableGroups extends NonMRStage{
       groupsToMerge.clear();
       unassignedNodes.clear();
 
+      // TODO(jeremy@lewi.us): The group should already be sorted and not
+      // contain duplicates.
       List<String> thisGroup = CharUtil.toStringList(group);
       if (thisGroup.size() != CharUtil.toStringSet(group).size()) {
         HashSet<String> groupSet = CharUtil.toStringSet(group);
@@ -176,6 +178,9 @@ public class SelectThreadableGroups extends NonMRStage{
                 StringUtils.join(thisGroup,","));
       }
       for (String id : thisGroup) {
+        if (id.equals("wh0dQNlBEyvQQgA")) {
+          sLogger.info("LEWI NO COMMIT");
+        }
         Integer assignedGroup = idToGroup.get(id);
         if (assignedGroup != null && assignedGroup != unassignedGroup) {
           groupsToMerge.add(idToGroup.get(id));
@@ -206,7 +211,10 @@ public class SelectThreadableGroups extends NonMRStage{
       if (newSize > maxGroupSize) {
         ++numMergeTooLarge;
         // Can't merge the nodes.
-        for (String id : thisGroup) {
+        for (String id : unassignedNodes) {
+          if (id.equals("wh0dQNlBEyvQQgA")) {
+            sLogger.info("LEWI NO COMMIT");
+          }
           idToGroup.put(id, unassignedGroup);
         }
         continue;
@@ -223,6 +231,9 @@ public class SelectThreadableGroups extends NonMRStage{
         subGraphs.get(groupId).addAll(otherNodes);
 
         for (String node : otherNodes) {
+          if (node.equals("wh0dQNlBEyvQQgA")) {
+            sLogger.info("LEWI NO COMMIT");
+          }
           idToGroup.put(node, groupId);
         }
       }
@@ -230,6 +241,9 @@ public class SelectThreadableGroups extends NonMRStage{
       // Add in the new nodes.
       subGraphs.get(groupId).addAll(unassignedNodes);
       for (String node : unassignedNodes) {
+        if (node.equals("wh0dQNlBEyvQQgA")) {
+          sLogger.info("LEWI NO COMMIT");
+        }
         idToGroup.put(node,  groupId);
       }
     }

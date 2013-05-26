@@ -120,6 +120,14 @@ public class SplitThreadableGraph extends MRStage {
 
       // Convert it to a list.
       outIdsList.addAll(outIds);
+
+      // TODO(jeremy@lewi.us): Get rid of ths after we finish debugging.
+      // Check the list is sorted and no duplicates.
+      for (int i = 1; i < outIdsList.size(); ++i) {
+        if (outIdsList.get(i - 1).toString().compareTo(outIdsList.get(i).toString()) >= 0) {
+          sLogger.fatal("List not sorted or duplicates nodeid:" + node.getNodeId(), new RuntimeException("Invalid output"));
+        }
+      }
       reporter.getCounter("contrail", THREADABLE_COUNTER).increment(1);
       collector.collect(outIdsList);
     }
