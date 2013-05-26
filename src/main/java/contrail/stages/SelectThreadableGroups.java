@@ -19,9 +19,11 @@
 package contrail.stages;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -31,6 +33,7 @@ import org.apache.avro.io.DatumWriter;
 import org.apache.avro.mapred.Pair;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -62,6 +65,10 @@ public class SelectThreadableGroups extends NonMRStage{
       defs.put(def.getName(), def);
     }
 
+    ParameterDefinition maxGroupSize = new ParameterDefinition(
+        "max_subgraph_size", "The maximum number of nodes in any of the " +
+        "subgraphs.", Integer.class, new Integer(1000));
+    defs.put(maxGroupSize.getName(), maxGroupSize);
     return Collections.unmodifiableMap(defs);
   }
 
@@ -133,46 +140,134 @@ public class SelectThreadableGroups extends NonMRStage{
       sLogger.fatal("Input is empty.", new RuntimeException("No input."));
     }
 
+    // TODO(jeremy@lewi.us): make this a parameter.
+    // The maximum number of allowed nodes in a group.
+    int maxGroupSize = (Integer)stage_options.get("max_subgraph_size");
+
+    // The groupId used to indicate a node isn't assigned a group.
+    Integer unassignedGroup = -1;
+
     // Total number of groups.
     int numGroups = 0;
-    // Number of nodes in the groups.
-    int numNodesInGroups = 0;
-
     int component = -1;
 
-    Pair<CharSequence, List<CharSequence>> outPair =
-        new Pair<CharSequence, List<CharSequence>>(getSchema());
+    // Mapping from a nodeId to the id for the group it is currently assigned
+    // to.
+    HashMap<String, Integer> idToGroup = new HashMap<String, Integer>();
 
-    DataFileWriter<Pair<CharSequence, List<CharSequence>>> writer =
-        createWriter();
+    // Mapping from the id of each group to the nodes in that group.
+    HashMap<Integer, List<String>> subGraphs =
+        new HashMap<Integer, List<String>>();
 
-    HashSet<String> seenIds = new HashSet<String>();
+    HashSet<Integer> groupsToMerge = new HashSet<Integer>();
+    ArrayList<String> unassignedNodes = new ArrayList<String>();
 
+    int numMergeTooLarge = 0;
     for (List<CharSequence> group : groups) {
       ++numGroups;
+      groupsToMerge.clear();
+      unassignedNodes.clear();
 
-      boolean alreadySeen = false;
       List<String> thisGroup = CharUtil.toStringList(group);
+      if (thisGroup.size() != CharUtil.toStringSet(group).size()) {
+        Collections.sort(thisGroup);
+        sLogger.fatal(
+            "Nodes appear multiple times in the input group:" +
+                StringUtils.join(thisGroup,","));
+      }
       for (String id : thisGroup) {
-        if (seenIds.contains(id)) {
-          alreadySeen = true;
-          break;
+        Integer assignedGroup = idToGroup.get(id);
+        if (assignedGroup != null && assignedGroup != unassignedGroup) {
+          groupsToMerge.add(idToGroup.get(id));
+        } else {
+          unassignedNodes.add(id);
         }
       }
-      seenIds.addAll(thisGroup);
-      if (!alreadySeen) {
+
+      Integer groupId = null;
+      if (groupsToMerge.size() == 0) {
+        // This group is unique.
         ++component;
-        numNodesInGroups += group.size();
-        outPair.key(String.format("%03d", component));
-        outPair.value(group);
-        try {
-          writer.append(outPair);
-        } catch (IOException e) {
-          sLogger.fatal("Couldn't write component:", e);
+        groupId = component;
+        subGraphs.put(component, thisGroup);
+
+        for (String id : thisGroup) {
+          idToGroup.put(id, component);
         }
+        continue;
+      }
+
+      // Check if merging the groups would produce a group that is too large.
+      int newSize = unassignedNodes.size();
+      for (Integer mergeId : groupsToMerge) {
+        newSize += subGraphs.get(mergeId).size();
+      }
+
+      if (newSize > maxGroupSize) {
+        ++numMergeTooLarge;
+        // Can't merge the nodes.
+        for (String id : thisGroup) {
+          idToGroup.put(id, unassignedGroup);
+        }
+        continue;
+      }
+
+      // Merge all the groups.
+      Iterator<Integer> groupIterator = groupsToMerge.iterator();
+      groupId = groupIterator.next();
+
+      while (groupIterator.hasNext()) {
+        Integer otherGroup = groupIterator.next();
+        List<String> otherNodes = subGraphs.remove(otherGroup);
+
+        subGraphs.get(groupId).addAll(otherNodes);
+
+        for (String node : otherNodes) {
+          idToGroup.put(node, groupId);
+        }
+      }
+
+      // Add in the new nodes.
+      subGraphs.get(groupId).addAll(unassignedNodes);
+      for (String node : unassignedNodes) {
+        idToGroup.put(node,  groupId);
       }
     }
 
+
+    Pair<CharSequence, List<CharSequence>> outPair =
+        new Pair<CharSequence, List<CharSequence>>(getSchema());
+    DataFileWriter<Pair<CharSequence, List<CharSequence>>> writer =
+        createWriter();
+    outPair.value(new ArrayList<CharSequence>());
+
+    int graphId = -1;
+    // Number of nodes in the subgraphs.
+    int numNodesInSubGraphs = 0;
+    for (List<String> subGraph : subGraphs.values()) {
+      Collections.sort(subGraph);
+      // Make sure its unique.
+      for (int i = 1; i < subGraph.size(); ++i) {
+        if (subGraph.get(i - 1).equals(subGraph.get(i))) {
+          sLogger.fatal(
+              "Nodes appear multiple times in the group:" +
+                  StringUtils.join(subGraph, ","),
+              new RuntimeException("Group invalid"));
+        }
+      }
+
+      ++graphId;
+      numNodesInSubGraphs += subGraph.size();
+      outPair.key(String.format("%03d", graphId));
+
+      outPair.value().clear();
+      outPair.value().addAll(subGraph);
+      try {
+        writer.append(outPair);
+      } catch (IOException e) {
+        sLogger.fatal("Couldn't write component:", e);
+      }
+    }
     try {
       writer.close();
     } catch (IOException e) {
@@ -180,13 +275,15 @@ public class SelectThreadableGroups extends NonMRStage{
       System.exit(-1);
     }
 
-    sLogger.info(String.format(
-        "Outputted %d of %d groups", component + 1, numGroups));
-
     sLogger.info(
         String.format(
-            "There are %d nodes in %d groups",
-            numNodesInGroups, component +1));
+            "Number of input groups: %d", numGroups));
+    sLogger.info(String.format(
+        "Outputted %d nodes in %d subgraphs", numNodesInSubGraphs,
+        graphId + 1));
+    sLogger.info(String.format(
+        "Number of merges that would have exceeded max group size: %d",
+        numMergeTooLarge));
   }
 
   public static void main(String[] args) throws Exception {

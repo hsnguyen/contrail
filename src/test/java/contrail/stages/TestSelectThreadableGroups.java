@@ -78,11 +78,14 @@ public class TestSelectThreadableGroups {
       = AvroFileContentsIterator.fromGlob(
           new Configuration(), stage.getOutPath().toString());
 
+    List<String> merged = new ArrayList<String>();
+    merged.addAll(CharUtil.toStringList(l1));
+    merged.add("d");
+    merged.add("e");
+
     Pair<CharSequence, List<CharSequence>> outPair = outputs.next();
     assertEquals("000", outPair.key().toString());
-    assertEquals(
-        CharUtil.toStringList(l1),
-        CharUtil.toStringList(outPair.value()));
+    assertEquals(merged, CharUtil.toStringList(outPair.value()));
 
     outPair = outputs.next();
     assertEquals("001", outPair.key().toString());

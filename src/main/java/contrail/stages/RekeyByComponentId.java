@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +28,7 @@ import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroMapper;
 import org.apache.avro.mapred.AvroReducer;
 import org.apache.avro.mapred.Pair;
+import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.FileInputFormat;
@@ -111,11 +113,13 @@ public class RekeyByComponentId extends MRStage {
       AvroReducer<CharSequence, Object, Pair<CharSequence, GraphNodeData>> {
     private Pair<CharSequence, GraphNodeData> outPair;
     private GraphNode node;
+    private HashSet<String> keys;
 
     @Override
     public void configure(JobConf job) {
       outPair = new Pair<CharSequence, GraphNodeData>("", new GraphNodeData());
       node = new GraphNode();
+      keys = new HashSet<String>();
     }
 
     @Override
@@ -123,24 +127,52 @@ public class RekeyByComponentId extends MRStage {
         CharSequence id, Iterable<Object> records,
         AvroCollector<Pair<CharSequence, GraphNodeData>> collector,
         Reporter reporter) throws IOException {
-
+      keys.clear();
       outPair.key(null);
       outPair.value(null);
 
       int numRecords = 0;
+      int numKeys = 0;
+      int numNodes = 0;
+
       for (Object record : records) {
         ++numRecords;
         if (record instanceof CharSequence) {
-          outPair.key(record.toString());
+          String key = record.toString();
+          outPair.key(key);
+          keys.add(key);
+          ++numKeys;
         } else {
           node.setData((GraphNodeData)record);
           outPair.value(node.clone().getData());
+          ++numNodes;
         }
       }
 
+      if (numKeys > 1) {
+        sLogger.fatal(
+            String.format(
+                "Reduce key %s assigned multiple keys:%s", id,
+                StringUtils.join(keys, ",")),
+            new RuntimeException("Multiple keys"));
+      }
+
+      if (numNodes > 1) {
+        sLogger.fatal(
+            String.format(
+                "Reduce key %s has multiple GraphNodeData records",
+                id, StringUtils.join(keys, ",")),
+            new RuntimeException("Multiple keys"));
+      }
       if (numRecords > 2) {
         // There should be at most 2 records for each key.
         reporter.incrCounter("contrail", "error-more-than-2-records", 1);
+        String outKey = "null";
+        if (outPair.key() != null) {
+          outKey = outPair.key().toString();
+        }
+        sLogger.fatal(
+            "More than 2 records. Reduce Key:" + id + " out key:" + outKey);
       }
 
       if (outPair.key() != null && outPair.value() != null) {

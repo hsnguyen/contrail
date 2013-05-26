@@ -45,7 +45,8 @@ public class ResolveThreadsPipeline extends PipelineStage {
 
     // We add all the options for the stages we depend on.
     Stage[] substages =
-      {new SplitThreadableGraph(), new ResolveThreads()};
+      {new SplitThreadableGraph(), new SelectThreadableGroups(),
+       new ResolveThreads()};
 
     for (Stage stage: substages) {
       definitions.putAll(stage.getParameterDefinitions());
