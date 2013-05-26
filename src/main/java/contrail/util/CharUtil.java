@@ -38,7 +38,7 @@ public class CharUtil {
         throw new RuntimeException(
             "The collection of CharSequence's has duplicates");
       }
-      strings.add(items.toString());
+      strings.add(item.toString());
     }
     return strings;
   }
