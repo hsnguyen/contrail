@@ -15,11 +15,10 @@
 package contrail.stages;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 
 import org.apache.avro.Schema;
@@ -44,12 +43,17 @@ public class TestRekeyByComponentId {
     GraphNode nodeA = GraphTestUtil.createNode("nodeA", "ACTGCT");
     GraphNode nodeB = GraphTestUtil.createNode("nodeB", "ACTGCT");
 
+    // nodeC is used to verify a node not assigned to a component
+    // is still outputted.
+    GraphNode nodeC = GraphTestUtil.createNode("nodeC", "ACTGCT");
+
     File temp = FileHelper.createLocalTempDir();
     String graphPath = FilenameUtils.concat(
         temp.getAbsolutePath(), "nodes.avro");
 
     GraphUtil.writeGraphToPath(
-        new Configuration(), new Path(graphPath), Arrays.asList(nodeA, nodeB));
+        new Configuration(), new Path(graphPath),
+        Arrays.asList(nodeA, nodeB, nodeC));
 
     Schema ComponentSchema = Pair.getPairSchema(
           Schema.create(Schema.Type.STRING),
@@ -86,17 +90,18 @@ public class TestRekeyByComponentId {
     // Open the output.
     AvroFileContentsIterator<Pair<CharSequence, GraphNodeData>> outputs =
         AvroFileContentsIterator.fromGlob(
-            new Configuration(),
-            FilenameUtils.concat(temp.getPath(), "part*avro"));
+            new Configuration(), FilenameUtils.concat(
+                (String)stage.stage_options.get("outputpath"), "part*avro"));
+
+    HashMap<String, GraphNode> actualOutputs = new HashMap<String, GraphNode>();
 
     for (Pair<CharSequence, GraphNodeData> pair : outputs) {
-      if (pair.key().toString().equals("1")) {
-        assertEquals("nodeA", pair.value().getNodeId().toString());
-      } else if (pair.key().toString().equals("2")) {
-        assertEquals("nodeB", pair.value().getNodeId().toString());
-      } else {
-        fail("Component is wrong.");
-      }
+      actualOutputs.put(
+          pair.key().toString(), new GraphNode(pair.value()).clone());
     }
+
+    assertEquals(actualOutputs.get("1"), nodeA);
+    assertEquals(actualOutputs.get("2"), nodeB);
+    assertEquals(actualOutputs.get("nodeC"), nodeC);
   }
 }

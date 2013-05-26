@@ -65,9 +65,9 @@ public class ResolveThreadsPipeline extends PipelineStage {
     int step = -1;
     String inputPath = (String) stage_options.get("inputpath");
     String outputPath = (String) stage_options.get("outputpath");
-    boolean done = false;
 
-    while (!done) {
+    String lastOutput = null;
+    while (true) {
       ++step;
       sLogger.info(String.format("Starting step %d", step));
 
@@ -89,15 +89,32 @@ public class ResolveThreadsPipeline extends PipelineStage {
       if (splitStage.getNumThreadable() == 0) {
         // No threadable nodes.
         sLogger.info("No nodes with threads to resolve.");
-        done = true;
         break;
+      }
+
+      // Select the groups resolve.
+      SelectThreadableGroups selectStage = new SelectThreadableGroups();
+      selectStage.setParameter(
+          "inputpath",
+          FilenameUtils.concat(splitOutput, "*avro"));
+
+      String selectOutput = FilenameUtils.concat(
+          stepDir, selectStage.getClass().getSimpleName());
+
+      selectStage.setParameter("outputpath", selectOutput);
+
+      if (!executeChild(selectStage)) {
+        sLogger.fatal(
+            "SelectThreadableGroups stage failed.",
+            new RuntimeException("Stage failure."));
       }
 
       // Rekey the nodes by component id.
       // Nodes which aren't threadable or neighbors of threadable nodes will
       // just be keyed by their node Id.
       RekeyByComponentId rekeyStage = new RekeyByComponentId();
-      List<String> rekeyInputs = Arrays.asList(splitOutput, inputPath);
+      List<String> rekeyInputs = Arrays.asList(
+          selectStage.getOutPath().toString(), inputPath);
       rekeyStage.setParameter("inputpath", StringUtils.join(rekeyInputs, ","));
 
       String rekeyOutput = FilenameUtils.concat(
@@ -135,23 +152,23 @@ public class ResolveThreadsPipeline extends PipelineStage {
         sLogger.fatal(
             "GroupBy stage failed.", new RuntimeException("Stage failure."));
       }
+      lastOutput = resolveOutput;
+      inputPath = resolveOutput;
+    }
 
-      if (done) {
-        sLogger.info("Save result to: " + outputPath + "\n\n");
-        FileHelper.moveDirectoryContents(getConf(), resolveOutput, outputPath);
-        sLogger.info("Final graph saved to:" + outputPath);
+    if (step > 0) {
+      sLogger.info("Save result to: " + outputPath + "\n\n");
+      FileHelper.moveDirectoryContents(getConf(), lastOutput, outputPath);
+      sLogger.info("Final graph saved to:" + outputPath);
 
-        // Record the fact that for the last substage we moved its output.
-        StageInfo lastInfo =
-            stageInfo.getSubStages().get(stageInfo.getSubStages().size() - 1);
+      // Record the fact that for the last substage we moved its output.
+      StageInfo lastInfo =
+          stageInfo.getSubStages().get(stageInfo.getSubStages().size() - 1);
 
-        StageParameter finalPathParameter = new StageParameter();
-        finalPathParameter.setName("outputpath");
-        finalPathParameter.setValue(outputPath);
-        lastInfo.getModifiedParameters().add(finalPathParameter);
-      } else {
-        inputPath = FilenameUtils.concat(resolveOutput, "*avro");
-      }
+      StageParameter finalPathParameter = new StageParameter();
+      finalPathParameter.setName("outputpath");
+      finalPathParameter.setValue(outputPath);
+      lastInfo.getModifiedParameters().add(finalPathParameter);
     }
   }
 

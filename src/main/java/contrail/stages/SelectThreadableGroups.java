@@ -35,10 +35,9 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
-import org.apache.log4j.Logger;
-
 import contrail.util.AvroFileContentsIterator;
 import contrail.util.CharUtil;
+import contrail.util.ContrailLogger;
 
 /**
  * Select a subset of the threadable node groupings for processing.
@@ -48,7 +47,7 @@ import contrail.util.CharUtil;
  * each node appears in at most one of these groups.
  */
 public class SelectThreadableGroups extends NonMRStage{
-  private static final Logger sLogger = Logger.getLogger(
+  private static final ContrailLogger sLogger = ContrailLogger.getLogger(
       SelectThreadableGroups.class);
 
   @Override
@@ -182,11 +181,11 @@ public class SelectThreadableGroups extends NonMRStage{
     }
 
     sLogger.info(String.format(
-        "Outputted %d of %d groupds", component + 1, numGroups));
+        "Outputted %d of %d groups", component + 1, numGroups));
 
     sLogger.info(
         String.format(
-            "There are %d nodes in %d groupd",
+            "There are %d nodes in %d groups",
             numNodesInGroups, component +1));
   }
 

@@ -153,6 +153,7 @@ public class RekeyByComponentId extends MRStage {
         // In ResolveThreadsPipeline we only assign threadable nodes and their
         // neighbors to groups.
         outPair.key(outPair.value().getNodeId());
+        collector.collect(outPair);
       } else if (outPair.value() == null) {
         reporter.incrCounter("contrail", "error-missing-node-data", 1);
         sLogger.fatal(

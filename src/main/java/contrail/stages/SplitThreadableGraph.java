@@ -112,7 +112,7 @@ public class SplitThreadableGraph extends MRStage {
       }
 
       outIds.addAll(node.getNeighborIds());
-      reporter.getCounter("contrail", THREADABLE_COUNTER);
+      reporter.getCounter("contrail", THREADABLE_COUNTER).increment(1);
       collector.collect(outIds);
     }
   }
