@@ -170,7 +170,7 @@ public class SelectThreadableGroups extends NonMRStage{
 
       List<String> thisGroup = CharUtil.toStringList(group);
       if (thisGroup.size() != CharUtil.toStringSet(group).size()) {
-        Collections.sort(thisGroup);
+        HashSet<String> groupSet = CharUtil.toStringSet(group);
         sLogger.fatal(
             "Nodes appear multiple times in the input group:" +
                 StringUtils.join(thisGroup,","));
@@ -287,7 +287,7 @@ public class SelectThreadableGroups extends NonMRStage{
   }
 
   public static void main(String[] args) throws Exception {
-    SplitThreadableGraph stage = new SplitThreadableGraph();
+    SelectThreadableGroups stage = new SelectThreadableGroups();
     int res = stage.run(args);
     System.exit(res);
   }

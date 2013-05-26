@@ -24,6 +24,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroCollector;
@@ -72,12 +74,14 @@ public class SplitThreadableGraph extends MRStage {
 
   public static class Mapper extends
       AvroMapper<GraphNodeData, List<CharSequence>> {
-    private ArrayList<CharSequence> outIds;
+    private SortedSet<String> outIds;
+    private ArrayList<CharSequence> outIdsList;
     private GraphNode node;
 
     @Override
     public void configure(JobConf job) {
-      outIds = new ArrayList<CharSequence>();
+      outIds = new TreeSet<String>();
+      outIdsList = new ArrayList<CharSequence>();
       node = new GraphNode();
     }
 
@@ -87,6 +91,7 @@ public class SplitThreadableGraph extends MRStage {
         Reporter reporter)
             throws IOException {
       outIds.clear();
+      outIdsList.clear();
       node.setData(nodeData);
       outIds.add(node.getNodeId());
 
@@ -112,8 +117,11 @@ public class SplitThreadableGraph extends MRStage {
       }
 
       outIds.addAll(node.getNeighborIds());
+
+      // Convert it to a list.
+      outIdsList.addAll(outIds);
       reporter.getCounter("contrail", THREADABLE_COUNTER).increment(1);
-      collector.collect(outIds);
+      collector.collect(outIdsList);
     }
   }
 
