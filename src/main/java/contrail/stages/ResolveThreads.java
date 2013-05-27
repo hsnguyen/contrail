@@ -22,8 +22,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
 import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroJob;
@@ -117,58 +115,6 @@ public class ResolveThreads extends MRStage {
   }
 
   /**
-   * Structure providing information about the spanning reads.
-   */
-  public static class SpanningReads {
-    public HashMap<String, EdgeTerminal> inReads;
-    public HashMap<String, EdgeTerminal> outReads =
-        new HashMap<String, EdgeTerminal>();
-
-    /**
-     * Ids of reads which span the node.
-     */
-    Set<String> spanningIds;
-
-    public SpanningReads() {
-      // Get a list of reads for incoming edges.
-      inReads = new HashMap<String, EdgeTerminal>();
-      outReads = new HashMap<String, EdgeTerminal>();
-    }
-  }
-
-  /**
-   * Find the reads that span the node.
-   *
-   * @param node
-   * @return
-   */
-  public static SpanningReads findSpanningReads(GraphNode node) {
-    SpanningReads info = new SpanningReads();
-    // Get outgoing edges for the forward strand.
-    for (EdgeTerminal terminal : node.getEdgeTerminalsSet(
-        DNAStrand.FORWARD, EdgeDirection.OUTGOING)) {
-      for (CharSequence read :
-           node.getTagsForEdge(DNAStrand.FORWARD, terminal)) {
-        info.outReads.put(read.toString(), terminal);
-      }
-    }
-
-    // To get reads for incoming edges we look at outgoing edges for the
-    // reverse strand. getTagsForEdge assumes the edge is an outgoing edge.
-    for (EdgeTerminal terminal : node.getEdgeTerminalsSet(
-        DNAStrand.REVERSE, EdgeDirection.OUTGOING)) {
-      for (CharSequence read :
-           node.getTagsForEdge(DNAStrand.REVERSE, terminal)) {
-       info.inReads.put(read.toString(), terminal);
-      }
-    }
-
-    info.spanningIds = info.inReads.keySet();
-    info.spanningIds.retainAll(info.outReads.keySet());
-    return info;
-  }
-
-  /**
    * Find the paths consistent with the reads spanning the node.
    *
    * This function modifies the graph so the graph must be in memory.
@@ -188,9 +134,9 @@ public class ResolveThreads extends MRStage {
   public static ResolveStats resolveSpanningReadPaths(
       HashMap<String, GraphNode> graph, String nodeId) {
     GraphNode node = graph.get(nodeId);
-    SpanningReads spanningReads = findSpanningReads(node);
+    NodeThreadInfo threadInfo = new NodeThreadInfo(node);
 
-    if (spanningReads.spanningIds.size() == 0) {
+    if (!threadInfo.isThreadable()) {
       return null;
     }
 
@@ -202,9 +148,9 @@ public class ResolveThreads extends MRStage {
     HashMap<GraphPath, ArrayList<String>> pairs =
         new HashMap<GraphPath, ArrayList<String>> ();
 
-    for (String read : spanningReads.spanningIds) {
-      EdgeTerminal inTerminal = spanningReads.inReads.get(read).flip();
-      EdgeTerminal outTerminal = spanningReads.outReads.get(read);
+    for (String read : threadInfo.spanningIds) {
+      EdgeTerminal inTerminal = threadInfo.inReads.get(read).flip();
+      EdgeTerminal outTerminal = threadInfo.outReads.get(read);
 
       GraphPath path = new GraphPath();
 
@@ -222,8 +168,10 @@ public class ResolveThreads extends MRStage {
     ArrayList<GraphPath> paths = new ArrayList<GraphPath>();
     paths.addAll(pairs.keySet());
     Collections.sort(paths, new GraphPathComparator());
-    int cloneNum = -1;
+    int cloneNum = 0;
     for (GraphPath path : paths) {
+      // cloneNumber should start at 1 because we reserve cloneNum=0
+      // for the original node.
       ++cloneNum;
       // We need to flip the terminal because when we got the tags we only
       // considered outgoing edges.
@@ -272,14 +220,35 @@ public class ResolveThreads extends MRStage {
     // If the node is now an island remove it.
     if (node.getNeighborIds().size() == 0) {
       graph.remove(node.getNodeId());
+    } else {
+      // Assign a new id to the node. We need to do this because
+      // its possible the node will get split again on subsequent runs.
+      // If we don't rename it, then if we split it again we would end up
+      // generating clones with the same id as the clones already generated.
+      String oldId = node.getNodeId();
+      String newId = String.format("%s.%02d", oldId, 0);
+      node.setNodeId(newId);
+
+      // Rekey the node in the graph.
+      graph.remove(oldId);
+      graph.put(newId, node);
+
+      // Move edges to this node.
+      for (DNAStrand strand : DNAStrand.values()) {
+        List<EdgeTerminal> inTerminals =
+            node.getEdgeTerminals(strand, EdgeDirection.INCOMING);
+
+        EdgeTerminal oldTerminal = new EdgeTerminal(oldId, strand);
+        EdgeTerminal newTerminal = new EdgeTerminal(newId, strand);
+        for (EdgeTerminal inTerminal : inTerminals) {
+          GraphNode inNode = graph.get(inTerminal.nodeId);
+          inNode.moveOutgoingEdge(
+              inTerminal.strand, oldTerminal, newTerminal);
+        }
+      }
     }
 
-    stats.clones = cloneNum + 1;
-
-    // If all the paths of the node have been resolved then drop the node.
-    if (node.getNeighborIds().size() == 0) {
-      graph.remove(nodeId);
-    }
+    stats.clones = cloneNum;
 
     return stats;
   }
@@ -335,6 +304,7 @@ public class ResolveThreads extends MRStage {
       nodes.clear();
 
       if (nodesData.size() == 1) {
+        reporter.incrCounter("Contrail", "group-with-1-node", 1);
         collector.collect(nodesData.get(0));
         return;
       }
@@ -345,21 +315,45 @@ public class ResolveThreads extends MRStage {
 
       // Find nodes contained entirely in the graph and those on the edge.
       HashSet<String> borderIds = new HashSet<String>();
-      ArrayList<String> innerIds = new ArrayList<String>();
+
 
       for (String nodeId : nodes.keySet()) {
         GraphNode node = nodes.get(nodeId);
         if (onBorder(nodes, node)) {
           borderIds.add(nodeId);
-        } else {
-          innerIds.add(nodeId);
         }
       }
 
       ResolveStats totalStats = new ResolveStats();
 
-      // Process all the interior nodes.
-      for (String nodeId : innerIds) {
+      boolean hasThreadableNodes = true;
+
+      // We do several rounds of processing because each time we split
+      // a node its possible that makes some of its neighbors threadable.
+      while (hasThreadableNodes) {
+        // Process all the interior nodes.
+        // The interior nodes can change but the border nodes don't.
+        // So we compute the innerIds on each iteration.
+        HashSet<String> innerIds = new HashSet<String>();
+        innerIds.addAll(nodes.keySet());
+        innerIds.removeAll(borderIds);
+
+        hasThreadableNodes = false;
+        // TODO(jeremy@lewi.us): We could make this more efficient.
+        // Rather than check all nodes on each round, we only need to
+        // check the neighbors of those nodes which got split.
+        for (String nodeId : innerIds) {
+          ResolveStats stats = resolveSpanningReadPaths(nodes, nodeId);
+          if (stats != null) {
+            totalStats.add(stats);
+            hasThreadableNodes = true;
+          }
+        }
+      }
+
+      // Count the number of border nodes which are threadable. This
+      // is only useful for debugging.
+      for (String nodeId : borderIds) {
         GraphNode node = nodes.get(nodeId);
         // If the indegree and outdegree are both <=1 then there are no paths
         // that can be resolved for this node.
@@ -367,15 +361,21 @@ public class ResolveThreads extends MRStage {
             node.degree(DNAStrand.FORWARD, EdgeDirection.OUTGOING) <= 1) {
           continue;
         }
-        ResolveStats stats = resolveSpanningReadPaths(nodes, nodeId);
-
-        if (stats != null) {
-          totalStats.add(stats);
+        NodeThreadInfo threadInfo = new NodeThreadInfo(node);
+        if (threadInfo.isThreadable()) {
+          reporter.incrCounter("Contrail", "threadable-border-nodes", 1);
         }
       }
 
       // Output the nodes
+      HashSet<String> outIds = new HashSet<String>();
       for (GraphNode node : nodes.values()) {
+        if (outIds.contains(node.getNodeId())) {
+          sLogger.fatal(
+              "Attempt to output multiple copies of node:" + node.getNodeId(),
+              new RuntimeException("Invalid output."));
+        }
+        outIds.add(node.getNodeId());
         collector.collect(node.getData());
       }
       reporter.incrCounter("Contrail", "clones", totalStats.clones);

@@ -25,6 +25,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 
 import org.apache.avro.Schema;
@@ -39,7 +40,7 @@ import contrail.util.AvroFileUtil;
 import contrail.util.CharUtil;
 import contrail.util.FileHelper;
 
-public class TestSelectThreadableGroups {
+public class TestSelectThreadableGroups extends SelectThreadableGroups{
   @Test
   public void testJob() {
     // Create some groups.
@@ -94,5 +95,35 @@ public class TestSelectThreadableGroups {
         CharUtil.toStringList(outPair.value()));
 
     assertFalse(outputs.hasNext());
+  }
+
+  @Test
+  public void testNoMerge() {
+    // In this case we test that when a merge can't be performed because
+    // the result would be too large that the nodes don't get assigned to
+    // any group.
+    ArrayList<List<CharSequence>> groups = new ArrayList<List<CharSequence>>();
+
+    List<CharSequence> l1 = new ArrayList<CharSequence>();
+    l1.addAll(Arrays.asList("a", "b", "c"));
+    groups.add(l1);
+
+    List<CharSequence> l2 = new ArrayList<CharSequence>();
+    l2.addAll(Arrays.asList("c", "d", "e"));
+    groups.add(l2);
+
+    this.setParameter("max_subgraph_size", 3);
+
+    List<List<CharSequence>> threadableGroups =
+        new ArrayList<List<CharSequence>> ();
+
+    threadableGroups.add(l1);
+    threadableGroups.add(l2);
+
+    Collection<List<String>> subGraphs = this.selectSubGraphs(threadableGroups);
+
+    assertEquals(1, subGraphs.size());
+
+    assertEquals(CharUtil.toStringList(l1), subGraphs.iterator().next());
   }
 }

@@ -55,7 +55,7 @@ public class TestResolveThreads extends ResolveThreads {
     allTags.addAll(tags1);
     allTags.addAll(tags2);
 
-    // Add two incoming edges.
+    // Add edges.
     node.addIncomingEdgeWithTags(
         DNAStrand.FORWARD, new EdgeTerminal("in", DNAStrand.FORWARD),
         allTags, maxThreads);
@@ -99,7 +99,7 @@ public class TestResolveThreads extends ResolveThreads {
 
     {
       // The first cloned node should have the edges to in and out1.
-      GraphNode expectedClone = GraphTestUtil.createNode("node.00", "AAA");
+      GraphNode expectedClone = GraphTestUtil.createNode("node.01", "AAA");
       expectedClone.setCoverage(tags1.size());
       expectedClone.addIncomingEdgeWithTags(
           DNAStrand.FORWARD, new EdgeTerminal("in", DNAStrand.FORWARD),
@@ -114,7 +114,7 @@ public class TestResolveThreads extends ResolveThreads {
 
     {
       // The second cloned node should have the edges to in and out2.
-      GraphNode expectedClone = GraphTestUtil.createNode("node.01", "AAA");
+      GraphNode expectedClone = GraphTestUtil.createNode("node.02", "AAA");
       expectedClone.setCoverage(tags1.size());
       expectedClone.addIncomingEdgeWithTags(
           DNAStrand.FORWARD, new EdgeTerminal("in", DNAStrand.FORWARD),
@@ -133,10 +133,10 @@ public class TestResolveThreads extends ResolveThreads {
       GraphNode expectedIn = GraphTestUtil.createNode("in", "AAA");
       expectedIn.addOutgoingEdgeWithTags(
           DNAStrand.FORWARD,
-          new EdgeTerminal("node.00", DNAStrand.FORWARD), tags1, maxThreads);
+          new EdgeTerminal("node.01", DNAStrand.FORWARD), tags1, maxThreads);
       expectedIn.addOutgoingEdgeWithTags(
           DNAStrand.FORWARD,
-          new EdgeTerminal("node.01", DNAStrand.FORWARD), tags2, maxThreads);
+          new EdgeTerminal("node.02", DNAStrand.FORWARD), tags2, maxThreads);
       GraphNode actualIn = nodes.get(expectedIn.getNodeId());
       assertEquals(GraphNode.NodeDiff.NONE, expectedIn.equalsWithInfo(actualIn));
     }
@@ -145,7 +145,7 @@ public class TestResolveThreads extends ResolveThreads {
       GraphNode expectedOut= GraphTestUtil.createNode("out1", "AAA");
       expectedOut.addIncomingEdgeWithTags(
           DNAStrand.FORWARD,
-          new EdgeTerminal("node.00", DNAStrand.FORWARD), tags1, maxThreads);
+          new EdgeTerminal("node.01", DNAStrand.FORWARD), tags1, maxThreads);
 
       assertEquals(expectedOut, nodes.get(expectedOut.getNodeId()));
     }
@@ -154,7 +154,7 @@ public class TestResolveThreads extends ResolveThreads {
       GraphNode expectedOut= GraphTestUtil.createNode("out2", "AAA");
       expectedOut.addIncomingEdgeWithTags(
           DNAStrand.FORWARD,
-          new EdgeTerminal("node.01", DNAStrand.FORWARD), tags2, maxThreads);
+          new EdgeTerminal("node.02", DNAStrand.FORWARD), tags2, maxThreads);
 
       GraphNode actualOut = nodes.get(expectedOut.getNodeId());
       assertEquals(
@@ -211,7 +211,7 @@ public class TestResolveThreads extends ResolveThreads {
 
     {
       // The cloned node should have the edges to in and out1.
-      GraphNode expectedClone = GraphTestUtil.createNode("node.00", "AAA");
+      GraphNode expectedClone = GraphTestUtil.createNode("node.01", "AAA");
       expectedClone.setCoverage(tags1.size());
       expectedClone.addIncomingEdgeWithTags(
           DNAStrand.FORWARD, new EdgeTerminal("in", DNAStrand.FORWARD),
@@ -226,7 +226,7 @@ public class TestResolveThreads extends ResolveThreads {
     {
       // The original node should remain connected to the node which wasn't
       // connected to any outputs.
-      GraphNode expectedNode = GraphTestUtil.createNode("node", "AAA");
+      GraphNode expectedNode = GraphTestUtil.createNode("node.00", "AAA");
       expectedNode.addIncomingEdgeWithTags(
           DNAStrand.FORWARD, new EdgeTerminal("in2", DNAStrand.FORWARD),
           tags2, maxThreads);
@@ -238,7 +238,7 @@ public class TestResolveThreads extends ResolveThreads {
       GraphNode expectedIn = GraphTestUtil.createNode("in", "AAA");
       expectedIn.addOutgoingEdgeWithTags(
           DNAStrand.FORWARD,
-          new EdgeTerminal("node.00", DNAStrand.FORWARD), tags1, maxThreads);
+          new EdgeTerminal("node.01", DNAStrand.FORWARD), tags1, maxThreads);
       testCase.expected.put(expectedIn.getNodeId(), expectedIn);
     }
 
@@ -246,7 +246,7 @@ public class TestResolveThreads extends ResolveThreads {
       GraphNode expectedIn1 = GraphTestUtil.createNode("in2", "AAA");
       expectedIn1.addOutgoingEdge(
           DNAStrand.FORWARD,
-          new EdgeTerminal("node", DNAStrand.FORWARD));
+          new EdgeTerminal("node.00", DNAStrand.FORWARD));
       testCase.expected.put(expectedIn1.getNodeId(), expectedIn1);
     }
 
@@ -254,7 +254,7 @@ public class TestResolveThreads extends ResolveThreads {
       GraphNode expectedOut= GraphTestUtil.createNode("out1", "AAA");
       expectedOut.addIncomingEdgeWithTags(
           DNAStrand.FORWARD,
-          new EdgeTerminal("node.00", DNAStrand.FORWARD), tags1, maxThreads);
+          new EdgeTerminal("node.01", DNAStrand.FORWARD), tags1, maxThreads);
 
       testCase.expected.put(expectedOut.getNodeId(), expectedOut);
     }

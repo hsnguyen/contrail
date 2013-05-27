@@ -20,6 +20,7 @@ package contrail.stages;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -50,6 +51,10 @@ import contrail.util.ContrailLogger;
  * each node appears in at most one of these groups.
  */
 public class SelectThreadableGroups extends NonMRStage{
+  // Total number of groups.
+  private int numGroups ;
+  private int numMergeTooLarge;
+
   private static final ContrailLogger sLogger = ContrailLogger.getLogger(
       SelectThreadableGroups.class);
 
@@ -129,28 +134,29 @@ public class SelectThreadableGroups extends NonMRStage{
     return writer;
   }
 
-  @Override
-  protected void stageMain() {
-    String inputPath = (String) stage_options.get("inputpath");
-
-    AvroFileContentsIterator<List<CharSequence>> groups =
-        AvroFileContentsIterator.fromGlob(getConf(), inputPath);
-
-    if (!groups.hasNext()) {
-      sLogger.fatal("Input is empty.", new RuntimeException("No input."));
+  private boolean isSorted(List<String> strings) {
+    for (int i = 1; i < strings.size(); ++i) {
+      // Check the strings are strictly decreasing.
+      if (strings.get(i - 1).compareTo(strings.get(i)) >= 0) {
+        return false;
+      }
     }
+    return true;
+  }
 
-    // TODO(jeremy@lewi.us): make this a parameter.
-    // The maximum number of allowed nodes in a group.
+  /**
+   * Group the threadable nodes into subgraphs.
+   *
+   * @return: A list of subgraphs.
+   */
+  protected Collection<List<String>> selectSubGraphs(
+      Iterable<List<CharSequence>> threadableGroups) {
+    // The groupId used to indicate a node isn't assigned a group.
+    final Integer unassignedGroup = -1;
     int maxGroupSize = (Integer)stage_options.get("max_subgraph_size");
 
-    // The groupId used to indicate a node isn't assigned a group.
-    Integer unassignedGroup = -1;
-
-    // Total number of groups.
-    int numGroups = 0;
-    int component = -1;
-
+    numGroups = 0;
+    numMergeTooLarge = 0;
     // Mapping from a nodeId to the id for the group it is currently assigned
     // to.
     HashMap<String, Integer> idToGroup = new HashMap<String, Integer>();
@@ -162,8 +168,7 @@ public class SelectThreadableGroups extends NonMRStage{
     HashSet<Integer> groupsToMerge = new HashSet<Integer>();
     ArrayList<String> unassignedNodes = new ArrayList<String>();
 
-    int numMergeTooLarge = 0;
-    for (List<CharSequence> group : groups) {
+    for (List<CharSequence> group : threadableGroups) {
       ++numGroups;
       groupsToMerge.clear();
       unassignedNodes.clear();
@@ -171,16 +176,14 @@ public class SelectThreadableGroups extends NonMRStage{
       // TODO(jeremy@lewi.us): The group should already be sorted and not
       // contain duplicates.
       List<String> thisGroup = CharUtil.toStringList(group);
-      if (thisGroup.size() != CharUtil.toStringSet(group).size()) {
-        HashSet<String> groupSet = CharUtil.toStringSet(group);
+      if (!isSorted(thisGroup)) {
         sLogger.fatal(
             "Nodes appear multiple times in the input group:" +
-                StringUtils.join(thisGroup,","));
+                StringUtils.join(thisGroup,","),
+            new RuntimeException("Invalid Input"));
       }
+
       for (String id : thisGroup) {
-        if (id.equals("wh0dQNlBEyvQQgA")) {
-          sLogger.info("LEWI NO COMMIT");
-        }
         Integer assignedGroup = idToGroup.get(id);
         if (assignedGroup != null && assignedGroup != unassignedGroup) {
           groupsToMerge.add(idToGroup.get(id));
@@ -192,12 +195,11 @@ public class SelectThreadableGroups extends NonMRStage{
       Integer groupId = null;
       if (groupsToMerge.size() == 0) {
         // This group is unique.
-        ++component;
-        groupId = component;
-        subGraphs.put(component, thisGroup);
+        groupId = numGroups;
+        subGraphs.put(groupId, thisGroup);
 
         for (String id : thisGroup) {
-          idToGroup.put(id, component);
+          idToGroup.put(id, groupId);
         }
         continue;
       }
@@ -210,11 +212,9 @@ public class SelectThreadableGroups extends NonMRStage{
 
       if (newSize > maxGroupSize) {
         ++numMergeTooLarge;
-        // Can't merge the nodes.
+        // Since we can't merge the groups, any unassigned nodes
+        // should just be added to the unassigned group.
         for (String id : unassignedNodes) {
-          if (id.equals("wh0dQNlBEyvQQgA")) {
-            sLogger.info("LEWI NO COMMIT");
-          }
           idToGroup.put(id, unassignedGroup);
         }
         continue;
@@ -231,9 +231,6 @@ public class SelectThreadableGroups extends NonMRStage{
         subGraphs.get(groupId).addAll(otherNodes);
 
         for (String node : otherNodes) {
-          if (node.equals("wh0dQNlBEyvQQgA")) {
-            sLogger.info("LEWI NO COMMIT");
-          }
           idToGroup.put(node, groupId);
         }
       }
@@ -241,13 +238,25 @@ public class SelectThreadableGroups extends NonMRStage{
       // Add in the new nodes.
       subGraphs.get(groupId).addAll(unassignedNodes);
       for (String node : unassignedNodes) {
-        if (node.equals("wh0dQNlBEyvQQgA")) {
-          sLogger.info("LEWI NO COMMIT");
-        }
         idToGroup.put(node,  groupId);
       }
     }
 
+    return subGraphs.values();
+  }
+
+  @Override
+  protected void stageMain() {
+    String inputPath = (String) stage_options.get("inputpath");
+
+    AvroFileContentsIterator<List<CharSequence>> threadableGroups =
+        AvroFileContentsIterator.fromGlob(getConf(), inputPath);
+
+    if (!threadableGroups.hasNext()) {
+      sLogger.fatal("Input is empty.", new RuntimeException("No input."));
+    }
+
+    Collection<List<String>> subGraphs = selectSubGraphs(threadableGroups);
 
     Pair<CharSequence, List<CharSequence>> outPair =
         new Pair<CharSequence, List<CharSequence>>(getSchema());
@@ -258,24 +267,28 @@ public class SelectThreadableGroups extends NonMRStage{
     int graphId = -1;
     // Number of nodes in the subgraphs.
     int numNodesInSubGraphs = 0;
-    for (List<String> subGraph : subGraphs.values()) {
+    for (List<String> subGraph : subGraphs) {
       Collections.sort(subGraph);
-      // Make sure its unique.
-      for (int i = 1; i < subGraph.size(); ++i) {
-        if (subGraph.get(i - 1).equals(subGraph.get(i))) {
-          sLogger.fatal(
-              "Nodes appear multiple times in the group:" +
-                  StringUtils.join(subGraph, ","),
-              new RuntimeException("Group invalid"));
-        }
+      // Make sure the list is unique.
+      if (!isSorted(subGraph)) {
+        sLogger.fatal(
+            "The subgraph isn't sorted or contains duplicates:" +
+                StringUtils.join(subGraph, ","),
+            new RuntimeException("Invalid output"));
       }
-
       ++graphId;
       numNodesInSubGraphs += subGraph.size();
       outPair.key(String.format("%03d", graphId));
 
+      if (subGraph.size() <= 1) {
+        sLogger.fatal(
+            "Subgraph should have more than 1 node. Subgraph:" +
+                StringUtils.join(subGraph, ","),
+            new RuntimeException("Invalid Output"));
+      }
       outPair.value().clear();
       outPair.value().addAll(subGraph);
+
       try {
         writer.append(outPair);
       } catch (IOException e) {

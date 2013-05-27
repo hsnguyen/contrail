@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -85,11 +86,13 @@ public class GroupByComponentId extends MRStage {
       AvroReducer<CharSequence, GraphNodeData, List<GraphNodeData>> {
     private List<GraphNodeData> out;
     private GraphNode node;
+    private HashSet<String> nodeIds;
 
     @Override
     public void configure(JobConf job) {
       out = new ArrayList<GraphNodeData>();
       node = new GraphNode();
+      nodeIds = new HashSet<String>();
     }
 
     @Override
@@ -98,8 +101,15 @@ public class GroupByComponentId extends MRStage {
         AvroCollector<List<GraphNodeData>> collector,
         Reporter reporter) throws IOException {
       out.clear();
+      nodeIds.clear();
       for (GraphNodeData nodeData : records) {
         node.setData(nodeData);
+        if (nodeIds.contains(node.getNodeId())) {
+          sLogger.fatal(String.format(
+              "node:%s appears multiple times in group:%s", node.getNodeId(),
+              id), new RuntimeException("Invalid input."));
+        }
+        nodeIds.add(node.getNodeId());
         out.add(node.clone().getData());
       }
       collector.collect(out);

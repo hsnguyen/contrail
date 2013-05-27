@@ -38,11 +38,8 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.log4j.Logger;
 
-import contrail.graph.EdgeDirection;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
-import contrail.sequences.DNAStrand;
-import contrail.stages.ResolveThreads.SpanningReads;
 
 /**
  * For each threadable node this stage outputs a group of ids consisting
@@ -52,9 +49,6 @@ import contrail.stages.ResolveThreads.SpanningReads;
 public class SplitThreadableGraph extends MRStage {
   private static final Logger sLogger = Logger.getLogger(
       SplitThreadableGraph.class);
-  // Number of nodes which are threadable.
-  private int numThreadable;
-  private boolean allNodesResolvable;
   private static String THREADABLE_COUNTER = "num-threadable";
 
   @Override
@@ -101,33 +95,20 @@ public class SplitThreadableGraph extends MRStage {
         return;
       }
 
-      boolean isThreadable = false;
-      if (node.degree(DNAStrand.FORWARD, EdgeDirection.INCOMING) <= 1 &&
-          node.degree(DNAStrand.FORWARD, EdgeDirection.OUTGOING) <= 1) {
-        isThreadable = false;
-      } else {
-        SpanningReads spanningReads = ResolveThreads.findSpanningReads(node);
-        isThreadable = (spanningReads.spanningIds.size() > 0);
-      }
-
-      if (!isThreadable) {
+      NodeThreadInfo threadInfo = new NodeThreadInfo(node);
+      if (!threadInfo.isThreadable()) {
         // Don't output any information for unthreadable nodes.
         reporter.getCounter("contrail", "not-threadable").increment(1);
         return;
       }
 
+      // We use a set to sort the ids and ensure each node appears at most
+      // once.
       outIds.addAll(node.getNeighborIds());
 
       // Convert it to a list.
       outIdsList.addAll(outIds);
 
-      // TODO(jeremy@lewi.us): Get rid of ths after we finish debugging.
-      // Check the list is sorted and no duplicates.
-      for (int i = 1; i < outIdsList.size(); ++i) {
-        if (outIdsList.get(i - 1).toString().compareTo(outIdsList.get(i).toString()) >= 0) {
-          sLogger.fatal("List not sorted or duplicates nodeid:" + node.getNodeId(), new RuntimeException("Invalid output"));
-        }
-      }
       reporter.getCounter("contrail", THREADABLE_COUNTER).increment(1);
       collector.collect(outIdsList);
     }

@@ -101,7 +101,7 @@ public class TestResolveThreadsPipeline {
 
     {
       // The cloned node should have the edges to in and out1.
-      GraphNode expectedClone = GraphTestUtil.createNode("node.00", "AAA");
+      GraphNode expectedClone = GraphTestUtil.createNode("node.01", "AAA");
       expectedClone.setCoverage(tags1.size());
       expectedClone.addIncomingEdgeWithTags(
           DNAStrand.FORWARD, new EdgeTerminal("in", DNAStrand.FORWARD),
@@ -116,7 +116,7 @@ public class TestResolveThreadsPipeline {
     {
       // The original node should remain connected to the node which wasn't
       // connected to any outputs.
-      GraphNode expectedNode = GraphTestUtil.createNode("node", "AAA");
+      GraphNode expectedNode = GraphTestUtil.createNode("node.00", "AAA");
       expectedNode.addIncomingEdgeWithTags(
           DNAStrand.FORWARD, new EdgeTerminal("in2", DNAStrand.FORWARD),
           tags2, maxThreads);
@@ -128,7 +128,7 @@ public class TestResolveThreadsPipeline {
       GraphNode expectedIn = GraphTestUtil.createNode("in", "AAA");
       expectedIn.addOutgoingEdgeWithTags(
           DNAStrand.FORWARD,
-          new EdgeTerminal("node.00", DNAStrand.FORWARD), tags1, maxThreads);
+          new EdgeTerminal("node.01", DNAStrand.FORWARD), tags1, maxThreads);
       testCase.expected.put(expectedIn.getNodeId(), expectedIn);
     }
 
@@ -136,7 +136,7 @@ public class TestResolveThreadsPipeline {
       GraphNode expectedIn1 = GraphTestUtil.createNode("in2", "AAA");
       expectedIn1.addOutgoingEdge(
           DNAStrand.FORWARD,
-          new EdgeTerminal("node", DNAStrand.FORWARD));
+          new EdgeTerminal("node.00", DNAStrand.FORWARD));
       testCase.expected.put(expectedIn1.getNodeId(), expectedIn1);
     }
 
@@ -144,10 +144,11 @@ public class TestResolveThreadsPipeline {
       GraphNode expectedOut= GraphTestUtil.createNode("out1", "AAA");
       expectedOut.addIncomingEdgeWithTags(
           DNAStrand.FORWARD,
-          new EdgeTerminal("node.00", DNAStrand.FORWARD), tags1, maxThreads);
+          new EdgeTerminal("node.01", DNAStrand.FORWARD), tags1, maxThreads);
 
       testCase.expected.put(expectedOut.getNodeId(), expectedOut);
     }
+
 
     return testCase;
   }

@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 
@@ -92,7 +93,9 @@ public class TestSplitThreadableGraph {
 
     ArrayList<String> allIds = new ArrayList<String>();
     allIds.addAll(nodes.keySet());
+    Collections.sort(allIds);
     testCase.expectedOutput.add(allIds);
+
 
     return testCase;
   }
