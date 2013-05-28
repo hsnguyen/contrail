@@ -55,11 +55,6 @@ public class ResolveThreads extends MRStage {
   private static final Logger sLogger =
       Logger.getLogger(ResolveThreads.class);
 
-  // The key used to gather nodes in the reducer that could have
-  // threads to resolve. Node ids should be base64 and $ is not a base64
-  // character so using it in the key should guarantee zero probability
-  // of conflict with a node id.
-  private static final String GATHER_KEY = "$GATHER_KEY$";
   /**
    * A comparator for sorting the graph paths based on the ids of the nodes.
    */
@@ -82,6 +77,7 @@ public class ResolveThreads extends MRStage {
       }
     }
   }
+
   /**
    * Class is used to return information about the path resolution.
    */
@@ -241,6 +237,11 @@ public class ResolveThreads extends MRStage {
         EdgeTerminal oldTerminal = new EdgeTerminal(oldId, strand);
         EdgeTerminal newTerminal = new EdgeTerminal(newId, strand);
         for (EdgeTerminal inTerminal : inTerminals) {
+          if (inTerminal.nodeId.equals(newId)) {
+            // This edge represents an edge to itself. This edge was
+            // already moved when we called setNodeId.
+            continue;
+          }
           GraphNode inNode = graph.get(inTerminal.nodeId);
           inNode.moveOutgoingEdge(
               inTerminal.strand, oldTerminal, newTerminal);

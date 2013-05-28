@@ -26,6 +26,7 @@ import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
 import contrail.graph.GraphNodeFilesIterator;
 import contrail.graph.GraphTestUtil;
+import contrail.graph.GraphUtil;
 import contrail.sequences.DNAStrand;
 import contrail.util.FileHelper;
 
@@ -276,6 +277,30 @@ public class TestResolveThreads extends ResolveThreads {
     }
   }
 
+
+  @Test
+  public void testResolveCycle() {
+    // Make sure that if a node has a cycle it is properly handled.
+    TestCase testCase = createBasic();
+
+    // Add a self edge to the graph.
+    GraphNode node = testCase.graph.get("node");
+    GraphUtil.addBidirectionalEdge(
+        node, DNAStrand.FORWARD, node, DNAStrand.FORWARD);
+
+    GraphNode expected = testCase.expected.get("node.00");
+    GraphUtil.addBidirectionalEdge(
+        expected, DNAStrand.FORWARD, expected, DNAStrand.FORWARD);
+
+    resolveSpanningReadPaths(testCase.graph, testCase.nodeId);
+
+    assertEquals(testCase.expected.size(), testCase.graph.size());
+
+    for (String key : testCase.expected.keySet()) {
+      assertEquals(
+          testCase.expected.get(key), testCase.graph.get(key));
+    }
+  }
 
   /**
    * Write lists of nodes to an avro file.
