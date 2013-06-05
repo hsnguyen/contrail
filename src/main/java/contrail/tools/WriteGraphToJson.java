@@ -15,7 +15,6 @@
 package contrail.tools;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -118,6 +117,7 @@ public class WriteGraphToJson extends MRStage {
     private boolean sequence;
     private boolean threads;
 
+    @Override
     public void configure(JobConf job) {
       graphNode = new GraphNode();
       jsonNode = new Node();
@@ -128,10 +128,11 @@ public class WriteGraphToJson extends MRStage {
       sequence = (Boolean) stage.getParameterDefinitions().get("sequence").parseJobConf(job);
       threads = (Boolean) stage.getParameterDefinitions().get("threads").parseJobConf(job);
     }
-    
+
     /**
      * Mapper to do the conversion.
      */
+    @Override
     public void map(AvroWrapper<GraphNodeData> key, NullWritable bytes,
         OutputCollector<Text, NullWritable> collector, Reporter reporter)
             throws IOException {
@@ -163,6 +164,7 @@ public class WriteGraphToJson extends MRStage {
   /**
    * Get the options required by this stage.
    */
+  @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
         new HashMap<String, ParameterDefinition>();
@@ -223,14 +225,11 @@ public class WriteGraphToJson extends MRStage {
     conf.setReducerClass(IdentityReducer.class);
   }
 
+  @Override
   protected void postRunHook() {
     sLogger.info("Schema:\n" + Node.bigQuerySchema().toString());
   }
 
-  protected void postRunHook() {
-    sLogger.info("Schema:\n" + Node.bigQuerySchema().toString());
-  }
-  
   public static void main(String[] args) throws Exception {
     int res = ToolRunner.run(
         new Configuration(), new WriteGraphToJson(), args);
