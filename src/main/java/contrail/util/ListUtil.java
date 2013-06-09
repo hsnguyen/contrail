@@ -1,6 +1,5 @@
 package contrail.util;
 
-import java.util.Collection;
 import java.util.Hashtable;
 import java.util.List;
 
@@ -60,18 +59,4 @@ public class ListUtil {
 
     return countsAreEqual(hash_a, hash_b);
   }
-
-  /**
-   * Adds a collection of CharSequences to a collection of strings.
-   * @param strings
-   * @param sequences
-   */
-  public static void addAllAsStrings(
-      Collection<String> strings, Collection<CharSequence> sequences) {
-    for (CharSequence item : sequences) {
-      strings.add(item.toString());
-    }
-  }
-
-
 }

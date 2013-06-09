@@ -31,7 +31,6 @@ import contrail.graph.EdgeDirection;
 import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
-import contrail.graph.GraphPath;
 import contrail.graph.IndexedGraph;
 import contrail.sequences.DNAStrand;
 import contrail.stages.ContrailParameters;
@@ -97,6 +96,99 @@ public class FindPaths extends NonMRStage {
     }
 
     return new EdgeTerminal(pieces[0], strand);
+  }
+
+  // Path through the graph.
+  private class GraphPath {
+    private HashMap<String, GraphNode> nodes;
+    private ArrayList<EdgeTerminal> path;
+    public GraphPath() {
+      nodes = new HashMap<String, GraphNode>();
+      path = new ArrayList<EdgeTerminal>();
+    }
+
+    public void add(EdgeTerminal terminal, GraphNode node) {
+      if (!terminal.nodeId.equals(node.getNodeId())) {
+        sLogger.fatal(
+            "The edgeterminal and the node don't match.",
+            new RuntimeException("Invalid node and terminal pair."));
+      }
+
+      path.add(terminal);
+      nodes.put(node.getNodeId(), node);
+    }
+
+    public EdgeTerminal last() {
+      return path.get(path.size() - 1);
+    }
+
+    public EdgeTerminal first() {
+      return path.get(0);
+    }
+
+    public GraphNode lastNode() {
+      return nodes.get(last().nodeId);
+    }
+
+    public GraphPath clone() {
+      GraphPath newPath = new GraphPath();
+
+      // Since edge terminals are immutable we can add them directly.
+      newPath.path.addAll(path);
+
+      // Clone the nodes.
+      for (GraphNode node : nodes.values()) {
+        newPath.nodes.put(node.getNodeId(), node.clone());
+      }
+      return newPath;
+    }
+
+    public String terminalNames() {
+      String[] names = new String[path.size()];
+      for (int i = 0; i < path.size(); ++i) {
+        names[i] = path.get(i).toString();
+      }
+      return StringUtils.join(names, ",");
+    }
+
+    /**
+     * Merge the nodes on the path into a single node. All edges except
+     * those belonging to the path are pruned.
+     * @return
+     */
+    public GraphNode merge(int K) {
+      // We need to make a copy of the nodes without any edges except those
+      // belong to the chain.
+      HashMap<String, GraphNode> prunedNodes = new HashMap<String, GraphNode>();
+
+      for (int i = 0; i< path.size(); ++i) {
+        HashSet<String> neighborsToKeep = new HashSet<String>();
+        if (i > 0) {
+          neighborsToKeep.add(path.get(i - 1).nodeId);
+        }
+        if (i < path.size() - 1) {
+          neighborsToKeep.add(path.get(i + 1).nodeId);
+        }
+        GraphNode node = nodes.get(path.get(i).nodeId).clone();
+        for (String neighbor : node.getNeighborIds()) {
+          if (!neighborsToKeep.contains(neighbor)) {
+            node.removeNeighbor(neighbor);
+          }
+        }
+        prunedNodes.put(node.getNodeId(), node);
+      }
+
+      QuickMergeUtil.NodesToMerge nodesToMerge =
+          new QuickMergeUtil.NodesToMerge();
+      nodesToMerge.start_terminal = first();
+      nodesToMerge.end_terminal = last();
+      nodesToMerge.direction = EdgeDirection.OUTGOING;
+      QuickMergeUtil.ChainMergeResult result =
+          QuickMergeUtil.mergeLinearChain(prunedNodes, nodesToMerge, K - 1);
+
+      result.merged_node.setNodeId(terminalNames());
+      return result.merged_node;
+    }
   }
 
   protected void stageMain() {
