@@ -29,7 +29,7 @@ import org.junit.Test;
 import contrail.util.AvroFileUtil;
 import contrail.util.FileHelper;
 
-public class TestKmerCounter {
+public class TestJoinKmerCounts {
   private static class Counts {
     public Long before;
     public Long after;

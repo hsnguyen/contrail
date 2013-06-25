@@ -184,10 +184,12 @@ public class JoinKmerCounts extends MRStage {
   @Override
   protected void setupConfHook() {
     JobConf conf = (JobConf) getConf();
-    String inputPath = (String) stage_options.get("inputpath");
+    String before = (String) stage_options.get("before");
+    String after = (String) stage_options.get("after");
     String outputPath = (String) stage_options.get("outputpath");
 
-    FileInputFormat.addInputPath(conf, new Path(inputPath));
+    FileInputFormat.addInputPath(conf, new Path(before));
+    FileInputFormat.addInputPath(conf, new Path(after));
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
 
     Pair<CharSequence, Long> inputPair = new Pair<CharSequence, Long>("", 0L);
