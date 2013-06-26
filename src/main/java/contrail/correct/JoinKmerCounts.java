@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
+import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroKey;
@@ -89,14 +90,24 @@ public class JoinKmerCounts extends MRStage {
    * correction.
    */
   protected enum Phase {
-    After,
-    Before,
+    After(0),
+    Before(1);
+
+    private final int value;
+    private Phase(int value) {
+      this.value = value;
+    }
+
+    public int getValue() {
+      return value;
+    }
   }
+
   public static class Mapper extends AvroMapper<
-      Pair<CharSequence, Long>, Pair<CharSequence, Pair<Phase, Long>>> {
+      Pair<CharSequence, Long>, Pair<CharSequence, Pair<Integer, Long>>> {
 
     private Phase phase;
-    private Pair<CharSequence, Pair<Phase, Long>> outPair;
+    private Pair<CharSequence, Pair<Integer, Long>> outPair;
 
     @Override
     public void configure(JobConf job) {
@@ -117,8 +128,8 @@ public class JoinKmerCounts extends MRStage {
             "Could not figure out which phase the input belongs to. File: " +
             filename, new RuntimeException("Invalid input."));
       }
-      Pair<Phase, Long> phasePair = new Pair<Phase, Long>(phase, 0L);
-      outPair = new Pair<CharSequence, Pair<Phase, Long>>("", phasePair);
+      Pair<Integer, Long> phasePair = new Pair<Integer, Long>(phase, 0L);
+      outPair = new Pair<CharSequence, Pair<Integer, Long>>("", phasePair);
     }
 
     /**
@@ -127,10 +138,10 @@ public class JoinKmerCounts extends MRStage {
     @Override
     public void map(
         Pair<CharSequence, Long> input,
-        AvroCollector<Pair<CharSequence, Pair<Phase, Long>>> collector,
+        AvroCollector<Pair<CharSequence, Pair<Integer, Long>>> collector,
         Reporter reporter) throws IOException {
       outPair.key(input.key());
-      outPair.value().key(phase);
+      outPair.value().key(phase.getValue());
       outPair.value().value(input.value());
       collector.collect(outPair);
     }
@@ -138,7 +149,7 @@ public class JoinKmerCounts extends MRStage {
 
   public static class JoinReducer extends MapReduceBase
       implements Reducer<
-          AvroKey<CharSequence>, AvroValue<Pair<Phase, Long>>,
+          AvroKey<CharSequence>, AvroValue<Pair<Integer, Long>>,
           Text, NullWritable> {
 
     private static class CountsRecord {
@@ -171,11 +182,43 @@ public class JoinKmerCounts extends MRStage {
     @Override
     public void reduce(
         AvroKey<CharSequence> key,
-        Iterator<AvroValue<Pair<Phase, Long>>> values,
+        Iterator<AvroValue<Pair<Integer, Long>>> values,
         OutputCollector<Text, NullWritable> collector, Reporter reporter)
         throws IOException {
       counts.clear();
+      counts.Kmer = key.toString();
 
+      int hasBefore = 0;
+      int hasAfter = 0;
+
+      while (values.hasNext()) {
+        Pair<Integer, Long> pair = values.next().datum();
+        if (pair.key() == Phase.After.getValue()) {
+          ++hasAfter;
+          counts.after = pair.value();
+        } else if (pair.key() == Phase.Before.getValue()) {
+          ++hasBefore;
+          counts.before = pair.value();
+        } else {
+          sLogger.fatal(
+              "Illegal phase:" + pair.key(),
+              new RuntimeException("Illegal phase."));
+        }
+      }
+
+      if (hasBefore > 1) {
+        sLogger.fatal(
+            "There were "+ hasBefore + " records with phase Before but " +
+            "there should be at most one.",
+            new RuntimeException("Multiple records for phase."));
+      }
+
+      if (hasAfter > 1) {
+        sLogger.fatal(
+            "There were "+ hasAfter + " records with phase After but " +
+            "there should be at most one.",
+            new RuntimeException("Multiple records for phase."));
+      }
       outKey.set(jsonMapper.writeValueAsString(counts));
       collector.collect(outKey, NullWritable.get());
     }
@@ -195,9 +238,11 @@ public class JoinKmerCounts extends MRStage {
     Pair<CharSequence, Long> inputPair = new Pair<CharSequence, Long>("", 0L);
     AvroJob.setInputSchema(conf, inputPair.getSchema());
 
-    Pair<CharSequence, Pair<Phase, Long>> mapOutputPair =
-        new Pair<CharSequence, Pair<Phase, Long>>(
-            "", new Pair<Phase, Long>(Phase.After, 0L));
+    Pair<CharSequence, Pair<Integer, Long>> mapOutputPair =
+        new Pair<CharSequence, Pair<Integer, Long>>(
+            "", new Pair<Integer, Long>(0, 0L));
+    Schema schema = mapOutputPair.getSchema();
+    System.out.println("Schema:" + schema.toString());
     AvroJob.setMapOutputSchema(conf, mapOutputPair.getSchema());
     AvroJob.setMapperClass(conf, Mapper.class);
 
