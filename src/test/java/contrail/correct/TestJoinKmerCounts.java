@@ -107,7 +107,7 @@ public class TestJoinKmerCounts {
     assertTrue(stage.execute());
 
     ObjectMapper mapper = new ObjectMapper();
-    JsonFactory factory = mapper.getJsonFactory(); // since 2.1 use mapper.getFactory() instead
+    JsonFactory factory = mapper.getJsonFactory();
 
     HashMap<String, Counts> actual = new HashMap<String, Counts>();
     try {

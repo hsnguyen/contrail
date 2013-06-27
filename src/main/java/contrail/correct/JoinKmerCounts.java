@@ -45,6 +45,8 @@ import org.codehaus.jackson.map.ObjectMapper;
 import contrail.stages.ContrailParameters;
 import contrail.stages.MRStage;
 import contrail.stages.ParameterDefinition;
+import contrail.util.BigQueryField;
+import contrail.util.BigQuerySchema;
 import contrail.util.ContrailLogger;
 
 /**
@@ -238,6 +240,17 @@ public class JoinKmerCounts extends MRStage {
     conf.setOutputFormat(TextOutputFormat.class);
     conf.setOutputKeyClass(Text.class);
     conf.setOutputValueClass(NullWritable.class);
+  }
+
+  @Override
+  protected void postRunHook() {
+    BigQuerySchema schema = new BigQuerySchema();
+
+    schema.add(new BigQueryField("Kmer", "string"));
+    schema.add(new BigQueryField("before", "integer"));
+    schema.add(new BigQueryField("after", "integer"));
+
+    sLogger.info("Schema:\n" + schema.toString());
   }
 
   public static void main(String[] args) throws Exception {
