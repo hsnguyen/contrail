@@ -250,7 +250,7 @@ public class JoinKmerCounts extends MRStage {
     schema.add(new BigQueryField("before", "integer"));
     schema.add(new BigQueryField("after", "integer"));
 
-    sLogger.info("Schema:\n" + schema.toString());
+    sLogger.info("Schema(Json):\n" + schema.toJson()());
   }
 
   public static void main(String[] args) throws Exception {

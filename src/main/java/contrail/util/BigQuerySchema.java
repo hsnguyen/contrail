@@ -13,9 +13,14 @@
 // Author: Jeremy Lewi (jeremy@lewi.us)
 package contrail.util;
 
+import java.io.IOException;
 import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
+import org.codehaus.jackson.JsonGenerationException;
+import org.codehaus.jackson.map.JsonMappingException;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.map.annotate.JsonSerialize;
 
 /**
  * Schema for a bigquery record.
@@ -23,8 +28,34 @@ import org.apache.commons.lang.StringUtils;
  * A schema is basically a collection of fields.
  */
 public class BigQuerySchema extends ArrayList<BigQueryField> {
+  @Override
   public String toString() {
     String schema = "[" + StringUtils.join(this, ",") + "]";
     return schema;
+  }
+
+  public String toJson() {
+ // Only include non null fields.
+    ObjectMapper mapper = new ObjectMapper();
+
+    mapper.getSerializationConfig().setSerializationInclusion(JsonSerialize.Inclusion.NON_NULL);
+
+    // Avoid printing empty lists.
+    mapper.getSerializationConfig().setSerializationInclusion(JsonSerialize.Inclusion.NON_DEFAULT);
+    String json = "";
+    try {
+      json = mapper.writeValueAsString(this);
+    } catch (JsonGenerationException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    } catch (JsonMappingException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    } catch (IOException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    }
+
+    return json;
   }
 }
