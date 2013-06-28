@@ -40,7 +40,8 @@ public class BigQuerySchema extends ArrayList<BigQueryField> {
 
     mapper.getSerializationConfig().setSerializationInclusion(JsonSerialize.Inclusion.NON_NULL);
 
-    // Avoid printing empty lists.
+    // Avoid printing empty lists. Its not clear whether that cause problems
+    // with the bigquery api.
     mapper.getSerializationConfig().setSerializationInclusion(JsonSerialize.Inclusion.NON_DEFAULT);
     String json = "";
     try {

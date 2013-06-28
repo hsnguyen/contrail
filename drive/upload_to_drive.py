@@ -137,11 +137,13 @@ def main(argv):
         parent = files['items'][0]['id']
         
         body['parents'] = [{'id' : parent}]
+    
     for f in files['items']:
       print f
       
     file = drive_service.files().insert(body=body, media_body=media_body, convert=FLAGS.convert).execute()
     pprint.pprint(file)
+
 
 if __name__ == "__main__":
   main(sys.argv)
