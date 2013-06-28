@@ -129,13 +129,15 @@ def main(argv):
   names = [i['name'] for i in gs_objects['items']]
   for name in names:
     if fnmatch.fnmatch(os.path.basename(name), glob):
+      print "{0} matced glob {1}".format(name, glob)
       matches.append(name)
-  
+
+  print '{0} items matched the glob.'.format(len(matches))
   fields = json.loads(FLAGS.schema)
   body = {
     'configuration' : {
       'load' : {
-        'sourceUris' : [gs_url.scheme + '://' + gs_bucket + '/' + n for n in names],
+        'sourceUris' : [gs_url.scheme + '://' + gs_bucket + '/' + n for n in matches],
         'schema' : {
           'fields' : fields,
          },
