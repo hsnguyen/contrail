@@ -23,6 +23,7 @@ import stat
 import sys
 
 gflags.DEFINE_string("path", None, "The path to a file or directory to upload")
+gflags.DEFINE_string("folder", None, "(Optional) the folder in google drive to insert this into.")
 gflags.DEFINE_string("name", None, "The name to assign the document. Defaults to the filename.")
 gflags.DEFINE_string("description", "", "Description for the file.")
 gflags.DEFINE_bool("convert", True, "Whether to convert the file.")
@@ -118,9 +119,27 @@ def main(argv):
     body = {
       'title': name,
       'description': FLAGS.description,
-      'mimeType': mime_type
+      'mimeType': mime_type,      
     }
 
+    if FLAGS.folder :
+      folders = os.path.split(FLAGS.folder)
+      parent = None
+      for i, folder in enumerate(folders):
+        query = 'mimeType = "application/vnd.google-apps.folder" and title = "{0}"'.format(folder)
+        if parent:
+          query += ' and "{0}" in parents'.format(parent)
+        files = drive_service.files().list(q=query).execute()
+        if not 'items' in files:
+          raise Exception('Could not locate folder: ' + folder)
+        if len(files['items']) > 1:
+          raise Exception('More than one folder named: ' + folder + ' need to handle this')
+        parent = files['items'][0]['id']
+        
+        body['parents'] = [{'id' : parent}]
+    for f in files['items']:
+      print f
+      
     file = drive_service.files().insert(body=body, media_body=media_body, convert=FLAGS.convert).execute()
     pprint.pprint(file)
 
