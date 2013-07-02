@@ -232,7 +232,7 @@ public class JoinKmerCounts extends MRStage {
     Pair<CharSequence, PhaseCounts> mapOutputPair =
         new Pair<CharSequence, PhaseCounts>("", new PhaseCounts());
     Schema schema = mapOutputPair.getSchema();
-    System.out.println("Schema:" + schema.toString());
+
     AvroJob.setMapOutputSchema(conf, mapOutputPair.getSchema());
     AvroJob.setMapperClass(conf, Mapper.class);
 
