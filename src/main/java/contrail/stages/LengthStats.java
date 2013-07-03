@@ -59,6 +59,7 @@ import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
 import contrail.graph.LengthStatsData;
 import contrail.sequences.DNAStrand;
+import contrail.util.BigQuerySchema;
 
 /**
  * Group contigs by length and compute some basic statistics for
@@ -286,6 +287,14 @@ public class LengthStats extends MRStage {
     conf.setOutputFormat(TextOutputFormat.class);
     conf.setOutputKeyClass(Text.class);
     conf.setOutputValueClass(NullWritable.class);
+  }
+
+  @Override
+  protected void postRunHook() {
+    BigQuerySchema schema = BigQuerySchema.fromAvroSchema(
+        new LengthStatsData().getSchema());
+
+    sLogger.info("Schema(Json):\n" + schema.toJson());
   }
 
   public static void main(String[] args) throws Exception {

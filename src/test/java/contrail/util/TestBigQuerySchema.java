@@ -15,6 +15,8 @@ package contrail.util;
 
 import org.junit.Test;
 
+import contrail.graph.LengthStatsData;
+
 public class TestBigQuerySchema {
   @Test
   public void toJsonTest() {
@@ -26,6 +28,16 @@ public class TestBigQuerySchema {
 
     String json = schema.toJson();
 
+    System.out.println(json);
+  }
+
+  @Test
+  public void fromAvroSchema() {
+    LengthStatsData statsData = new LengthStatsData();
+    BigQuerySchema schema = BigQuerySchema.fromAvroSchema(
+        statsData.getSchema());
+
+    String json = schema.toJson();
     System.out.println(json);
   }
 }
