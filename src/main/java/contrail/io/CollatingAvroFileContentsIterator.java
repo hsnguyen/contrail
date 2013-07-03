@@ -1,3 +1,17 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+// Author: Jeremy Lewi (jeremy@lewi.us)
 package contrail.io;
 
 import java.io.IOException;
@@ -8,6 +22,7 @@ import java.util.List;
 
 import org.apache.avro.file.DataFileStream;
 import org.apache.avro.specific.SpecificDatumReader;
+import org.apache.commons.collections.iterators.CollatingIterator;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileStatus;
@@ -24,7 +39,7 @@ import contrail.util.ContrailLogger;
  * in order to return the items in sorted order across all files.
  * @param <T>: The record type for the records we are iterating over.
  */
-public class SortedAvroFileContentsIterator<T>
+public class CollatingAvroFileContentsIterator<T>
     implements Iterator<T>, Iterable<T> {
   private static final ContrailLogger sLogger =
       ContrailLogger.getLogger(AvroFileContentsIterator.class);
@@ -36,65 +51,9 @@ public class SortedAvroFileContentsIterator<T>
 
   ArrayList<FSDataInputStream> streams;
 
-  /**
-   * A utility class which allows us to sort the various streams based
-   * on the id of the element. We use this class to do a merge sort of
-   * the various input files as we iterate over the data.
-   */
-  private static class SortedIterator<T> implements Comparable<SortedIterator<T>> {
-    private final Iterator<T> stream;
-    org.apache.commons.collections.iterators.CollatingIterator
-    private T next;
+  private final CollatingIterator iterator;
 
-    // Keep track of the last item so we can verify that this file
-    // is indeed sorted.
-    private T last;
-
-    // Comparator for the records.
-    private final Comparator comparator;
-    public SortedStream(Iterator<T> recordStream, Comparator<T> comparator) {
-      stream = fileStream;
-      next = null;
-      last = null;
-      this.comparator= comparator;
-      if (stream.hasNext()) {
-        next = stream.next();
-      }
-    }
-
-    public T getData() {
-      return next;
-    }
-
-    public boolean hasNext() {
-      return stream.hasNext();
-    }
-
-    public T next() {
-      last = next;
-      next = stream.next();
-
-      // Make sure we are sorted.
-      if (last != null) {
-        if (comparator.compare(last, next) > 0 ) {
-          sLogger.fatal(
-              "The contents of the stream weren't sorted. The item: " +
-              last.toString() + " is considered to be greater than the item: " +
-              next.toString() + " using the current comparator.");
-        }
-      }
-      return next;
-    }
-
-    /**
-     * Sort the items in ascending order.
-     */
-    @Override
-    public int compareTo(SortedStream<T> other) {
-      return comparator.compare(this.getData(), other.getData());
-    }
-  }
-
+  private final Comparator<T> comparator;
   /**
    * Construct the iterator.
    * @param files: List of files to iterate over. These can either be on the
@@ -102,26 +61,25 @@ public class SortedAvroFileContentsIterator<T>
    * @param conf: The configuration used to resolve file paths and construct
    *   the filesystem.
    */
-  public AvroFileContentsIterator (List<String> files, Configuration conf) {
+  public CollatingAvroFileContentsIterator (
+      List<String> files, Configuration conf, Comparator<T> comparator) {
     this.files = files;
     this.conf = conf;
-    fileIterator = this.files.iterator();
 
-    if (!files.isEmpty()) {
-      currentIterator = openFile(fileIterator.next());
-      hasMoreRecords = null;
-    } else {
-      currentIterator = new ArrayList<T>().iterator();
-      hasMoreRecords = false;
+    iterator = new CollatingIterator(comparator);
+
+    for (String file : files) {
+      iterator.addIterator(openFile(file));
     }
+    this.comparator = comparator;
   }
 
   /**
    * Create the iterator from a glob expression matching the files to use.
    * @return
    */
-  public static <T> AvroFileContentsIterator<T> fromGlob(
-      Configuration conf, String glob) {
+  public static <T> CollatingAvroFileContentsIterator<T> fromGlob(
+      String glob, Configuration conf, Comparator<T> comparator) {
     // TODO(jeremy@lewi.us): We should check if the input path is a directory
     // and if it is we should use its contents.
     Path inputPath = new Path(glob);
@@ -146,39 +104,17 @@ public class SortedAvroFileContentsIterator<T>
       inputFiles.add(status.getPath().toString());
     }
 
-    return new AvroFileContentsIterator<T>(inputFiles, conf);
+    return new CollatingAvroFileContentsIterator<T>(inputFiles, conf, comparator);
   }
 
   @Override
   public boolean hasNext() {
-    if (hasMoreRecords == null) {
-      // Need to recompute whether there are more records.
-      if (currentIterator.hasNext()) {
-        hasMoreRecords = true;
-        return hasMoreRecords;
-      }
-      // Loop over the remaining files until we either find a file with
-      // records to process or we run out of records to process.
-      while (fileIterator.hasNext()) {
-        currentIterator = openFile(fileIterator.next());
-        if (currentIterator.hasNext()) {
-          hasMoreRecords = true;
-          return hasMoreRecords;
-        }
-      }
-
-      // If we reached this point then there are no more records.
-      hasMoreRecords = false;
-    }
-
-    return hasMoreRecords;
+    return iterator.hasNext();
   }
 
   @Override
   public T next() {
-    // Reset hasMoreRecords so that it will be recomputed.
-    hasMoreRecords = null;
-    return currentIterator.next();
+    return (T) iterator.next();
   }
 
   /**
@@ -215,6 +151,6 @@ public class SortedAvroFileContentsIterator<T>
 
   @Override
   public Iterator<T> iterator() {
-    return new AvroFileContentsIterator<T>(files, conf);
+    return new CollatingAvroFileContentsIterator<T>(files, conf, comparator);
   }
 }

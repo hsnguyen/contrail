@@ -19,7 +19,7 @@ import org.junit.Test;
 
 import contrail.io.AvroFileContentsIterator;
 
-public class TestAvroFileContentsIterator {
+public class TestCollatingAvroFileContentsIterator {
   /**
    * Write data to a set of files. Each file contains part of the data.
    *
