@@ -34,10 +34,10 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
+import contrail.graph.GraphNodeData;
 import contrail.stages.ContrailParameters;
 import contrail.stages.NonMRStage;
 import contrail.stages.ParameterDefinition;
-import contrail.graph.GraphNodeData;
 
 /**
  * This binary creates an indexed avro file from an avro file containing
@@ -47,7 +47,7 @@ import contrail.graph.GraphNodeData;
  * The code assumes the graph is stored in .avro files in the input directory
  * provided by inputpath.
  *
- * Note: This code requies Avro 1.7
+ * Note: This code requires Avro 1.7
  */
 public class CreateGraphIndex extends NonMRStage {
   private static final Logger sLogger =
@@ -55,6 +55,7 @@ public class CreateGraphIndex extends NonMRStage {
 
   ArrayList<FSDataInputStream> streams;
 
+  @Override
   protected Map<String, ParameterDefinition>
   createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
@@ -113,7 +114,7 @@ public class CreateGraphIndex extends NonMRStage {
    * the various input files as we write the output file.
    */
   private static class GraphStream implements Comparable<GraphStream> {
-    private DataFileStream<GraphNodeData> stream;
+    private final DataFileStream<GraphNodeData> stream;
     private GraphNodeData next;
 
     public GraphStream(DataFileStream<GraphNodeData> fileStream) {

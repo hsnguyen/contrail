@@ -1,21 +1,8 @@
-/**
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-// Author: Jeremy Lewi (jeremy@lewi.us)
 package contrail.io;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 
@@ -30,20 +17,15 @@ import org.apache.hadoop.fs.Path;
 import contrail.util.ContrailLogger;
 
 /**
- * This class iterates over the contents in a series of avro files.
+ * This class iterates over the contents in a series of sorted avro files.
  *
- * This class provides a unified view of all the records stored in a set of
- * avro files. The iterator iterates over all the items in the first file,
- * then all the items in the second file and so on until all items have been
- * returned.
- *
- * TODO(jeremy@lewi.us): We can probably just use
- * org.apache.commons.iterators.IteratorChain
- *
- * TODO(jeremy@lewi.us): Add a close method.
+ * Within each file the records should be sorted according to the comparator.
+ * The iterator iterates over the files effectively performing a merge sort
+ * in order to return the items in sorted order across all files.
  * @param <T>: The record type for the records we are iterating over.
  */
-public class AvroFileContentsIterator<T> implements Iterator<T>, Iterable<T> {
+public class SortedAvroFileContentsIterator<T>
+    implements Iterator<T>, Iterable<T> {
   private static final ContrailLogger sLogger =
       ContrailLogger.getLogger(AvroFileContentsIterator.class);
 
@@ -52,14 +34,66 @@ public class AvroFileContentsIterator<T> implements Iterator<T>, Iterable<T> {
   // The list of files.
   private final List<String> files;
 
-  // The iterator for the current file.
-  private Iterator<T> currentIterator;
+  ArrayList<FSDataInputStream> streams;
 
-  // Iterator over the files.
-  private final Iterator<String> fileIterator;
+  /**
+   * A utility class which allows us to sort the various streams based
+   * on the id of the element. We use this class to do a merge sort of
+   * the various input files as we iterate over the data.
+   */
+  private static class SortedIterator<T> implements Comparable<SortedIterator<T>> {
+    private final Iterator<T> stream;
+    org.apache.commons.collections.iterators.CollatingIterator
+    private T next;
 
-  // Keep track of whether we have more values.
-  private Boolean hasMoreRecords;
+    // Keep track of the last item so we can verify that this file
+    // is indeed sorted.
+    private T last;
+
+    // Comparator for the records.
+    private final Comparator comparator;
+    public SortedStream(Iterator<T> recordStream, Comparator<T> comparator) {
+      stream = fileStream;
+      next = null;
+      last = null;
+      this.comparator= comparator;
+      if (stream.hasNext()) {
+        next = stream.next();
+      }
+    }
+
+    public T getData() {
+      return next;
+    }
+
+    public boolean hasNext() {
+      return stream.hasNext();
+    }
+
+    public T next() {
+      last = next;
+      next = stream.next();
+
+      // Make sure we are sorted.
+      if (last != null) {
+        if (comparator.compare(last, next) > 0 ) {
+          sLogger.fatal(
+              "The contents of the stream weren't sorted. The item: " +
+              last.toString() + " is considered to be greater than the item: " +
+              next.toString() + " using the current comparator.");
+        }
+      }
+      return next;
+    }
+
+    /**
+     * Sort the items in ascending order.
+     */
+    @Override
+    public int compareTo(SortedStream<T> other) {
+      return comparator.compare(this.getData(), other.getData());
+    }
+  }
 
   /**
    * Construct the iterator.

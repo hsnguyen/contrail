@@ -46,7 +46,7 @@ import contrail.stages.ParameterDefinition;
  * The code assumes the reads are stored in .avro files in the input directory
  * provided by inputpath.
  *
- * Note: This code requies Avro 1.7
+ * Note: This code requires Avro 1.7
  */
 public class CreateReadsIndex extends NonMRStage {
   private static final Logger sLogger =
@@ -54,6 +54,7 @@ public class CreateReadsIndex extends NonMRStage {
 
   ArrayList<FSDataInputStream> streams;
 
+  @Override
   protected Map<String, ParameterDefinition>
   createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
@@ -112,7 +113,7 @@ public class CreateReadsIndex extends NonMRStage {
    * the various input files as we write the output file.
    */
   private static class RecordStream implements Comparable<RecordStream> {
-    private DataFileStream<FastQRecord> stream;
+    private final DataFileStream<FastQRecord> stream;
     private FastQRecord next;
 
     public RecordStream(DataFileStream<FastQRecord> fileStream) {
