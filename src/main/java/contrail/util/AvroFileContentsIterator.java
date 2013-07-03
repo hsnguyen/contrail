@@ -36,7 +36,8 @@ import org.apache.hadoop.fs.Path;
  * returned.
  *
  * TODO(jeremy@lewi.us): Add a close method.
- *
+ * TODO(jeremy@lewi.us): What's the difference between this and
+ * contrail.io.AvroFilesIterator?
  * @param <T>: The record type for the records we are iterating over.
  */
 public class AvroFileContentsIterator<T> implements Iterator<T>, Iterable<T> {

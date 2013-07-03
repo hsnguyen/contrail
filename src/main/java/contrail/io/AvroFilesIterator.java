@@ -29,12 +29,15 @@ import org.apache.hadoop.fs.Path;
 /**
  * AvroFilesIterator provides an iterator for iterating over all the data
  * in a set of avro files.
+ *
+ * TODO(jeremy@lewi.us): What's the difference between this and
+ * contrail.util.AvroFileContentsIterator?
  */
 public class AvroFilesIterator<T> implements Iterator<T>, Iterable<T> {
-  private ArrayList<Path> files;
-  private Configuration conf;
+  private final ArrayList<Path> files;
+  private final Configuration conf;
 
-  private Iterator<Path> fileIterator;
+  private final Iterator<Path> fileIterator;
   private Iterator<T> dataIterator;
   private boolean hasNextData;
   private FSDataInputStream inStream;
