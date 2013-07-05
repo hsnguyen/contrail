@@ -7,6 +7,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.Random;
 
 import org.apache.avro.specific.SpecificData;
@@ -102,6 +103,9 @@ public class TestLengthStats {
     String outputDir = FilenameUtils.concat(tempDir.getPath(), "outputpath");
     SimpleGraphBuilder builder = new SimpleGraphBuilder();
     builder.addKMersForString("AAACTTAAACTTGTC", 3);
+    builder.addKMersForString("ACTTCGG", 4);
+    String sequence10 = "ACTACCTCCGATGGGCCCTT";
+    builder.addKMersForString(sequence10, 10);
 
     GraphUtil.writeGraphToFile(
         new File(FilenameUtils.concat(inputDir, "graph.avro")),
@@ -124,9 +128,19 @@ public class TestLengthStats {
           new LengthStatsData().getSchema(), outIterator.next()));
     }
 
-    assertEquals(1, nodes.size());
+    assertEquals(3, nodes.size());
     LengthStatsData node = nodes.get(0);
-    assertEquals(3, node.getLength().intValue());
-    assertEquals(8, node.getCount().intValue());
+    assertEquals(10, node.getLength().intValue());
+    assertEquals(sequence10.length() - 10 + 1, node.getCount().intValue());
+
+    // Check that the output is sorted in decreasing order with respect to
+    // legnth.
+    Iterator<LengthStatsData> iter = nodes.iterator();
+    LengthStatsData last = iter.next();
+    while (iter.hasNext()) {
+      LengthStatsData current = iter.next();
+      assertTrue(last.getLength() > current.getLength());
+      last = current;
+    }
   }
 }

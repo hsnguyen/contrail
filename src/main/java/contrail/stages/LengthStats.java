@@ -47,7 +47,8 @@ import contrail.sequences.DNAStrand;
 
 /**
  * Group contigs by length and compute some basic statistics for
- * the contigs at each length.
+ * the contigs at each length. The output is sorted in decreasing order
+ * of length.
  *
  */
 public class LengthStats extends MRStage {
@@ -143,7 +144,6 @@ public class LengthStats extends MRStage {
           DNAStrand.REVERSE, EdgeDirection.OUTGOING).size();
       double cov   = node.getCoverage();
 
-
       graphStats.setCount(1L);
       graphStats.setLength(len);
       graphStats.setCoverageMean(cov);
@@ -155,9 +155,9 @@ public class LengthStats extends MRStage {
       graphStats.setDegreeMax(degree);
       graphStats.setDegreeMin(degree);
 
-      // The output key is the negative of the bin index so that we
-      // sort the bins in descending order.
-      outPair.key(len);
+      // The output key is the negative of the length because we want
+      // the output to be sorted in decreasing order with respect to length.
+      outPair.key(-1 * len);
       collector.collect(outPair);
     }
   }
