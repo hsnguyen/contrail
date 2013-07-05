@@ -15,7 +15,6 @@
 
 package contrail.stages;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -24,42 +23,27 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.avro.Schema;
-import org.apache.avro.generic.GenericDatumWriter;
-import org.apache.avro.io.DatumWriter;
-import org.apache.avro.io.EncoderFactory;
-import org.apache.avro.io.JsonEncoder;
 import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroJob;
-import org.apache.avro.mapred.AvroKey;
 import org.apache.avro.mapred.AvroMapper;
+import org.apache.avro.mapred.AvroReducer;
 import org.apache.avro.mapred.AvroValue;
 import org.apache.avro.mapred.Pair;
 import org.apache.avro.specific.SpecificData;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.NullWritable;
-import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.FileOutputFormat;
 import org.apache.hadoop.mapred.JobConf;
-import org.apache.hadoop.mapred.MapReduceBase;
-import org.apache.hadoop.mapred.OutputCollector;
-import org.apache.hadoop.mapred.Reducer;
 import org.apache.hadoop.mapred.Reporter;
-import org.apache.hadoop.mapred.TextOutputFormat;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
-import org.codehaus.jackson.JsonFactory;
-import org.codehaus.jackson.JsonGenerator;
-import org.codehaus.jackson.map.ObjectMapper;
 
 import contrail.graph.EdgeDirection;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
 import contrail.graph.LengthStatsData;
 import contrail.sequences.DNAStrand;
-import contrail.util.BigQuerySchema;
 
 /**
  * Group contigs by length and compute some basic statistics for
@@ -135,21 +119,21 @@ public class LengthStats extends MRStage {
   }
 
   protected static class StatsMapper extends
-      AvroMapper<GraphNodeData, Pair<Integer, LengthStatsData>> {
+      AvroMapper<GraphNodeData, Pair<Long, LengthStatsData>> {
     private LengthStatsData graphStats;
     private GraphNode node;
-    Pair<Integer, LengthStatsData> outPair;
+    Pair<Long, LengthStatsData> outPair;
 
     @Override
     public void configure(JobConf job) {
       graphStats = new LengthStatsData();
       node = new GraphNode();
-      outPair = new Pair<Integer, LengthStatsData>(-1, graphStats);
+      outPair = new Pair<Long, LengthStatsData>(-1L, graphStats);
     }
 
     @Override
     public void map(GraphNodeData nodeData,
-        AvroCollector<Pair<Integer, LengthStatsData>> collector,
+        AvroCollector<Pair<Long, LengthStatsData>> collector,
         Reporter reporter) throws IOException {
       node.setData(nodeData);
       long len     = node.getSequence().size();
@@ -173,7 +157,7 @@ public class LengthStats extends MRStage {
 
       // The output key is the negative of the bin index so that we
       // sort the bins in descending order.
-      outPair.key((int) len);
+      outPair.key(len);
       collector.collect(outPair);
     }
   }
@@ -202,67 +186,35 @@ public class LengthStats extends MRStage {
     }
   }
 
-  public static class StatsReducer extends MapReduceBase
-      implements Reducer<AvroKey<Long>, AvroValue<LengthStatsData>,
-                         Text, NullWritable>  {
-
-    private Text outKey;
-    private ObjectMapper jsonMapper;
-    private Schema schema;
-    private DatumWriter<Object> writer;
-    private ByteArrayOutputStream outStream;
-    private JsonGenerator generator;
-    private JsonEncoder encoder;
+  public static class StatsCombiner extends
+      AvroReducer<Long, LengthStatsData, Pair<Long, LengthStatsData>> {
+    private Pair<Long, LengthStatsData> outPair;
 
     @Override
     public void configure(JobConf job) {
-      outKey = new Text();
-      jsonMapper = new ObjectMapper();
-
-      schema = (new LengthStatsData()).getSchema();
-
-      writer = new GenericDatumWriter<Object>(schema);
-
-      outStream = new ByteArrayOutputStream();
-      JsonFactory factory = new JsonFactory();
-      try {
-        generator = factory.createJsonGenerator(outStream);
-      } catch (IOException e) {
-        sLogger.fatal("Could not create json generator.", e);
-      }
-
-      try {
-        encoder = EncoderFactory.get().jsonEncoder(schema, generator);
-      } catch (IOException e) {
-        sLogger.fatal("Could not create avro encoder.", e);
-      }
+      outPair = new Pair<Long, LengthStatsData>(0L, new LengthStatsData());
     }
 
     @Override
-    public void close() {
-      try {
-        outStream.close();
-      } catch (IOException e) {
-        sLogger.fatal("Could not close the output stream.", e);
-      }
+    public void reduce(Long length, Iterable<LengthStatsData> values,
+        AvroCollector<Pair<Long, LengthStatsData>> collector, Reporter reporter)
+            throws IOException {
+      LengthStatsData result = combine(BASE_NAMES, values.iterator());
+      outPair.key(length);
+      outPair.value(result);
+      collector.collect(outPair);
     }
+  }
+
+  public static class StatsReducer extends
+      AvroReducer<Long, LengthStatsData, LengthStatsData> {
 
     @Override
-    public void reduce(AvroKey<Long> length,
-        Iterator<AvroValue<LengthStatsData>> values,
-        OutputCollector<Text, NullWritable> collector, Reporter reporter)
+    public void reduce(Long length, Iterable<LengthStatsData> values,
+        AvroCollector<LengthStatsData> collector, Reporter reporter)
         throws IOException {
-      GenericIterator iterator = new GenericIterator(values);
-
-      LengthStatsData result = combine(BASE_NAMES, iterator);
-
-      outStream.reset();
-      writer.write(result, encoder);
-      encoder.flush();
-      outStream.flush();
-      outKey.set(outStream.toByteArray());
-
-      collector.collect(outKey, NullWritable.get());
+      LengthStatsData result = combine(BASE_NAMES, values.iterator());
+      collector.collect(result);
     }
   }
 
@@ -275,26 +227,15 @@ public class LengthStats extends MRStage {
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
 
     Pair<Long, LengthStatsData> mapOutput =
-        new Pair<Long, LengthStatsData> (0, new LengthStatsData());
+        new Pair<Long, LengthStatsData> (0L, new LengthStatsData());
 
     AvroJob.setInputSchema(conf, new GraphNodeData().getSchema());
     AvroJob.setMapOutputSchema(conf, mapOutput.getSchema());
-    AvroJob.setOutputSchema(conf, mapOutput.value().getSchema());
+    AvroJob.setOutputSchema(conf, new LengthStatsData().getSchema());
 
     AvroJob.setMapperClass(conf, StatsMapper.class);
-
-    conf.setReducerClass(StatsReducer.class);
-    conf.setOutputFormat(TextOutputFormat.class);
-    conf.setOutputKeyClass(Text.class);
-    conf.setOutputValueClass(NullWritable.class);
-  }
-
-  @Override
-  protected void postRunHook() {
-    BigQuerySchema schema = BigQuerySchema.fromAvroSchema(
-        new LengthStatsData().getSchema());
-
-    sLogger.info("Schema(Json):\n" + schema.toJson());
+    AvroJob.setCombinerClass(conf, StatsCombiner.class);
+    AvroJob.setReducerClass(conf, StatsReducer.class);
   }
 
   public static void main(String[] args) throws Exception {

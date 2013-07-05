@@ -2,27 +2,22 @@ package contrail.stages;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Random;
 
+import org.apache.avro.specific.SpecificData;
 import org.apache.commons.io.FilenameUtils;
-import org.codehaus.jackson.JsonFactory;
-import org.codehaus.jackson.JsonNode;
-import org.codehaus.jackson.JsonParser;
-import org.codehaus.jackson.map.ObjectMapper;
+import org.apache.hadoop.conf.Configuration;
 import org.junit.Test;
 
 import contrail.graph.GraphUtil;
 import contrail.graph.LengthStatsData;
 import contrail.graph.SimpleGraphBuilder;
+import contrail.io.AvroFileContentsIterator;
 import contrail.util.FileHelper;
 
 public class TestLengthStats {
@@ -119,29 +114,19 @@ public class TestLengthStats {
     assertTrue(stage.execute());
     System.out.println("Output dir:" + outputDir);
 
-    ObjectMapper mapper = new ObjectMapper();
-    JsonFactory factory = mapper.getJsonFactory();
+    String outFile = FilenameUtils.concat(outputDir, "part-00000.avro");
 
-    ArrayList<JsonNode> nodes = new ArrayList<JsonNode>();
-    try {
-      BufferedReader reader = new BufferedReader(new FileReader(
-          FilenameUtils.concat(outputDir, "part-00000")));
-
-      String line;
-      while ((line = reader.readLine()) != null) {
-        JsonParser jp = factory.createJsonParser(line);
-        JsonNode node = mapper.readTree(jp);
-
-        nodes.add(node);
-      }
-      reader.close();
-    } catch (IOException e) {
-      fail(e.getMessage());
+    AvroFileContentsIterator<LengthStatsData> outIterator =
+        AvroFileContentsIterator.fromGlob(new Configuration(), outFile);
+    ArrayList<LengthStatsData> nodes = new ArrayList<LengthStatsData>();
+    while (outIterator.hasNext()) {
+      nodes.add(SpecificData.get().deepCopy(
+          new LengthStatsData().getSchema(), outIterator.next()));
     }
 
     assertEquals(1, nodes.size());
-    JsonNode node = nodes.get(0);
-    assertEquals(3, node.get("length").getIntValue());
-    assertEquals(8, node.get("count").getIntValue());
+    LengthStatsData node = nodes.get(0);
+    assertEquals(3, node.getLength().intValue());
+    assertEquals(8, node.getCount().intValue());
   }
 }
