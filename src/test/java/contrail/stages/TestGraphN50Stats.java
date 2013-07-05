@@ -16,11 +16,7 @@ package contrail.stages;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
-import java.io.EOFException;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -29,14 +25,10 @@ import java.util.List;
 import java.util.Random;
 
 import org.apache.avro.Schema;
-import org.apache.avro.io.DecoderFactory;
-import org.apache.avro.io.JsonDecoder;
 import org.apache.avro.specific.SpecificData;
-import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.codehaus.jackson.JsonFactory;
 import org.junit.Test;
 
 import contrail.graph.GraphN50StatsData;
@@ -92,34 +84,22 @@ public class TestGraphN50Stats extends GraphN50Stats {
     Double expectedCoverage = coverageStat / numContigs;
     Double expectedDegree = degreeStat / numContigs;
 
-    assertEquals(expectedCoverage, n50Stats.getMeanCoverage());
-    assertEquals(expectedDegree, n50Stats.getMeanDegree());
+    assertEquals(expectedCoverage, n50Stats.getMeanCoverage(), .001);
+    assertEquals(expectedDegree, n50Stats.getMeanDegree(), .001);
   }
 
   protected ArrayList<GraphN50StatsData> readOutput(String outputPath) {
     ArrayList<GraphN50StatsData> results = new ArrayList<GraphN50StatsData>();
 
-    try {
-      Schema schema = new GraphN50StatsData().getSchema();
-      SpecificDatumReader<GraphN50StatsData> reader =
-          new SpecificDatumReader<GraphN50StatsData>(schema);
+    GraphN50Stats.GraphN50StatsFileReader reader =
+        new GraphN50Stats.GraphN50StatsFileReader(
+            outputPath, new Configuration());
 
-      FileInputStream inStream = new FileInputStream(outputPath);
-      JsonFactory factory = new JsonFactory();
-      JsonDecoder decoder = DecoderFactory.get().jsonDecoder(schema, inStream);
-
-      while(true) {
-        GraphN50StatsData n50Stats = reader.read(null, decoder);
-        if (n50Stats == null) {
-          break;
-        }
-        n50Stats = SpecificData.get().deepCopy(n50Stats.getSchema(), n50Stats);
-        results.add(n50Stats);
-      }
-    } catch(EOFException e) {
-      // pass.
-    } catch (IOException e) {
-      fail(e.getMessage());
+    Schema schema = new GraphN50StatsData().getSchema();
+    while (reader.hasNext()) {
+      GraphN50StatsData n50Stats =
+          SpecificData.get().deepCopy(schema, reader.next());
+      results.add(n50Stats);
     }
 
     return results;
@@ -189,31 +169,5 @@ public class TestGraphN50Stats extends GraphN50Stats {
     for (GraphN50StatsData statsData : n50Stats) {
       assertN50Stats(lengthsData, statsData);
     }
-//
-//    // Write the data to the file.
-//    Schema schema = (new GraphN50StatsData()).getSchema();
-//    DatumWriter<GraphN50StatsData> datumWriter =
-//        new SpecificDatumWriter<GraphN50StatsData>(schema);
-//    DataFileWriter<GraphN50StatsData> writer =
-//        new DataFileWriter<GraphN50StatsData>(datumWriter);
-//
-//    try {
-//      FileOutputStream outputStream = new FileOutputStream(
-//          File.createTempFile("testGraphN50Stats", "avro"));
-//
-//      writer.create(schema, outputStream);
-//
-//      JsonFactory factory = new JsonFactory();
-//      JsonGenerator jsonGenerator = factory.createJsonGenerator(outputStream);
-//      JsonEncoder encoder = EncoderFactory.get().jsonEncoder(
-//          schema, jsonGenerator);
-//
-//      computeStats(lengthsData, writer, encoder);
-//    } catch (IOException exception) {
-//      fail(
-//          "There was a problem writing the N50 stats to an avro file. " +
-//          "Exception: " + exception.getMessage());
-//    }
-//    computeStats(lengthsData, writer, encoder);
   }
 }

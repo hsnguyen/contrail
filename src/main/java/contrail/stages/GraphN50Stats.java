@@ -14,6 +14,7 @@
 // Author: Jeremy Lewi (jeremy@lewi.us)
 package contrail.stages;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Comparator;
@@ -22,10 +23,15 @@ import java.util.Iterator;
 import java.util.Map;
 
 import org.apache.avro.Schema;
+import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.io.Encoder;
 import org.apache.avro.io.EncoderFactory;
+import org.apache.avro.io.JsonDecoder;
 import org.apache.avro.io.JsonEncoder;
+import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.avro.specific.SpecificDatumWriter;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -225,6 +231,88 @@ public class GraphN50Stats extends NonMRStage {
       outStream.close();
     } catch (IOException e) {
       sLogger.fatal("IOException.", e);
+    }
+  }
+
+  /**
+   * Helper class for reading the output produced by this stage.
+   */
+  public static class GraphN50StatsFileReader implements
+      Iterable<GraphN50StatsData>, Iterator<GraphN50StatsData> {
+    private final String path;
+    private final Configuration conf;
+    private FSDataInputStream inStream;
+    private SpecificDatumReader<GraphN50StatsData> reader;
+    private GraphN50StatsData stats;
+    private JsonDecoder decoder;
+    private Boolean hasNext_;
+
+    public GraphN50StatsFileReader(String path, Configuration conf) {
+      this.path = path ;
+      this.conf = conf;
+    }
+
+    private void openFile() {
+      FileSystem fs = null;
+      try{
+        fs = new Path(path).getFileSystem(conf);
+      } catch (IOException e) {
+        throw new RuntimeException("Can't get filesystem: " + e.getMessage());
+      }
+
+      try {
+        inStream = fs.open(new Path(path));
+        Schema schema = new GraphN50StatsData().getSchema();
+        reader = new SpecificDatumReader<GraphN50StatsData>(schema);
+        decoder = DecoderFactory.get().jsonDecoder(schema, inStream);
+      } catch (IOException exception) {
+        throw new RuntimeException(
+            "There was a problem reading the file: " + path + " " +
+                "Exception:" + exception.getMessage());
+      }
+    }
+
+    @Override
+    public boolean hasNext() {
+      if (inStream == null) {
+        openFile();
+        stats = new GraphN50StatsData();
+      }
+
+      if (hasNext_ == null ) {
+        try {
+          reader.read(stats, decoder);
+          hasNext_ = true;
+        } catch(EOFException e) {
+          // No more data.
+          stats = null;
+          hasNext_ = false;
+        } catch (IOException e) {
+          throw new RuntimeException(
+              "There was a problem reading the file: " + path + " " +
+                  "Exception:" + e.getMessage());
+        }
+      }
+
+      return hasNext_;
+    }
+
+    @Override
+    public GraphN50StatsData next() {
+      hasNext_ = null;
+      return stats;
+    }
+
+    @Override
+    public void remove() {
+      // TODO Auto-generated method stub
+      throw new RuntimeException("Not supported.");
+    }
+
+    @Override
+    public Iterator<GraphN50StatsData> iterator() {
+      // TODO Auto-generated method stub
+      return new GraphN50StatsFileReader(path, conf);
     }
   }
 
