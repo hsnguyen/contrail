@@ -132,15 +132,14 @@ def main(argv):
         files = drive_service.files().list(q=query).execute()
         if not 'items' in files:
           raise Exception('Could not locate folder: ' + folder)
+        if not files['items']:
+          raise Exception('Could not locate folder: ' + folder)
         if len(files['items']) > 1:
           raise Exception('More than one folder named: ' + folder + ' need to handle this')
         parent = files['items'][0]['id']
         
-        body['parents'] = [{'id' : parent}]
-    
-    for f in files['items']:
-      print f
-      
+      body['parents'] = [{'id' : parent}]
+          
     file = drive_service.files().insert(body=body, media_body=media_body, convert=FLAGS.convert).execute()
     pprint.pprint(file)
 
