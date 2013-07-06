@@ -49,6 +49,7 @@ public class TestGraphN50Stats extends GraphN50Stats {
     // Sum up the lengths and the N50 lengths and make sure they are correct.
     long n50Total = 0L;
     long n50Count = 0L;
+    long expectedLengthTotal = 0L;
 
     // Check that when we sum the number of contigs up to the minimum
     // length we get the same value as in the n50Stats.
@@ -76,6 +77,7 @@ public class TestGraphN50Stats extends GraphN50Stats {
 
       coverageStat += stats.getCoverageMean() * stats.getCount();
       degreeStat += stats.getDegreeMean() * stats.getCount();
+      expectedLengthTotal += stats.getLength() * stats.getCount();
     }
 
     assertTrue(n50Total >= n50Stats.getLengthSum() / 2.0);
@@ -86,6 +88,7 @@ public class TestGraphN50Stats extends GraphN50Stats {
 
     assertEquals(expectedCoverage, n50Stats.getMeanCoverage(), .001);
     assertEquals(expectedDegree, n50Stats.getMeanDegree(), .001);
+    assertEquals(expectedLengthTotal, n50Stats.getLengthSum().longValue());
   }
 
   protected ArrayList<GraphN50StatsData> readOutput(String outputPath) {

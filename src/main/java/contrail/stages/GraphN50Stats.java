@@ -115,7 +115,7 @@ public class GraphN50Stats extends NonMRStage {
       Long newNumContigs = n50Stats.getNumContigs() + data.getCount();
 
       n50Stats.setLengthSum(
-          n50Stats.getLengthSum() + data.getCount() + data.getLength());
+          n50Stats.getLengthSum() + data.getCount() * data.getLength());
       n50Stats.setMeanCoverage(
           (n50Stats.getMeanCoverage() * oldNumContigs +
            data.getCoverageMean() * data.getCount()) / newNumContigs);
