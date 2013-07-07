@@ -19,27 +19,25 @@ package contrail.tools;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+
 import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroMapper;
 import org.apache.avro.mapred.AvroReducer;
 import org.apache.avro.mapred.Pair;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.FileOutputFormat;
-import org.apache.hadoop.mapred.JobClient;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.Reporter;
-import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
 import contrail.graph.GraphNodeData;
 import contrail.stages.ContrailParameters;
+import contrail.stages.MRStage;
 import contrail.stages.ParameterDefinition;
-import contrail.stages.Stage;
 
 /**
  * Selects and outputs the compressible subgraph.
@@ -55,7 +53,7 @@ import contrail.stages.Stage;
  * QuickMerge to compress all nodes in one shot. This tool is primarily
  * intended for debugging.
  */
-public class SelectCompressibleSubgraph  extends Stage {
+public class SelectCompressibleSubgraph  extends MRStage {
   private static final Logger sLogger = Logger.getLogger(
       SelectCompressibleSubgraph.class);
 
@@ -64,6 +62,7 @@ public class SelectCompressibleSubgraph  extends Stage {
     String targetTag;
     Pair<CharSequence, GraphNodeData> pair;
 
+    @Override
     public void configure(JobConf job) {
       SelectCompressibleSubgraph stage = new SelectCompressibleSubgraph();
       Map<String, ParameterDefinition> definitions =
@@ -105,6 +104,7 @@ public class SelectCompressibleSubgraph  extends Stage {
     }
   }
 
+  @Override
   protected Map<String, ParameterDefinition>
       createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
@@ -126,27 +126,14 @@ public class SelectCompressibleSubgraph  extends Stage {
   }
 
   @Override
-  public RunningJob runJob() throws Exception {
-    String[] required_args = {"inputpath", "outputpath"};
-    checkHasParametersOrDie(required_args);
-
+  public void setupConfHook() {
+    JobConf conf = (JobConf) (getConf());
     String inputPath = (String) stage_options.get("inputpath");
     String outputPath = (String) stage_options.get("outputpath");
 
     sLogger.info(" - input: "  + inputPath);
     sLogger.info(" - output: " + outputPath);
-
-    Configuration base_conf = getConf();
-    JobConf conf = null;
-    if (base_conf == null) {
-      conf = new JobConf(SelectCompressibleSubgraph.class);
-    } else {
-      conf = new JobConf(base_conf, SelectCompressibleSubgraph.class);
-    }
-    this.setConf(conf);
     conf.setJobName("SelectCompressibleSubgraph " + inputPath);
-
-    initializeJobConfiguration(conf);
 
     FileInputFormat.addInputPath(conf, new Path(inputPath));
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
@@ -165,29 +152,6 @@ public class SelectCompressibleSubgraph  extends Stage {
     // The Job could be mapper only but for convenience we typically want
     // all the nodes to be in one file.
     conf.setNumReduceTasks(1);
-
-    if (stage_options.containsKey("writeconfig")) {
-      writeJobConfig(conf);
-    } else {
-      // Delete the output directory if it exists already
-      Path out_path = new Path(outputPath);
-      if (FileSystem.get(conf).exists(out_path)) {
-        // TODO(jlewi): We should only delete an existing directory
-        // if explicitly told to do so.
-        sLogger.info("Deleting output path: " + out_path.toString() + " " +
-            "because it already exists.");
-        FileSystem.get(conf).delete(out_path, true);
-      }
-
-      long starttime = System.currentTimeMillis();
-      RunningJob result = JobClient.runJob(conf);
-      long endtime = System.currentTimeMillis();
-      float diff = (float) ((endtime - starttime) / 1000.0);
-
-      sLogger.info("Runtime: " + diff + " s");
-      return result;
-    }
-    return null;
   }
 
   public static void main(String[] args) throws Exception {
