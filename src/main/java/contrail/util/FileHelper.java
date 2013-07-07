@@ -20,7 +20,9 @@ package contrail.util;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.filefilter.WildcardFileFilter;
@@ -58,10 +60,14 @@ public class FileHelper {
    * @return
    */
   static public File createLocalTempDir() {
+    SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd-HHmmss");
+    Date date = new Date();
+    String timestamp = formatter.format(date);
+
     // TODO(jlewi): Is there a java function we could use?
     File temp = null;
     try {
-      temp = File.createTempFile("temp", Long.toString(System.nanoTime()));
+      temp = File.createTempFile("temp-" + timestamp + "-", "");
     } catch (IOException exception) {
       sLogger.fatal("Could not create temporary file.", exception);
       System.exit(-1);
