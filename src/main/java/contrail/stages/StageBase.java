@@ -22,6 +22,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.log4j.Appender;
 import org.apache.log4j.FileAppender;
@@ -45,6 +46,7 @@ abstract public class StageBase extends Stage {
    * Overload this function in your subclass to set the definitions for the
    * stage.
    */
+  @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> parameters =
         new HashMap<String, ParameterDefinition>();
@@ -53,6 +55,12 @@ abstract public class StageBase extends Stage {
     for (ParameterDefinition def: ContrailParameters.getCommon()) {
       parameters.put(def.getName(), def);
     }
+
+    ParameterDefinition stageInfoPath = new ParameterDefinition(
+        "stageinfopath", "The directory to write stage info to. Default is " +
+        "a subdirectory of the outputpath.", String.class, "");
+
+    parameters.put(stageInfoPath.getName(), stageInfoPath);
     return Collections.unmodifiableMap(parameters);
   }
 
@@ -200,6 +208,7 @@ abstract public class StageBase extends Stage {
    * @return
    * @throws Exception
    */
+  @Override
   @Deprecated
   final public RunningJob runJob() throws Exception {
     // TODO(jeremy@lewi.us): Get rid of this method as soon as we get
@@ -211,6 +220,7 @@ abstract public class StageBase extends Stage {
    * Run the stage.
    * TODO(jlewi): run is deprecated in favor of runJob();
    */
+  @Override
   @Deprecated
   final protected int run() throws Exception {
     // TODO(jeremy@lewi.us): Get rid of this method as soon as we get
@@ -248,6 +258,26 @@ abstract public class StageBase extends Stage {
       sLogger.info("Start logging");
       sLogger.info("Adding a file log appender to: " + logFile);
     }
+
+    // Setup the stageInfo writer if we haven't already.
+    if (infoWriter == null) {
+      String stageInfoPath = (String) (stage_options.get("stageinfopath"));
+      if (stageInfoPath.isEmpty()) {
+        if (stage_options.containsKey("outputpath")) {
+          String outputPath = (String) stage_options.get("outputpath");
+          stageInfoPath = FilenameUtils.concat(outputPath,  "stage_info");
+        }
+      }
+
+      if (!stageInfoPath.isEmpty()) {
+        infoWriter = new StageInfoWriter(getConf(), stageInfoPath);
+        sLogger.info("Stage info will be written to:" + stageInfoPath);
+      } else {
+        sLogger.info(
+            "No stage info will be written because no outputpath for this " +
+            "stage.");
+      }
+    }
   }
 
   /**
@@ -256,6 +286,7 @@ abstract public class StageBase extends Stage {
    * @param job
    * @return
    */
+  @Override
   @Deprecated
   final public StageInfo getStageInfo(RunningJob job) {
     // TODO(jeremy@lewi.us): Get rid of this method as soon as we get
