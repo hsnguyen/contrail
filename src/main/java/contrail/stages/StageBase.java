@@ -22,7 +22,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.cli.CommandLine;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.log4j.Appender;
 import org.apache.log4j.FileAppender;
@@ -187,6 +187,30 @@ abstract public class StageBase extends Stage {
     }
   }
 
+  @Override
+  protected void parseCommandLine(CommandLine line) {
+    HashMap<String, Object> parameters = new HashMap<String, Object>();
+
+    for (Iterator<ParameterDefinition> it =
+            getParameterDefinitions().values().iterator(); it.hasNext();) {
+      ParameterDefinition def = it.next();
+      Object value = def.parseCommandLine(line);
+      if (value != null) {
+        parameters.put(def.getName(), value);
+      }
+    }
+
+    // Set the stage options.
+    setParameters(parameters);
+    setDefaultParameters();
+    // TODO(jlewi): This is a bit of a hack. We should come up with
+    // a better way of handling functionality common to all stages.
+    if ((Boolean)stage_options.get("help")) {
+      printHelp();
+      System.exit(0);
+    }
+  }
+
   /**
    * Check whether parameters are valid.
    * Subclasses which override this method should call the base class
@@ -258,25 +282,40 @@ abstract public class StageBase extends Stage {
       sLogger.info("Start logging");
       sLogger.info("Adding a file log appender to: " + logFile);
     }
+  }
+
+  /**
+   * Setup the writer for stage information.
+   */
+  protected void setupInfoWriter() {
+    if (infoWriter != null ) {
+      // Its already setup.
+      return;
+    }
+
+    if (getConf() == null) {
+      // We require a valid hadoop configuration.
+      sLogger.fatal("Can't setup InfoWriter because configuraiton is null.");
+    }
 
     // Setup the stageInfo writer if we haven't already.
-    if (infoWriter == null) {
-      String stageInfoPath = (String) (stage_options.get("stageinfopath"));
-      if (stageInfoPath.isEmpty()) {
-        if (stage_options.containsKey("outputpath")) {
-          String outputPath = (String) stage_options.get("outputpath");
-          stageInfoPath = FilenameUtils.concat(outputPath,  "stage_info");
-        }
+    String stageInfoPath = (String) (stage_options.get("stageinfopath"));
+    if (stageInfoPath.isEmpty()) {
+      if (stage_options.containsKey("outputpath")) {
+        String outputPath = (String) stage_options.get("outputpath");
+        // We don't make stage_info a subdirectory of outputpath by default
+        // because Hadoop will complain if the output directory already exists.
+        stageInfoPath = outputPath + ".stage_info";
       }
+    }
 
-      if (!stageInfoPath.isEmpty()) {
-        infoWriter = new StageInfoWriter(getConf(), stageInfoPath);
-        sLogger.info("Stage info will be written to:" + stageInfoPath);
-      } else {
-        sLogger.info(
-            "No stage info will be written because no outputpath for this " +
-            "stage.");
-      }
+    if (!stageInfoPath.isEmpty()) {
+      infoWriter = new StageInfoWriter(getConf(), stageInfoPath);
+      sLogger.info("Stage info will be written to:" + stageInfoPath);
+    } else {
+      sLogger.info(
+          "No stage info will be written because no outputpath for this " +
+          "stage.");
     }
   }
 
