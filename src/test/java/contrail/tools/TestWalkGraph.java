@@ -1,7 +1,7 @@
 package contrail.tools;
 
-import static org.junit.Assert.fail;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -107,13 +107,7 @@ public class TestWalkGraph {
     params.put("start_nodes", testCase.nodes.keySet().iterator().next());
     stage.setParameters(params);
 
-    // Catch the following after debugging.
-    try {
-      stage.runJob();
-    } catch (Exception exception) {
-      exception.printStackTrace();
-      fail("Exception occured:" + exception.getMessage());
-    }
+    assertTrue(stage.execute());
 
     // Verify output is non empty.
     try {

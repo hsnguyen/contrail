@@ -43,15 +43,14 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
-import contrail.stages.ContrailParameters;
-import contrail.stages.ParameterDefinition;
-import contrail.stages.Stage;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
+import contrail.stages.ContrailParameters;
+import contrail.stages.NonMRStage;
+import contrail.stages.ParameterDefinition;
 
 /**
  * This class is used to walk a graph starting at some seed nodes
@@ -62,7 +61,7 @@ import contrail.graph.GraphNodeData;
  * TODO(jeremy@lewi.us): We should probably use the GraphBFSIterator
  * in this code.
  */
-public class WalkGraph extends Stage {
+public class WalkGraph extends NonMRStage {
   // TODO(jlewi): Use Indexed graph rather than implementing the methods
   // lookup and createreader.
   private static final Logger sLogger =
@@ -71,12 +70,13 @@ public class WalkGraph extends Stage {
   /**
    * Keep track of all nodes already written so we only write each node once.
    */
-  private HashSet<String> outputted;
+  private final HashSet<String> outputted;
 
   public WalkGraph() {
     outputted = new HashSet<String>();
   }
 
+  @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
         new HashMap<String, ParameterDefinition>();
@@ -342,13 +342,8 @@ public class WalkGraph extends Stage {
   }
 
   @Override
-  public RunningJob runJob() throws Exception {
-    String[] required_args = {
-        "inputpath", "outputpath", "start_nodes", "num_hops"};
-    checkHasParametersOrDie(required_args);
-
+  protected void stageMain() {
     writeSubGraph();
-    return null;
   }
 
   public static void main(String[] args) throws Exception {
