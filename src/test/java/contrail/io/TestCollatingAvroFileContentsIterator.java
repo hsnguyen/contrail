@@ -1,94 +1,94 @@
+/**
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+// Author: Jeremy Lewi (jeremy@lewi.us)
 package contrail.io;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Iterator;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 
 import org.apache.avro.Schema;
-import org.apache.avro.file.DataFileWriter;
-import org.apache.avro.io.DatumWriter;
-import org.apache.avro.specific.SpecificDatumWriter;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 import org.junit.Test;
 
-import contrail.io.AvroFileContentsIterator;
+import contrail.util.AvroFileUtil;
+import contrail.util.FileHelper;
 
 public class TestCollatingAvroFileContentsIterator {
   /**
-   * Write data to a set of files. Each file contains part of the data.
-   *
-   * This creates the input for the test.
+   * Create a file with a random set of records in sorted order.
    *
    * @param numFiles
    * @param data
    * @return
    */
-  protected List<String> writeToFiles(int numFiles, List<Integer> data) {
-    List<String> files = new ArrayList<String>();
-
-    if (data.size() % numFiles != 0) {
-      fail("Test not setup correctly. Number of items must be an integer " +
-           "multiple of the number of files");
+  protected List<Integer> writeSortedFile(String path, int size) {
+    ArrayList<Integer> data = new ArrayList<Integer>(size);
+    Random generator = new Random();
+    for (int i = 0; i < size; ++i) {
+      data.add(generator.nextInt(10000));
     }
+    Collections.sort(data);
 
-    int itemsPerFile = data.size() / numFiles;
+    Schema schema = Schema.create(Schema.Type.INT);
+    AvroFileUtil.writeRecords(
+        new Configuration(), new Path(path), data, schema);
 
-    Iterator<Integer> dataIterator = data.iterator();
+    return data;
+  }
 
-    try {
-      for (int fIndex = 0; fIndex < numFiles; ++fIndex) {
-        File temp = File.createTempFile("temp", Long.toString(System.nanoTime()));
-
-        files.add(temp.toString());
-        Schema schema = Schema.create(Schema.Type.INT);
-
-        DatumWriter<Integer> datumWriter =
-            new SpecificDatumWriter<Integer>(schema);
-        DataFileWriter<Integer> writer =
-            new DataFileWriter<Integer>(datumWriter);
-
-        writer.create(schema, temp);
-        for (int i = 0;  i < itemsPerFile; ++i) {
-          writer.append(dataIterator.next());
-        }
-        writer.close();
-      }
-
-    } catch (IOException exception) {
-      fail("Could not create temporary file. Exception:" +
-          exception.getMessage());
+  private static class SomeComparator implements Comparator<Integer> {
+    @Override
+    public int compare(Integer o1, Integer o2) {
+      return o1.compareTo(o2);
     }
-    return files;
   }
 
   @Test
   public void testItertor() {
     Random generator = new Random();
-    // Create some random numbers.
-    int numFiles = 3;
-    int itemsPerFile = 10;
-    ArrayList<Integer> expectedItems = new ArrayList<Integer>();
-    for (int i = 0; i < numFiles * itemsPerFile; ++i) {
-      expectedItems.add(generator.nextInt());
+
+    int numFiles = 10;
+    String tempDir = FileHelper.createLocalTempDir().getAbsolutePath();
+
+    ArrayList<String> files = new ArrayList<String>();
+
+    ArrayList<Integer> expected = new ArrayList<Integer>();
+    for (int i = 0; i < numFiles; i++) {
+      String path = FilenameUtils.concat(
+          tempDir, String.format("data-%02d.avro", i));
+      files.add(path);
+      List<Integer> fileData = writeSortedFile(path, generator.nextInt(100));
+      expected.addAll(fileData);
     }
 
-    List<String> files = writeToFiles(numFiles, expectedItems);
+    CollatingAvroFileContentsIterator<Integer> iterator = new
+        CollatingAvroFileContentsIterator<Integer>(
+            files, new Configuration(), new SomeComparator());
 
-    AvroFileContentsIterator<Integer> iterator =
-        new AvroFileContentsIterator<Integer>(files, new Configuration());
-
-    ArrayList<Integer> actualItems = new ArrayList<Integer>();
-
+    ArrayList<Integer> actual = new ArrayList<Integer>();
     while (iterator.hasNext()) {
-      actualItems.add(iterator.next());
+      actual.add(iterator.next());
     }
 
-    assertEquals(expectedItems, actualItems);
+    Collections.sort(expected);
+    assertEquals(expected, actual);
   }
 }
