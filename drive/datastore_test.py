@@ -47,7 +47,9 @@ CLIENT_ID = None
 CLIENT_SECRET = None
 
 # Check https://developers.google.com/drive/scopes for all available scopes
-OAUTH_SCOPE = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/datastore']
+OAUTH_SCOPE = [
+  'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/datastore',
+  'https://www.googleapis.com/auth/userinfo.email']
 
 # Redirect URI for installed apps
 REDIRECT_URI = None
@@ -125,17 +127,20 @@ def main(argv):
    "path": [
     {
      "id": "5629499534213120",
-     "kind": "test-0712-1341"
+     "kind": "kind1"
     },
    ],
   }
  ]
 }
   datasetId = 'biocloudops-app'
+  #datasetId = 'biocloudops'
+  #datasetId = r's~biocloudops-app'
   lookup = datasets.lookup(datasetId=datasetId, body=body)
   lookup.uri += "&trace=email:jlewi"
   lookup_response = lookup.execute()
   
 
 if __name__ == "__main__":
+  httplib2.debuglevel = 3
   main(sys.argv)
