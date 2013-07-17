@@ -40,7 +40,8 @@ import contrail.util.FileHelper;
  * by error correction until we have a round where the graph doesn't change.
  */
 public class CompressAndCorrect extends PipelineStage {
-  private static final Logger sLogger = Logger.getLogger(CompressChains.class);
+  private static final Logger sLogger = Logger.getLogger(
+      CompressAndCorrect.class);
   /**
    * Get the parameters used by this stage.
    */
@@ -298,7 +299,12 @@ public class CompressAndCorrect extends PipelineStage {
       throw new RuntimeException("Can't get filesystem: " + e.getMessage());
     }
     try {
-      for (FileStatus status : fs.listStatus(base)) {
+      FileStatus[] contents = fs.listStatus(base);
+      if (contents == null) {
+        // Path doesn't exist.
+        return;
+      }
+      for (FileStatus status : contents) {
         Path itemPath = status.getPath();
         String name = itemPath.getName();
         if (!name.matches("step_[0123456789]*")) {
