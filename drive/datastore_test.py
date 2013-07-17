@@ -37,7 +37,9 @@ gflags.DEFINE_string(
   "credentials", None, 
   'The path to a file storing the credentials. Defaults to a name ' 
   'based on the script.')
-gflags.DEFINE_string("client_secret", "~/.biocloudops-app.client_secrets", "The path to a file storing the secret.")
+gflags.DEFINE_string(
+  "client_secret", 
+  "~/.biocloudops-app.client_secrets", "The path to a file storing the secret.")
 
 FLAGS = gflags.FLAGS
 FLAGS.UseGnuGetOpt()
@@ -134,8 +136,6 @@ def main(argv):
  ]
 }
   datasetId = 'biocloudops-app'
-  #datasetId = 'biocloudops'
-  #datasetId = r's~biocloudops-app'
   lookup = datasets.lookup(datasetId=datasetId, body=body)
   lookup.uri += "&trace=email:jlewi"
   lookup_response = lookup.execute()
