@@ -233,6 +233,11 @@ def main(argv):
   # Strip leading characters.
   content = content.lstrip('\xef\xbb\xbf')
   lines = content.splitlines()
+  
+  # TODO(jlewi): How can the user specify environment variables
+  # to use in the names? Maybe we should just go through and gather
+  # all the lines beginning with export and add them to a temporary
+  # file. 
   for l in lines:
     l = l.strip()
     if l.startswith("#"):
