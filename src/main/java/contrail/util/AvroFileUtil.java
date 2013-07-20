@@ -14,13 +14,18 @@
 // Author: Jeremy Lewi (jeremy@lewi.us)
 package contrail.util;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 
 import org.apache.avro.Schema;
+import org.apache.avro.file.DataFileReader;
 import org.apache.avro.file.DataFileWriter;
 import org.apache.avro.generic.GenericContainer;
+import org.apache.avro.io.DatumReader;
 import org.apache.avro.io.DatumWriter;
+import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -30,6 +35,26 @@ import org.apache.hadoop.fs.Path;
 public class AvroFileUtil {
   private static final ContrailLogger sLogger =
       ContrailLogger.getLogger(AvroFileUtil.class);
+
+  /**
+   * Read all the records in a file.
+   */
+  public static <T> ArrayList<T> readRecords(String path, Schema schema) {
+    DatumReader<T> datum_reader = new SpecificDatumReader<T>(schema);
+    DataFileReader<T> reader = null;
+    try {
+      reader = new DataFileReader<T>(new File(path), datum_reader);
+    } catch(IOException e) {
+      sLogger.fatal("Could not read file", e);
+    }
+
+    ArrayList<T> output = new ArrayList<T>();
+    while(reader.hasNext()){
+      T record = reader.next();
+      output.add(record);
+    }
+    return output;
+  }
 
   /***
    * Write a collection of records to an avro file.
