@@ -266,7 +266,7 @@ public class InvokeQuake extends MRStage{
             new RuntimeException("Problem with quake"));
       }
       sLogger.info("corrected path: " + correctedFilePath.getPath());
-      correctUtil.emitFastqFileToHDFS(correctedFilePath, output);
+      correctUtil.emitQuakeFastqFileToHDFS(correctedFilePath, output);
 
       // Read the stats.
       File statsPath = new File(

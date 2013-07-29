@@ -145,6 +145,23 @@ public class CorrectUtil {
    * @throws IOException
    */
   public void emitFastqFileToHDFS(
+      File fastqFile, AvroCollector<FastQRecord> collector) throws IOException{
+    FastQRecord fastq = new FastQRecord();
+    FastQFileReader reader = new FastQFileReader(fastqFile.getAbsolutePath());
+    while(reader.hasNext()){
+      fastq = reader.next();
+      collector.collect(fastq);
+    }
+    reader.close();
+  }
+
+  /**
+   * Emits a fastQ file from local FS onto HDFS.
+   * @param fastqFile : The file to be emitted
+   * @param output : An instance of the outputCollector
+   * @throws IOException
+   */
+  public void emitQuakeFastqFileToHDFS(
       File fastqFile, AvroCollector<Read> collector) throws IOException{
     FastQRecord fastq = new FastQRecord();
     Read read = new Read();
