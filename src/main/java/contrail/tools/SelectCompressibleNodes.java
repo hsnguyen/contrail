@@ -105,7 +105,7 @@ public class SelectCompressibleNodes extends MRStage {
 
   public static void main(String[] args) throws Exception {
     int res = ToolRunner.run(
-        new Configuration(), new CompressibleNodeConverter(), args);
+        new Configuration(), new SelectCompressibleNodes(), args);
     System.exit(res);
   }
 }
