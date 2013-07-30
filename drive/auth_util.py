@@ -95,6 +95,7 @@ class OAuthHelper(object):
   def _LoadSecretsFile(self, secrets_file):
     """Load the client secrets from a json file.
     """
+    secrets_file = os.path.expanduser(secrets_file)
     # TODO(jeremy@lewi.us): Should we check that the scope of the secrets
     # files is a superset of the scopes in our credentials?
     if not secrets_file:
