@@ -1016,6 +1016,26 @@ public class GraphNode {
   }
 
   /**
+   * Returns true if the forward and reverse strands are connected.
+   *
+   * The strands are connected if we have the graph X->R(X) or R(X)->X.
+   * The graph X->X will return false. Use hasSelfCycle to detect X->X.
+   */
+  public boolean hasConnectedStrands() {
+    // We need to check both strands.
+    for (DNAStrand strand : DNAStrand.values()) {
+      Set<EdgeTerminal> terminals = getEdgeTerminalsSet(
+          strand, EdgeDirection.OUTGOING);
+      EdgeTerminal other = new EdgeTerminal(
+          getNodeId(), DNAStrandUtil.flip(strand));
+      if (terminals.contains(other)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Return an unmodifiable view of the ids of all neighbors.
    */
   public Set<String> getNeighborIds() {
