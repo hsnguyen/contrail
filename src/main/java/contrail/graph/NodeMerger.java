@@ -355,7 +355,6 @@ public class NodeMerger {
     terminals.add(new EdgeTerminal(
         node.getNodeId(), DNAStrandUtil.flip(srcStrand)));
 
-
     HashMap<String, GraphNode> nodes = new HashMap<String, GraphNode>();
     nodes.put(node.getNodeId(), node);
     MergeResult result = mergeNodes(

@@ -105,6 +105,7 @@ public class TestCompressibleAvro {
       for (EdgeTerminal terminal :
            node.getEdgeTerminals(strand, EdgeDirection.OUTGOING)){
         CompressibleMessage message = new CompressibleMessage();
+        message.setIsPalindrome(false);
         message.setFromNodeId(node.getNodeId());
         StrandsForEdge strands = StrandsUtil.form(strand, terminal.strand);
         message.setStrands(strands);
@@ -134,12 +135,13 @@ public class TestCompressibleAvro {
     HashMap<String, CompressibleMessage> expected_messages =
         new HashMap<String, CompressibleMessage>();
 
-   GraphNode node = graph.getNode(graph.findNodeIdForSequence("ATC"));
+    GraphNode node = graph.getNode(graph.findNodeIdForSequence("ATC"));
 
      // We only send a single message.
     {
       CompressibleMessage message = new CompressibleMessage();
       message.setFromNodeId(node.getNodeId());
+      message.setIsPalindrome(false);
 
       // Edge is CAT ->ATC
       // Since we only send outgoing edges the message is
@@ -184,7 +186,9 @@ public class TestCompressibleAvro {
     // sending the message. The forward and reverse strand of node CAT are
     // the same after the merge so the strand for that node could be F or R
     // depending on the implementation of NodeMerger.mergeConnectedStrands.
-    messageA.setStrands(StrandsForEdge.RR);
+    // But the mapper forces the from strand to always be forward.
+    messageA.setStrands(StrandsForEdge.FR);
+    messageA.setIsPalindrome(true);
     testData.expected_messages.put(nodeA.getNodeId(), messageA);
 
     return testData;
@@ -203,8 +207,8 @@ public class TestCompressibleAvro {
 
     // Construct the different test cases.
     ArrayList<MapTestCaseData> test_cases = new ArrayList<MapTestCaseData>();
-    //test_cases.add(constructMapLinearTestCase());
-    //test_cases.add(constructMapLinearTestBranching());
+    test_cases.add(constructMapLinearTestCase());
+    test_cases.add(constructMapLinearTestBranching());
     test_cases.add(constructMergedStrandsTest());
 
     for (MapTestCaseData case_data : test_cases) {

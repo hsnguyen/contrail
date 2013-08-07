@@ -170,15 +170,23 @@ public class CompressibleAvro extends MRStage {
           // Send a message to the neighbor telling it this node is
           // compressible.
           clearCompressibleMapOutput(map_output);
-          out_pair.key(node.getNeighborIds().iterator().next());
+          String otherId = node.getNeighborIds().iterator().next();
+          out_pair.key(otherId);
 
           message.setFromNodeId(node.getNodeId());
 
           // The strand for the from node doesn't really matter. It will
           // be up to the reducer to figure out the strand from the dest
           // node and determine what to do.
-          StrandsForEdge strands = StrandsUtil.form(
-              strand, tail.terminal.strand);
+          StrandsForEdge strands =
+              node.findStrandsForEdge(
+                  otherId, EdgeDirection.OUTGOING).iterator().next();
+
+          // Force the src strand to always be from the forward strand so its
+          // deterministic. Otherwise, it will debend on the ordering in the
+          // set returned by findStrandsForEdge.
+          strands = StrandsUtil.form(
+              DNAStrand.FORWARD, StrandsUtil.dest(strands));
           message.setIsPalindrome(true);
           message.setStrands(strands);
           map_output.setMessage(message);
