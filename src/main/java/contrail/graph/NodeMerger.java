@@ -16,6 +16,7 @@ package contrail.graph;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -319,5 +320,50 @@ public class NodeMerger {
     result.node = newNode;
     result.strand = mergedStrand;
     return result;
+  }
+
+  /**
+   * Merge a node that forms a chain with itself.
+   *
+   * If X->RC(X) the two strands of the node are connected and form a chain.
+   * The forward and reverse strands of the node are the same. So any
+   * edges to other nodes don't need to move because the sequence for both
+   * strands of the merged sequence is the same.
+   *
+   * @param node
+   * @return
+   */
+  public GraphNode mergeConnectedStrands(GraphNode node, int overlap) {
+    if (!node.hasConnectedStrands()) {
+      sLogger.fatal(
+          "Tried to merge connected strands for a node without connected " +
+          "strands.", new RuntimeException("Node's strands aren't connected."));
+    }
+
+    List<EdgeTerminal> terminals = new ArrayList<EdgeTerminal>();
+
+    DNAStrand srcStrand = null;
+    if (node.getEdgeTerminalsSet(
+            DNAStrand.FORWARD, EdgeDirection.OUTGOING).contains(
+                new EdgeTerminal(node.getNodeId(), DNAStrand.REVERSE))) {
+      srcStrand = DNAStrand.FORWARD;
+    } else {
+      srcStrand = DNAStrand.REVERSE;
+    }
+
+    terminals.add(new EdgeTerminal(node.getNodeId(), srcStrand));
+    terminals.add(new EdgeTerminal(
+        node.getNodeId(), DNAStrandUtil.flip(srcStrand)));
+
+
+    HashMap<String, GraphNode> nodes = new HashMap<String, GraphNode>();
+    nodes.put(node.getNodeId(), node);
+    MergeResult result = mergeNodes(
+        node.getNodeId(), terminals, nodes, overlap);
+
+    // TODO(jeremy@lewi.us): Should we regularize the edges? The merged
+    // node is XR(X). The forward and reverse complement sequences are the same.
+    // So should we force all edges to be to the forward strand?
+    return result.node;
   }
 }

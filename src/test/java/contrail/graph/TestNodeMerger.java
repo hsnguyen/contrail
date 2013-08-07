@@ -12,6 +12,7 @@ import java.util.Random;
 import org.junit.Before;
 import org.junit.Test;
 
+import contrail.graph.GraphNode.NodeDiff;
 import contrail.sequences.Alphabet;
 import contrail.sequences.AlphabetUtil;
 import contrail.sequences.DNAAlphabetFactory;
@@ -294,8 +295,8 @@ public class TestNodeMerger extends NodeMerger {
 
   protected static class NodesTestCase{
     // Chain of nodes to merge.
-    private ArrayList<EdgeTerminal> chain;
-    private HashMap<String, GraphNode> nodes;
+    private final ArrayList<EdgeTerminal> chain;
+    private final HashMap<String, GraphNode> nodes;
 
     // The expected merged node.
     private GraphNode expectedNode;
@@ -715,5 +716,58 @@ public class TestNodeMerger extends NodeMerger {
     MergeResult result = merger.mergeNodes("merged", chain, nodes, overlap);
 
     assertTrue(expectedNode.equals(result.node));
+  }
+
+  @Test
+  public void testConnectedStrands() {
+    // Test the graphs Y,R(Z)->X->R(X)->Z,(Y) and
+    // Y,R(Z)->R(X)->X->Z,(Y)
+    {
+      GraphNode node = new GraphNode();
+      node.setNodeId("CAT");
+      node.setSequence(new Sequence("CAT", DNAAlphabetFactory.create()));
+
+      GraphUtil.addBidirectionalEdge(
+          node, DNAStrand.FORWARD, node, DNAStrand.REVERSE);
+
+      GraphNode nodeY = new GraphNode();
+      nodeY.setNodeId("Y");
+      nodeY.setSequence(new Sequence("TCA", DNAAlphabetFactory.create()));
+
+      GraphUtil.addBidirectionalEdge(
+          nodeY, DNAStrand.FORWARD, node, DNAStrand.FORWARD);
+
+
+      GraphNode nodeZ = new GraphNode();
+      nodeZ.setNodeId("Z");
+      nodeZ.setSequence(new Sequence("TGG", DNAAlphabetFactory.create()));
+
+      GraphUtil.addBidirectionalEdge(
+          node, DNAStrand.REVERSE, nodeZ, DNAStrand.FORWARD);
+
+      GraphNode expected = new GraphNode();
+      expected.setNodeId(node.getNodeId());
+      expected.setSequence(new Sequence("CATG", DNAAlphabetFactory.create()));
+
+      // The merged graph is Y,R(Z)->[X,R(X)] -> R(Y),Z
+      GraphNode expectedY = nodeY.clone();
+      expectedY.removeNeighbor(node.getNodeId());
+      GraphUtil.addBidirectionalEdge(
+          expectedY, DNAStrand.FORWARD, expected, DNAStrand.FORWARD);
+      GraphUtil.addBidirectionalEdge(
+          expected, DNAStrand.FORWARD, expectedY, DNAStrand.REVERSE);
+
+      GraphNode expectedZ = nodeZ.clone();
+      expectedZ.removeNeighbor(node.getNodeId());
+      GraphUtil.addBidirectionalEdge(
+          expectedZ, DNAStrand.REVERSE, expected, DNAStrand.FORWARD);
+      GraphUtil.addBidirectionalEdge(
+          expected, DNAStrand.FORWARD, expectedZ, DNAStrand.FORWARD);
+
+      NodeMerger merger = new NodeMerger();
+      GraphNode merged = merger.mergeConnectedStrands(node, 2);
+      NodeDiff diff = expected.equalsWithInfo(merged);
+      assertEquals(NodeDiff.NONE, diff);
+    }
   }
 }
