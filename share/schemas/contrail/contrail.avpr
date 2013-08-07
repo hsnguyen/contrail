@@ -221,7 +221,11 @@
                 {"name": "strands",
                  "type": "contrail.sequences.StrandsForEdge",
                  "doc": ["The strands for the edge. The edge is always an ",
-                         "outgoing edge from from_node_id"]}]
+                         "outgoing edge from from_node_id"]},
+                {"name": "is_palindrome",
+                 "type": "boolean",
+                 "doc": ["The node this message is coming from is a ",
+                         "palindrome outgoing edge from from_node_id"]}]
     },
     {"name": "contrail.stages.CompressibleMapOutput",
      "type": "record",

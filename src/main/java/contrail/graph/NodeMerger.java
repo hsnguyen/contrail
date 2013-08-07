@@ -364,6 +364,7 @@ public class NodeMerger {
     // TODO(jeremy@lewi.us): Should we regularize the edges? The merged
     // node is XR(X). The forward and reverse complement sequences are the same.
     // So should we force all edges to be to the forward strand?
+    // The regularization should probably happen in NodeMerger.
     return result.node;
   }
 }

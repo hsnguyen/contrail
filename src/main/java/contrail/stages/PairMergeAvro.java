@@ -390,6 +390,9 @@ public class PairMergeAvro extends MRStage {
       // Check if the merged_node is connected to itself. isCompressible
       // can't handle this.
       if (merged_node.getNeighborIds().contains(merged_node.getNodeId())) {
+        // LEWI NO COMMIT. This isn't correct. This check erroneously captures
+        // nodes which are chains.
+        throw new RuntimeException("NEED TO FIX THIS CODE.");
         compressible_strands = CompressibleStrands.NONE;
       } else {
         compressible_strands = isCompressible(chain);

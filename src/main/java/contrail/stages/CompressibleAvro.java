@@ -40,8 +40,10 @@ import contrail.graph.EdgeDirection;
 import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
+import contrail.graph.NodeMerger;
 import contrail.graph.TailData;
 import contrail.sequences.DNAStrand;
+import contrail.sequences.DNAUtil;
 import contrail.sequences.StrandsForEdge;
 import contrail.sequences.StrandsUtil;
 import contrail.stages.GraphCounters.CounterName;
@@ -82,6 +84,7 @@ public class CompressibleAvro extends MRStage {
   /**
    * Get the parameters used by this stage.
    */
+  @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
       new HashMap<String, ParameterDefinition>();
@@ -92,6 +95,9 @@ public class CompressibleAvro extends MRStage {
       ContrailParameters.getInputOutputPathOptions()) {
       defs.put(def.getName(), def);
     }
+
+    ParameterDefinition kDef = ContrailParameters.getK();
+    defs.put(kDef.getName(), kDef);
     return Collections.unmodifiableMap(defs);
   }
 
@@ -102,15 +108,22 @@ public class CompressibleAvro extends MRStage {
     private GraphNode node = new GraphNode();
 
     // Output pair to use for the mapper.
-    private Pair<CharSequence, CompressibleMapOutput> out_pair = new
+    private final Pair<CharSequence, CompressibleMapOutput> out_pair = new
         Pair<CharSequence, CompressibleMapOutput>(MAP_OUT_SCHEMA);
 
     // Message to use; we use a static instance to avoid the cost
     // of recreating one every time we need one.
-    private CompressibleMessage message = new CompressibleMessage();
+    private final CompressibleMessage message = new CompressibleMessage();
 
+    private NodeMerger nodeMerger;
+
+    private int K;
+    @Override
     public void configure(JobConf job) {
+      nodeMerger = new NodeMerger();
       out_pair.value(new CompressibleMapOutput());
+
+      K = (Integer) ContrailParameters.getK().parseJobConf(job);
     }
 
     /**
@@ -138,30 +151,69 @@ public class CompressibleAvro extends MRStage {
       node.setData(graph_data);
       CompressibleMapOutput map_output = out_pair.value();
 
-      // We consider the outgoing edges from both strands.
-      // Recall that RC(X) -> Y  implies RC(Y) -> X.
-      for (DNAStrand strand: DNAStrand.values()) {
-        TailData tail = node.getTail(strand, EdgeDirection.OUTGOING);
+      if (node.hasConnectedStrands()) {
+        // We merge the node.
+        reporter.incrCounter(
+            "Contrail","nodes-with-connected-strands-merged", 1);
 
-        if (tail != null) {
-          // We have a tail in this direction.
-          if (tail.terminal.nodeId.equals(node.getNodeId())) {
-            // Cycle so continue.
-            continue;
-          }
+        node = nodeMerger.mergeConnectedStrands(node, K - 1);
+      }
 
-          reporter.incrCounter("Contrail", "remotemark", 1);
-
-          // Send a message to the neighbor telling it this node is compressible.
+      // Check if the forward and reverse complement of the node are the same.
+      if (DNAUtil.isPalindrome(node.getSequence())) {
+        reporter.incrCounter(
+            "Contrail","node-is-palindrome", 1);
+        // Since the sequence is a palindrome we need to consider both
+        // strands together because both strands represent the same edge.
+        // So in this case the criterion is that we have a single neighbor.
+        if (node.getNeighborIds().size() == 1) {
+          // Send a message to the neighbor telling it this node is
+          // compressible.
           clearCompressibleMapOutput(map_output);
-          out_pair.key(tail.terminal.nodeId);
+          out_pair.key(node.getNeighborIds().iterator().next());
 
           message.setFromNodeId(node.getNodeId());
+
+          // The strand for the from node doesn't really matter. It will
+          // be up to the reducer to figure out the strand from the dest
+          // node and determine what to do.
           StrandsForEdge strands = StrandsUtil.form(
               strand, tail.terminal.strand);
+          message.setIsPalindrome(true);
           message.setStrands(strands);
           map_output.setMessage(message);
           output.collect(out_pair);
+
+          reporter.incrCounter("Contrail", "remotemark-palindrome", 1);
+        }
+      } else {
+        // We consider the outgoing edges from both strands.
+        // Recall that RC(X) -> Y  implies RC(Y) -> X.
+        for (DNAStrand strand: DNAStrand.values()) {
+          TailData tail = node.getTail(strand, EdgeDirection.OUTGOING);
+
+          if (tail != null) {
+            // We have a tail in this direction.
+            if (tail.terminal.nodeId.equals(node.getNodeId())) {
+              // Cycle so continue.
+              continue;
+            }
+
+            reporter.incrCounter("Contrail", "remotemark", 1);
+
+            // Send a message to the neighbor telling it this node is
+            // compressible.
+            clearCompressibleMapOutput(map_output);
+            out_pair.key(tail.terminal.nodeId);
+
+            message.setFromNodeId(node.getNodeId());
+            message.setIsPalindrome(false);
+            StrandsForEdge strands = StrandsUtil.form(
+                strand, tail.terminal.strand);
+            message.setStrands(strands);
+            map_output.setMessage(message);
+            output.collect(out_pair);
+          }
         }
       }
 
@@ -188,12 +240,12 @@ public class CompressibleAvro extends MRStage {
     // We store the nodes sending messages in two sets, one corresponding
     // to messages to the forward strand and another corresponding to messages
     // the reverse strand.
-    private HashSet<EdgeTerminal> f_terminals = new  HashSet<EdgeTerminal>();
-    private HashSet<EdgeTerminal> r_terminals = new  HashSet<EdgeTerminal>();
+    private final HashSet<EdgeTerminal> f_terminals = new  HashSet<EdgeTerminal>();
+    private final HashSet<EdgeTerminal> r_terminals = new  HashSet<EdgeTerminal>();
 
     // The output from the reducer is a node annotated with information
     // about whether its attached to compressible nodes or not.
-    private CompressibleNodeData annotated_node =
+    private final CompressibleNodeData annotated_node =
         new CompressibleNodeData();
 
     // Clear the data in the node.

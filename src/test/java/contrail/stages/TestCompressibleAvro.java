@@ -1,6 +1,8 @@
 package contrail.stages;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
@@ -24,8 +26,11 @@ import contrail.graph.EdgeDirection;
 import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
+import contrail.graph.GraphUtil;
 import contrail.graph.SimpleGraphBuilder;
+import contrail.sequences.DNAAlphabetFactory;
 import contrail.sequences.DNAStrand;
+import contrail.sequences.Sequence;
 import contrail.sequences.StrandsForEdge;
 import contrail.sequences.StrandsUtil;
 
@@ -73,8 +78,12 @@ public class TestCompressibleAvro {
 
   // Store the data for a particular test case for the map phase.
   private static class MapTestCaseData {
+    public MapTestCaseData() {
+      expected_messages = new HashMap<String, CompressibleMessage>();
+    }
     public GraphNodeData node;
     public HashMap<String, CompressibleMessage> expected_messages;
+    public int K;
   }
 
   private MapTestCaseData constructMapLinearTestCase() {
@@ -104,6 +113,7 @@ public class TestCompressibleAvro {
     }
 
     MapTestCaseData case_data = new MapTestCaseData();
+    case_data.K = K;
     case_data.node = node.getData();
     case_data.expected_messages = expected_messages;
     return case_data;
@@ -139,9 +149,45 @@ public class TestCompressibleAvro {
     }
 
     MapTestCaseData case_data = new MapTestCaseData();
+    case_data.K = K;
     case_data.node = node.getData();
     case_data.expected_messages = expected_messages;
     return case_data;
+  }
+
+  private MapTestCaseData constructMergedStrandsTest() {
+    // Construct the following test case:
+    // A->X->R(X)->C.
+    // We want to verify that X and R(X) are merged and that the strands
+    // of the new node are marked as compressible.
+    GraphNode node = new GraphNode();
+    node.setNodeId("CAT");
+    node.setSequence(new Sequence("CAT", DNAAlphabetFactory.create()));
+
+    GraphUtil.addBidirectionalEdge(
+        node, DNAStrand.FORWARD, node, DNAStrand.REVERSE);
+
+    GraphNode nodeA = new GraphNode();
+    nodeA.setNodeId("A");
+    nodeA.setSequence(new Sequence("TCA", DNAAlphabetFactory.create()));
+
+    GraphUtil.addBidirectionalEdge(
+        nodeA, DNAStrand.FORWARD, node, DNAStrand.FORWARD);
+
+    MapTestCaseData testData = new MapTestCaseData();
+    testData.K = 3;
+    testData.node = node.getData();
+
+    CompressibleMessage messageA = new CompressibleMessage();
+    messageA.setFromNodeId(node.getNodeId());
+    // Strands are always with respect to the outgoing edge of the node
+    // sending the message. The forward and reverse strand of node CAT are
+    // the same after the merge so the strand for that node could be F or R
+    // depending on the implementation of NodeMerger.mergeConnectedStrands.
+    messageA.setStrands(StrandsForEdge.RR);
+    testData.expected_messages.put(nodeA.getNodeId(), messageA);
+
+    return testData;
   }
 
   @Test
@@ -155,16 +201,19 @@ public class TestCompressibleAvro {
     CompressibleAvro.CompressibleMapper mapper =
         new CompressibleAvro.CompressibleMapper();
 
-    JobConf job = new JobConf(CompressibleAvro.CompressibleMapper.class);
-
-    mapper.configure(job);
-
     // Construct the different test cases.
     ArrayList<MapTestCaseData> test_cases = new ArrayList<MapTestCaseData>();
-    test_cases.add(constructMapLinearTestCase());
-    test_cases.add(constructMapLinearTestBranching());
+    //test_cases.add(constructMapLinearTestCase());
+    //test_cases.add(constructMapLinearTestBranching());
+    test_cases.add(constructMergedStrandsTest());
 
     for (MapTestCaseData case_data : test_cases) {
+      JobConf job = new JobConf(CompressibleAvro.CompressibleMapper.class);
+
+      ParameterDefinition kDef = ContrailParameters.getK();
+      kDef.addToJobConf(job, case_data.K);
+      mapper.configure(job);
+
       // We need a new collector for each invocation because the
       // collector stores the outputs of the mapper.
       AvroCollectorMock<Pair<CharSequence, CompressibleMapOutput>>
@@ -195,7 +244,6 @@ public class TestCompressibleAvro {
   private void assertReduceOutput(
       ReduceTestCaseData case_data,
       AvroCollectorMock<CompressibleNodeData> collector_mock) {
-
     // Reducer should produce a single output.
     assertEquals(1, collector_mock.data.size());
 
