@@ -52,6 +52,9 @@ import contrail.stages.GraphCounters.CounterName;
  * This mapreduce stage marks nodes which can be compressed. A node
  * can be compressed if it is part of a linear chain; i.e there is a single
  * path through that node.
+ *
+ * The mapper also handles merging nodes with connected strands. For example,
+ * the node X->R(X) would be merged to form the sequence XR(X)[-1].
  */
 public class CompressibleAvro extends MRStage {
   private static final Logger sLogger = Logger.getLogger(
@@ -228,7 +231,7 @@ public class CompressibleAvro extends MRStage {
       // Output the node in the graph.
       out_pair.key(node.getNodeId());
       clearCompressibleMapOutput(map_output);
-      map_output.setNode(graph_data);
+      map_output.setNode(node.getData());
       out_pair.value(map_output);
       output.collect(out_pair);
       reporter.incrCounter("Contrail", "nodes", 1);
@@ -322,6 +325,14 @@ public class CompressibleAvro extends MRStage {
       }
 
       annotated_node.setNode(node.getData());
+
+      boolean isPalindrome = DNAUtil.isPalindrome(node.getSequence());
+      if (isPalindrome) {
+        // For a palindrome maybe we should only consider the forward strand
+        // and attribute all edges to be from the forward strand?
+        f_terminals.addAll(r_terminals);
+        r_terminals.clear();
+      }
 
       /*
        * Now check if this node is compressible.

@@ -7,6 +7,7 @@ import static org.junit.Assert.fail;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -16,7 +17,10 @@ import org.apache.avro.Schema;
 import org.apache.avro.file.DataFileWriter;
 import org.apache.avro.io.DatumWriter;
 import org.apache.avro.mapred.Pair;
+import org.apache.avro.specific.SpecificData;
 import org.apache.avro.specific.SpecificDatumWriter;
+import org.apache.commons.io.FilenameUtils;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.Reporter;
 import org.junit.Test;
@@ -25,9 +29,11 @@ import contrail.ReporterMock;
 import contrail.graph.EdgeDirection;
 import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
+import contrail.graph.GraphNode.NodeDiff;
 import contrail.graph.GraphNodeData;
 import contrail.graph.GraphUtil;
 import contrail.graph.SimpleGraphBuilder;
+import contrail.io.AvroFileContentsIterator;
 import contrail.sequences.DNAAlphabetFactory;
 import contrail.sequences.DNAStrand;
 import contrail.sequences.Sequence;
@@ -349,11 +355,11 @@ public class TestCompressibleAvro {
     }
   }
 
-  @Test
-  public void testRun() {
-    SimpleGraphBuilder builder = new SimpleGraphBuilder();
-    builder.addKMersForString("ACTGG", 3);
-
+  /**
+   * Runs the full MR stage on the inputs.
+   */
+  public HashMap<String, CompressibleNodeData> runStageTest(
+      Collection<GraphNode> nodes, int K) {
     File temp = null;
 
     try {
@@ -383,7 +389,7 @@ public class TestCompressibleAvro {
 
     try {
       writer.create(schema, avro_file);
-      for (GraphNode node: builder.getAllNodes().values()) {
+      for (GraphNode node: nodes) {
         writer.append(node.getData());
       }
       writer.close();
@@ -398,12 +404,76 @@ public class TestCompressibleAvro {
 
     String[] args =
       {"--inputpath=" + temp.toURI().toString(),
-       "--outputpath=" + output_path.toURI().toString()};
+       "--outputpath=" + output_path.toURI().toString(),
+       "--K=" + K};
 
     try {
       compressible.run(args);
     } catch (Exception exception) {
       fail("Exception occured:" + exception.getMessage());
+    }
+
+    AvroFileContentsIterator<CompressibleNodeData> outIterator =
+        AvroFileContentsIterator.fromGlob(
+            new Configuration(), FilenameUtils.concat(
+                output_path.toString(), "*avro"));
+
+    HashMap<String, CompressibleNodeData> outputs =
+        new HashMap<String, CompressibleNodeData>();
+
+    for (CompressibleNodeData data : outIterator) {
+      CompressibleNodeData copy = SpecificData.get().deepCopy(
+          data.getSchema(), data);
+      outputs.put(copy.getNode().getNodeId().toString(), copy);
+    }
+    return outputs;
+  }
+
+  @Test
+  public void testRun() {
+    SimpleGraphBuilder builder = new SimpleGraphBuilder();
+    builder.addKMersForString("ACTGG", 3);
+
+    runStageTest(builder.getAllNodes().values(), 3);
+  }
+
+  @Test
+  public void testMergedStrands() {
+    SimpleGraphBuilder builder = new SimpleGraphBuilder();
+    // We construct the graph: TCA->CAT->ATG
+    // This is a special case because CAT = R(ATG) so the two strands
+    // of this node are connected. Furthermore, the result of merging CAT->ATG
+    // is CATG is a plaindrome.
+    builder.addKMersForString("TCATG", 3);
+
+    HashMap<String, CompressibleNodeData> outputs =
+        runStageTest(builder.getAllNodes().values(), 3);
+
+    GraphNode expectedATG = new GraphNode();
+    expectedATG.setNodeId("ATG");
+    expectedATG.setSequence(new Sequence("CATG", DNAAlphabetFactory.create()));
+
+    GraphNode expectedTCA = new GraphNode();
+    expectedTCA.setNodeId("TCA");
+    expectedTCA.setSequence(new Sequence("TCA", DNAAlphabetFactory.create()));
+
+    GraphUtil.addBidirectionalEdge(
+        expectedTCA, DNAStrand.FORWARD, expectedATG, DNAStrand.FORWARD);
+
+    {
+      CompressibleNodeData actual = outputs.get("ATG");
+      // The node is a palindrome so by convention we only mark the forward
+      // strand as compressible.
+      assertEquals(CompressibleStrands.FORWARD, actual.getCompressibleStrands());
+      GraphNode actualNode = new GraphNode(actual.getNode());
+      NodeDiff nodeDiff = expectedATG.equalsWithInfo(actualNode);
+      assertEquals(NodeDiff.NONE, nodeDiff);
+    }
+
+    {
+      CompressibleNodeData actual = outputs.get("TCA");
+      assertEquals(CompressibleStrands.FORWARD, actual.getCompressibleStrands());
+      assertEquals(expectedTCA, new GraphNode(actual.getNode()));
     }
   }
 }
