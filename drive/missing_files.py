@@ -65,13 +65,22 @@ class FileInfo(object):
   
 class GCFileInfo(object):
   info = None
-  
+  _path = None
+
   def __init__(self, info):
     self.info = info
 
   @property
   def path(self):
-    return self.info['item']
+    if not self._path:
+      p = self.info['name']
+      # Add a leading slash to be consistent with
+      # HDFS paths.
+      if not p[0] == '/':
+        p = '/' + p
+      self._path = p
+
+    return self._path
   
   @property
   def size(self):
@@ -86,14 +95,17 @@ def ListHDFS():
   command = []
   command.extend(FLAGS.ls_command)
   command.append(FLAGS.inputpath)
-  
+
+  print "List HDFS files. Command:" + " ".join(command)   
   proc = subprocess.Popen(command, stdout=subprocess.PIPE)
-  retcode = proc.wait()
-  
+  stdout, stderr = proc.communicate()
+  retcode = proc.poll()
+  print "Command completed. Exit code: %d" % retcode
+
   if retcode != 0:
     raise Exception(
       "Command:%s failed with exit code %d" % " ".join(command), retcode)
-  stdout, stderr = proc.communicate()
+  
   
   lines = stdout.splitlines()
   
@@ -112,6 +124,7 @@ def ListHDFS():
     
     files.append(FileInfo(path, size))
   
+  print "Number of HDFS items: %d" % len(files)
   files = dict([(f.path, f) for f in files])
   return files
 
@@ -143,8 +156,10 @@ def ListGCS():
   if 'items' not in response:
     raise Exception('No files found in:' + FLAGS.outputpath)
   
-  gcs_items = dict([(item['name'], GCFileInfo(item)) 
-                    for item in response['items']])  
+  gcs_items = {}
+  for i in response['items']:
+    gitem = GCFileInfo(i)
+    gcs_items[gitem.path] = gitem
 
   return gcs_items
 
@@ -175,7 +190,7 @@ def main(argv):
       missing_items.append(hitem)
       continue
     
-    gitem = gcs_items_items[hitem.path]
+    gitem = gcs_items[hitem.path]
     if gitem.size != hitem.size:
       invalid_size.append(hitem)
       
