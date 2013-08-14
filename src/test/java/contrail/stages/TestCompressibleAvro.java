@@ -7,6 +7,7 @@ import static org.junit.Assert.fail;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -31,6 +32,7 @@ import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNode.NodeDiff;
 import contrail.graph.GraphNodeData;
+import contrail.graph.GraphTestUtil;
 import contrail.graph.GraphUtil;
 import contrail.graph.SimpleGraphBuilder;
 import contrail.io.AvroFileContentsIterator;
@@ -439,34 +441,33 @@ public class TestCompressibleAvro {
 
   @Test
   public void testMergedStrands() {
-    SimpleGraphBuilder builder = new SimpleGraphBuilder();
     // We construct the graph: TCA->CAT->ATG
     // This is a special case because CAT = R(ATG) so the two strands
     // of this node are connected. Furthermore, the result of merging CAT->ATG
     // is CATG is a plaindrome.
-    builder.addKMersForString("TCATG", 3);
+    GraphNode nodeTCA = GraphTestUtil.createNode("TCA", "TCA");
+    GraphNode nodeCAT = GraphTestUtil.createNode("CAT", "CAT");
+    GraphUtil.addBidirectionalEdge(
+        nodeTCA, DNAStrand.FORWARD, nodeCAT, DNAStrand.FORWARD);
+    GraphUtil.addBidirectionalEdge(
+        nodeCAT, DNAStrand.FORWARD, nodeCAT, DNAStrand.REVERSE);
 
     HashMap<String, CompressibleNodeData> outputs =
-        runStageTest(builder.getAllNodes().values(), 3);
+        runStageTest(Arrays.asList(nodeTCA, nodeCAT), 3);
 
-    GraphNode expectedATG = new GraphNode();
-    expectedATG.setNodeId("ATG");
-    expectedATG.setSequence(new Sequence("CATG", DNAAlphabetFactory.create()));
-
-    GraphNode expectedTCA = new GraphNode();
-    expectedTCA.setNodeId("TCA");
-    expectedTCA.setSequence(new Sequence("TCA", DNAAlphabetFactory.create()));
+    GraphNode expectedCAT = GraphTestUtil.createNode("CAT", "CATG");
+    GraphNode expectedTCA = GraphTestUtil.createNode("TCA", "TCA");
 
     GraphUtil.addBidirectionalEdge(
-        expectedTCA, DNAStrand.FORWARD, expectedATG, DNAStrand.FORWARD);
+        expectedTCA, DNAStrand.FORWARD, expectedCAT, DNAStrand.FORWARD);
 
     {
-      CompressibleNodeData actual = outputs.get("ATG");
+      CompressibleNodeData actual = outputs.get("CAT");
       // The node is a palindrome so by convention we only mark the forward
       // strand as compressible.
       assertEquals(CompressibleStrands.FORWARD, actual.getCompressibleStrands());
       GraphNode actualNode = new GraphNode(actual.getNode());
-      NodeDiff nodeDiff = expectedATG.equalsWithInfo(actualNode);
+      NodeDiff nodeDiff = expectedCAT.equalsWithInfo(actualNode);
       assertEquals(NodeDiff.NONE, nodeDiff);
     }
 
