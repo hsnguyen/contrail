@@ -560,8 +560,6 @@ public class TestNodeMerger extends NodeMerger {
       // Get the nodes for the merge.
       EdgeTerminal srcTerminal = graph.findEdgeTerminalForSequence("GGC");
       EdgeTerminal destTerminal = graph.findEdgeTerminalForSequence("GCC");
-      //GraphNode srcNode = graph.getNode(srcTerminal.nodeId);
-      //GraphNode destNode = graph.getNode(destTerminal.nodeId);
 
       ArrayList<EdgeTerminal> chain = new ArrayList<EdgeTerminal>();
       chain.add(srcTerminal);
@@ -720,12 +718,13 @@ public class TestNodeMerger extends NodeMerger {
 
   @Test
   public void testConnectedStrands() {
-    // Test the graphs Y,R(Z)->X->R(X)->Z,(Y) and
-    // Y,R(Z)->R(X)->X->Z,(Y)
+    // This test is slightly different from mergeNodeWithRC because
+    // we are testing NodeMerger.mergeConnectedSrands.
+    // Suppose we have the graph Y->X->R(X)->Z
+    // and we call mergeConnectedStrands on X, we want to verify this produces
+    // the correct result.
     {
-      GraphNode node = new GraphNode();
-      node.setNodeId("CAT");
-      node.setSequence(new Sequence("CAT", DNAAlphabetFactory.create()));
+      GraphNode node = GraphTestUtil.createNode("CAT", "CAT");
 
       GraphUtil.addBidirectionalEdge(
           node, DNAStrand.FORWARD, node, DNAStrand.REVERSE);
@@ -737,11 +736,7 @@ public class TestNodeMerger extends NodeMerger {
       GraphUtil.addBidirectionalEdge(
           nodeY, DNAStrand.FORWARD, node, DNAStrand.FORWARD);
 
-
-      GraphNode nodeZ = new GraphNode();
-      nodeZ.setNodeId("Z");
-      nodeZ.setSequence(new Sequence("TGG", DNAAlphabetFactory.create()));
-
+      GraphNode nodeZ = GraphTestUtil.createNode("Z", "TGG");
       GraphUtil.addBidirectionalEdge(
           node, DNAStrand.REVERSE, nodeZ, DNAStrand.FORWARD);
 
@@ -750,19 +745,23 @@ public class TestNodeMerger extends NodeMerger {
       expected.setSequence(new Sequence("CATG", DNAAlphabetFactory.create()));
 
       // The merged graph is Y,R(Z)->[X,R(X)] -> R(Y),Z
+      // When we merge the nodes X and R(X) we want to preserve the incoming
+      // edge to X and the outgoing edge to R(X). However, these incoming
+      // outgoing edges should only be represented once in the merged node
+      // as [X, R(X)] ->R(Y), Z.
+      // These edges could be attached to either strand of [X, RC(X)] since
+      // its a palindrome but the way NodeMerger works they will be attached
+      // to the reverse strand.
       GraphNode expectedY = nodeY.clone();
       expectedY.removeNeighbor(node.getNodeId());
+
       GraphUtil.addBidirectionalEdge(
-          expectedY, DNAStrand.FORWARD, expected, DNAStrand.FORWARD);
-      GraphUtil.addBidirectionalEdge(
-          expected, DNAStrand.FORWARD, expectedY, DNAStrand.REVERSE);
+          expected, DNAStrand.REVERSE, expectedY, DNAStrand.REVERSE);
 
       GraphNode expectedZ = nodeZ.clone();
       expectedZ.removeNeighbor(node.getNodeId());
       GraphUtil.addBidirectionalEdge(
-          expectedZ, DNAStrand.REVERSE, expected, DNAStrand.FORWARD);
-      GraphUtil.addBidirectionalEdge(
-          expected, DNAStrand.FORWARD, expectedZ, DNAStrand.FORWARD);
+          expected, DNAStrand.REVERSE, expectedZ, DNAStrand.FORWARD);
 
       NodeMerger merger = new NodeMerger();
       GraphNode merged = merger.mergeConnectedStrands(node, 2);

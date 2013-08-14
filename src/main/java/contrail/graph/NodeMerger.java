@@ -243,10 +243,13 @@ public class NodeMerger {
     newNode.setCoverage(coverage);
     newNode.setSequence(canonicalSequence);
 
+    boolean isPalindrome = DNAUtil.isPalindrome(canonicalSequence);
+
     // Reverse the reads if necessary.
     if (mergedStrand == DNAStrand.REVERSE) {
       reverseReads(allTags, mergedSequence.size());
     }
+
     // We don't want to steal a reference to allTags because allTags
     // gets reused.
     newNode.getData().getR5Tags().addAll(allTags);
@@ -272,22 +275,31 @@ public class NodeMerger {
         newNode, mergedStrand, startNode, startTerminal.strand,
         EdgeDirection.INCOMING, idsInChain);
 
-    // add the outgoing edges.
-    copyEdgesForStrand(
-        newNode, mergedStrand, endNode, endTerminal.strand,
-        EdgeDirection.OUTGOING, idsInChain);
+    // Copy the outgoing edges for the last node in the chain.
+    // We don't want to copy an edge twice. Consider the special case
+    // ->X->...->R(X).  So the incoming edges to X are the same edges
+    // as the outgoing edges for R(X). So for the forward strand we only
+    // need to copy the incoming edges. Similarly we don't need to consider
+    // the reverse complement because that yields the same sequence.
+    boolean endIsRCStart =
+        (startTerminal.nodeId.equals(endTerminal.nodeId)) &&
+        (startTerminal.strand.equals(DNAStrandUtil.flip(endTerminal.strand)));
+    if (!endIsRCStart) {
+      copyEdgesForStrand(
+          newNode, mergedStrand, endNode, endTerminal.strand,
+          EdgeDirection.OUTGOING, idsInChain);
 
-    // Now add the incoming and outgoing edges for the reverse complement.
-    DNAStrand rcStrand = DNAStrandUtil.flip(mergedStrand);
+      // Now add the incoming and outgoing edges for the reverse complement.
+      DNAStrand rcStrand = DNAStrandUtil.flip(mergedStrand);
 
-    copyEdgesForStrand(
-        newNode, rcStrand, endNode, DNAStrandUtil.flip(endTerminal.strand),
-        EdgeDirection.INCOMING, idsInChain);
+      copyEdgesForStrand(
+          newNode, rcStrand, endNode, DNAStrandUtil.flip(endTerminal.strand),
+          EdgeDirection.INCOMING, idsInChain);
 
-    // add the outgoing edges.
-    copyEdgesForStrand(
-        newNode, rcStrand, startNode, DNAStrandUtil.flip(startTerminal.strand),
-        EdgeDirection.OUTGOING, idsInChain);
+      copyEdgesForStrand(
+          newNode, rcStrand, startNode, DNAStrandUtil.flip(startTerminal.strand),
+          EdgeDirection.OUTGOING, idsInChain);
+    }
 
     // TODO(jeremy@lewi.us): We should add options which allow cycles to be
     // broken.
