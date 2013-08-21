@@ -29,7 +29,9 @@ import contrail.graph.EdgeDirection;
 import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.TailData;
+import contrail.sequences.DNAAlphabetFactory;
 import contrail.sequences.DNAStrand;
+import contrail.sequences.Sequence;
 import contrail.stages.GraphCounters.CounterName;
 
 /**
@@ -104,7 +106,7 @@ public class PairMarkAvro extends MRStage {
    */
   private static class CompressibleNode {
     private CompressibleNodeData data;
-    private GraphNode node;
+    private final GraphNode node;
 
     public CompressibleNode() {
       // data gets set with setData.
@@ -140,6 +142,7 @@ public class PairMarkAvro extends MRStage {
       return false;
     }
 
+    @Override
     public String toString() {
       if (node == null) {
         return "";
@@ -156,6 +159,7 @@ public class PairMarkAvro extends MRStage {
     // The output for the mapper.
     private Pair<CharSequence, PairMarkOutput> out_pair;
 
+    @Override
     public void configure(JobConf job) {
       compressible_node = new CompressibleNode();
 
@@ -238,20 +242,44 @@ public class PairMarkAvro extends MRStage {
       edge_update.setNewId(edge_to_compress.other_terminal.nodeId);
       edge_update.setNewStrand(edge_to_compress.other_terminal.strand);
 
-      List<EdgeTerminal> incoming_terminals =
-          compressible_node.getNode().getEdgeTerminals(
-              edge_to_compress.strand, EdgeDirection.INCOMING);
+      // Check if this node is a palindrome.
+      if (!compressible_node.getNode().isPalindrome()) {
+        edge_update.setIsPalindrome(false);
+        List<EdgeTerminal> incoming_terminals =
+            compressible_node.getNode().getEdgeTerminals(
+                edge_to_compress.strand, EdgeDirection.INCOMING);
 
-      for (EdgeTerminal terminal: incoming_terminals) {
-        if (terminal.nodeId.equals(edge_to_compress.other_terminal.nodeId)) {
-          // The incoming edge is from the terminal we are about to merge
-          // with (e.g. we have a cycle). That edge will be moved when
-          // we merge the two nodes so we don't need to to handle it now.
-          continue;
+        for (EdgeTerminal terminal: incoming_terminals) {
+          if (terminal.nodeId.equals(edge_to_compress.other_terminal.nodeId)) {
+            // The incoming edge is from the terminal we are about to merge
+            // with (e.g. we have a cycle). That edge will be moved when
+            // we merge the two nodes so we don't need to to handle it now.
+            continue;
+          }
+          out_pair.key(terminal.nodeId);
+          out_pair.value().setPayload(edge_update);
+          collector.collect(out_pair);
         }
-        out_pair.key(terminal.nodeId);
-        out_pair.value().setPayload(edge_update);
-        collector.collect(out_pair);
+      } else {
+        // The node is a palindrome . So the strand doesn't matter.
+        edge_update.setIsPalindrome(true);
+
+        // Since we are dealing with a palindrome we need to consider all
+        // neighbors rather than just looking at the incoming edges for
+        // EdgeToComprese because for a palindrome edges are randomly
+        // assigned to a strand since both strands are the same.
+        for (String neighborId : compressible_node.getNode().getNeighborIds()) {
+          if (neighborId.equals(edge_to_compress.other_terminal.nodeId)) {
+            // The incoming edge is from the terminal we are about to merge
+            // with (e.g. we have a cycle). That edge will be moved when
+            // we merge the two nodes so we don't need to to handle it now.
+            continue;
+          }
+
+          out_pair.key(terminal.nodeId);
+          out_pair.value().setPayload(edge_update);
+          collector.collect(out_pair);
+        }
       }
     }
 
@@ -327,6 +355,7 @@ public class PairMarkAvro extends MRStage {
       return coin;
     }
 
+    @Override
     public void map(CompressibleNodeData node_data,
         AvroCollector<Pair<CharSequence, PairMarkOutput>> collector,
         Reporter reporter) throws IOException {
@@ -404,10 +433,12 @@ public class PairMarkAvro extends MRStage {
     // The output for the reducer.
     private NodeInfoForMerge output_node;
 
+    @Override
     public void configure(JobConf job) {
       output_node = new NodeInfoForMerge();
     }
 
+    @Override
     public void reduce(
         CharSequence nodeid, Iterable<PairMarkOutput> iterable,
         AvroCollector<NodeInfoForMerge> collector, Reporter reporter)
@@ -521,6 +552,7 @@ public class PairMarkAvro extends MRStage {
   /**
    * Return a list of parameters used by this stage.
    */
+  @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
       new HashMap<String, ParameterDefinition>();

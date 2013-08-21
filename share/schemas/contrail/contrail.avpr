@@ -284,6 +284,12 @@
                 {"name": "old_strand",
                  "type": "contrail.sequences.DNAStrand",
                  "doc": "The strand of old_id that is being replaced."},
+                {"name": "is_palindrome",
+                 "type": "boolean",
+                 "doc": ["Old id refers to a node which was a palindrome. ",
+                         "The node being updated needs to take this into ",
+                         "account when identifying the edge to move."]
+                },
                 {"name": "new_id",
                  "type": "string",
                  "doc": "The id for the merged node."},

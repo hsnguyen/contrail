@@ -70,6 +70,7 @@ public class PairMergeAvro extends MRStage {
           "", new NodeInfoForMerge());
     }
 
+    Check if its palindrome
     @Override
     public void map(NodeInfoForMerge node_info,
         AvroCollector<Pair<CharSequence, NodeInfoForMerge>> collector,
