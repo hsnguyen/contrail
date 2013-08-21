@@ -20,6 +20,7 @@ import pprint
 import subprocess
 import stat
 import sys
+import tempfile
 from urllib2 import urlparse
 import urllib
 
@@ -31,6 +32,11 @@ gflags.DEFINE_list(
   "ls_command", ["hadoop", "fs", "-ls"], 
   "(Optional) a list containing the command and options to use to list the "
   "files on the input path.")
+gflags.DEFINE_bool("copy", False, "Copy the missing files to gcs.")
+gflags.DEFINE_bool(
+  "dryrun", False, 
+  "Just display the commands that would be executed for the copy.")
+
 
 gflags.MarkFlagAsRequired("inputpath")
 gflags.MarkFlagAsRequired("outputpath")
@@ -54,6 +60,9 @@ FLAGS.UseGnuGetOpt()
 
 OAUTH_SCOPE = ['https://www.googleapis.com/auth/devstorage.read_write']
 
+# The gcs service.
+global gcs_ 
+
 class FileInfo(object):
   path = None
   size = None
@@ -62,6 +71,10 @@ class FileInfo(object):
     self.path = path
     self.size = size
     
+  @property
+  def name(self):
+    return os.path.basename(self.path)
+  
   
 class GCFileInfo(object):
   info = None
@@ -130,19 +143,20 @@ def ListHDFS():
 
 
 def ListGCS():
+  global gcs_  
   auth_helper = auth_util.OAuthHelper()
   auth_helper.Setup(
     credentials_file=FLAGS.credentials, secrets_file=FLAGS.secret,
     scopes=OAUTH_SCOPE)
   
   http = auth_helper.CreateHttpClient()
-
-  gcs = build('storage', 'v1beta2', http=http)
+  
+  gcs_ = build('storage', 'v1beta2', http=http)
   
   # List the contents of the outputpath which should be on gcs.  
   parsed = urlparse.urlparse(FLAGS.outputpath)
   bucket = parsed.netloc
-  objects = gcs.objects()
+  objects = gcs_.objects()
   prefix = parsed.path[1:]
   delimiter = '/'
   if prefix[0] == delimiter:
@@ -164,6 +178,50 @@ def ListGCS():
   return gcs_items
 
 
+def CopyFiles(missing_items):
+  global gcs_
+  for i in missing_items:
+    # Copy the file to the local filesystem.
+    hf = tempfile.NamedTemporaryFile(prefix=i.name)
+    temp_name = hf.name
+    hf.close()
+    
+    command = ["hadoop", "fs", "--copyToLocalPath"]
+    command.append(i.path)
+    command.append(temp_name)
+  
+    if FLAGS.dryrun:
+      print " ".join(command)
+    else:
+      proc = subprocess.Popen(command, stdout=subprocess.PIPE)
+      stdout, stderr = proc.communicate()
+      retcode = proc.poll()
+      print "Command completed. Exit code: %d" % retcode
+      print "Command Output:" + stdout
+      if retcode != 0:
+        raise Exception(
+          "Command:%s failed with exit code %d" % " ".join(command), retcode)    
+    
+  
+    # Now we need to copy the file to gcs.
+    # TODO(jeremy@lewi.us): We should probably use the API rather than
+    # the command line tool.
+    command = ["gsutil", "cp"]
+    command.append(temp_name)
+    command.append(os.path.join(FLAGS.outputpath, i.name))
+  
+    if FLAGS.dryrun:
+      print " ".join(command)
+    else:
+      proc = subprocess.Popen(command, stdout=subprocess.PIPE)
+      stdout, stderr = proc.communicate()
+      retcode = proc.poll()
+      print "Command completed. Exit code: %d" % retcode
+      print "Command Output:" + stdout
+      if retcode != 0:
+        raise Exception(
+          "Command:%s failed with exit code %d" % " ".join(command), retcode)    
+    
 def main(argv):
   try:
     unparsed = FLAGS(argv)  # parse flags
@@ -201,6 +259,8 @@ def main(argv):
   print "The following items are not in gcs:"
   print "\n".join([h.path for h in missing_items])
   
+  if FLAGS.copy:
+    CopyFiles(missing_items)
   
 if __name__ == "__main__":
   main(sys.argv)
