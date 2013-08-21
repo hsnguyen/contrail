@@ -36,7 +36,7 @@ gflags.DEFINE_bool("copy", False, "Copy the missing files to gcs.")
 gflags.DEFINE_bool(
   "dryrun", False, 
   "Just display the commands that would be executed for the copy.")
-
+gflags.DEFINE_string("tempdir", None, "The local temporary directory to use")
 
 gflags.MarkFlagAsRequired("inputpath")
 gflags.MarkFlagAsRequired("outputpath")
@@ -182,17 +182,16 @@ def CopyFiles(missing_items):
   global gcs_
   for i in missing_items:
     # Copy the file to the local filesystem.
-    hf = tempfile.NamedTemporaryFile(prefix=i.name)
+    hf = tempfile.NamedTemporaryFile(prefix=i.name, dir=FLAGS.tempdir)
     temp_name = hf.name
     hf.close()
     
-    command = ["hadoop", "fs", "--copyToLocalPath"]
+    command = ["hadoop", "fs", "-copyToLocal"]
     command.append(i.path)
     command.append(temp_name)
   
-    if FLAGS.dryrun:
-      print " ".join(command)
-    else:
+    print " ".join(command)
+    if not FLAGS.dryrun:
       proc = subprocess.Popen(command, stdout=subprocess.PIPE)
       stdout, stderr = proc.communicate()
       retcode = proc.poll()
@@ -210,9 +209,8 @@ def CopyFiles(missing_items):
     command.append(temp_name)
     command.append(os.path.join(FLAGS.outputpath, i.name))
   
-    if FLAGS.dryrun:
-      print " ".join(command)
-    else:
+    print " ".join(command)
+    if not FLAGS.dryrun:
       proc = subprocess.Popen(command, stdout=subprocess.PIPE)
       stdout, stderr = proc.communicate()
       retcode = proc.poll()
@@ -222,6 +220,11 @@ def CopyFiles(missing_items):
         raise Exception(
           "Command:%s failed with exit code %d" % " ".join(command), retcode)    
     
+    # Delete the temp file
+    print "Deleting:" + temp_name
+    if not FLAGS.dryrun:
+      os.unlink(temp_name)
+
 def main(argv):
   try:
     unparsed = FLAGS(argv)  # parse flags
