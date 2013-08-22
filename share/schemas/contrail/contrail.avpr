@@ -243,7 +243,8 @@
     },
     {"name": "contrail.stages.CompressibleStrands",
      "type": "enum",
-     "symbols": ["NONE", "FORWARD", "REVERSE", "BOTH"]
+     "symbols": ["NONE", "FORWARD", "REVERSE", "BOTH", "PALINDROME"],
+     "doc": "PALINDROME indicates its a compressible palindrome."
     },
     // Using an enum to store which strands are compressible should
     // be slightly more space efficient then a list of strands.
