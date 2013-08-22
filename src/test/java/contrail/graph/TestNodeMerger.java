@@ -722,23 +722,41 @@ public class TestNodeMerger extends NodeMerger {
     // we are testing NodeMerger.mergeConnectedSrands.
     // Suppose we have the graph Y->X->R(X)->Z
     // and we call mergeConnectedStrands on X, we want to verify this produces
-    // the correct result.
-    {
-      GraphNode node = GraphTestUtil.createNode("CAT", "CAT");
+    // the correct result. Most importantly we want to ensure that edge
+    // strands are preserved and consistent.
+    // The edge Y->X is represented as FF in node Y. The corresponding edge
+    // RC(X)->RC(Y) is represented as RR in node R.
+    // So after the merge the edge should be R(M)->R(Y) where M is the result
+    // of merging X and R(X).
+    // We also consider the graph.
+    // Y->R(X)->X->Z.
+    // In this case the edges in X are attached to the F strand.
+    for (DNAStrand xStrand : DNAStrand.values()) {
+      GraphNode node = new GraphNode();
+      node.setNodeId("X");
+
+      Sequence catSequence = new Sequence("CAT", DNAAlphabetFactory.create());
+      if (xStrand == DNAStrand.REVERSE) {
+        // Take the complete of the sequence so that the edge from Y will
+        // be the R strand of X.
+        node.setSequence(DNAUtil.reverseComplement(catSequence));
+      } else {
+        node.setSequence(catSequence);
+      }
 
       GraphUtil.addBidirectionalEdge(
-          node, DNAStrand.FORWARD, node, DNAStrand.REVERSE);
+          node, xStrand, node, DNAStrandUtil.flip(xStrand));
 
       GraphNode nodeY = new GraphNode();
       nodeY.setNodeId("Y");
       nodeY.setSequence(new Sequence("TCA", DNAAlphabetFactory.create()));
 
       GraphUtil.addBidirectionalEdge(
-          nodeY, DNAStrand.FORWARD, node, DNAStrand.FORWARD);
+          nodeY, DNAStrand.FORWARD, node, xStrand);
 
       GraphNode nodeZ = GraphTestUtil.createNode("Z", "TGG");
       GraphUtil.addBidirectionalEdge(
-          node, DNAStrand.REVERSE, nodeZ, DNAStrand.FORWARD);
+          node, DNAStrandUtil.flip(xStrand), nodeZ, DNAStrand.FORWARD);
 
       GraphNode expected = new GraphNode();
       expected.setNodeId(node.getNodeId());
@@ -748,20 +766,14 @@ public class TestNodeMerger extends NodeMerger {
       // When we merge the nodes X and R(X) we want to preserve the incoming
       // edge to X and the outgoing edge to R(X). However, these incoming
       // outgoing edges should only be represented once in the merged node
-      // as [X, R(X)] ->R(Y), Z.
-      // These edges could be attached to either strand of [X, RC(X)] since
-      // its a palindrome but the way NodeMerger works they will be attached
-      // to the reverse strand.
-      GraphNode expectedY = nodeY.clone();
-      expectedY.removeNeighbor(node.getNodeId());
-
-      GraphUtil.addBidirectionalEdge(
-          expected, DNAStrand.REVERSE, expectedY, DNAStrand.REVERSE);
-
-      GraphNode expectedZ = nodeZ.clone();
-      expectedZ.removeNeighbor(node.getNodeId());
-      GraphUtil.addBidirectionalEdge(
-          expected, DNAStrand.REVERSE, expectedZ, DNAStrand.FORWARD);
+      // as [X, R(X)] ->R(Y), Z. Furthermore, while both strands of the merged
+      // node are the same, the strand used should be consistent with the
+      // corresponding strand in nodes Y and Z for these edges.
+      expected.addIncomingEdge(
+          xStrand, new EdgeTerminal("Y", DNAStrand.FORWARD));
+      expected.addOutgoingEdge(
+          DNAStrandUtil.flip(xStrand),
+          new EdgeTerminal("Z", DNAStrand.FORWARD));
 
       NodeMerger merger = new NodeMerger();
       GraphNode merged = merger.mergeConnectedStrands(node, 2);

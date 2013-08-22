@@ -22,6 +22,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 
 import contrail.ContrailConfig;
@@ -238,12 +239,42 @@ public class NodeMerger {
     Sequence canonicalSequence = DNAUtil.canonicalseq(mergedSequence);
     DNAStrand mergedStrand = DNAUtil.canonicaldir(mergedSequence);
 
+    // ->X->...->R(X) or
+    // ->R(X)->...->X
+    EdgeTerminal startTerminal = chain.get(0);
+    EdgeTerminal endTerminal = chain.get(chain.size() - 1);
+    boolean endIsRCStart =
+        (startTerminal.nodeId.equals(endTerminal.nodeId)) &&
+        (startTerminal.strand.equals(DNAStrandUtil.flip(endTerminal.strand)));
+    boolean isPalindrome = DNAUtil.isPalindrome(canonicalSequence);
+    if (isPalindrome) {
+      // We can only get a palindrome if we have
+      // ->X->...->R(X) or
+      // ->R(X)->...->X
+      // i.e suppose X->...->A = R(A)->...->R(X)
+      // then X=R(A) so we have X->...->R(X)
+      // Sanity check.
+      if (!endIsRCStart) {
+        ArrayList<String> terminalStrings = new ArrayList<String>();
+        for (EdgeTerminal t : chain) {
+          terminalStrings.add(t.toString());
+        }
+        sLogger.fatal(
+            "Something is wrong with the merge. The result of the merge " +
+            "is a palindrome but the start and end terminal are not the same " +
+            "nodes. The terminals to merge is: " +
+            StringUtils.join(terminalStrings, ","),
+            new RuntimeException("Unexpected palindrome."));
+      }
+
+      // We select the merged strand so that the strand of the incoming
+      // and outgoing edges will be preserved.
+      mergedStrand = startTerminal.strand;
+    }
     GraphNode newNode = new GraphNode();
     newNode.setNodeId(newId);
     newNode.setCoverage(coverage);
     newNode.setSequence(canonicalSequence);
-
-    boolean isPalindrome = DNAUtil.isPalindrome(canonicalSequence);
 
     // Reverse the reads if necessary.
     if (mergedStrand == DNAStrand.REVERSE) {
@@ -261,8 +292,6 @@ public class NodeMerger {
       idsInChain.add(terminal.nodeId);
     }
 
-    EdgeTerminal startTerminal = chain.get(0);
-    EdgeTerminal endTerminal = chain.get(chain.size() - 1);
     GraphNode startNode = nodes.get(chain.get(0).nodeId);
     GraphNode endNode = nodes.get(chain.get(chain.size() - 1).nodeId);
     // Preserve the edges we need to preserve the incoming/outgoing
@@ -281,9 +310,6 @@ public class NodeMerger {
     // as the outgoing edges for R(X). So for the forward strand we only
     // need to copy the incoming edges. Similarly we don't need to consider
     // the reverse complement because that yields the same sequence.
-    boolean endIsRCStart =
-        (startTerminal.nodeId.equals(endTerminal.nodeId)) &&
-        (startTerminal.strand.equals(DNAStrandUtil.flip(endTerminal.strand)));
     if (!endIsRCStart) {
       copyEdgesForStrand(
           newNode, mergedStrand, endNode, endTerminal.strand,
@@ -342,6 +368,14 @@ public class NodeMerger {
    * edges to other nodes don't need to move because the sequence for both
    * strands of the merged sequence is the same.
    *
+   * Note: The merge preserves the strand of any edges attached to the node.
+   * e.g Suppose we have A->X->RC(X)->RC(A)
+   * The merged graph is A->Y->RC(A)  where Y=RC(Y)
+   * Node Y has a single outgoing edge to RC(A). This edge could be represented
+   * as  FR or RR because Y is a palindrome.
+   * However, Node A will store the edge A->Y as FF which is consistent with
+   * Y->A being represented as RR. We want the two edges to remain consistent
+   * because other parts of the code depend on the edges remaining consistent.
    * @param node
    * @return
    */
@@ -372,10 +406,6 @@ public class NodeMerger {
     MergeResult result = mergeNodes(
         node.getNodeId(), terminals, nodes, overlap);
 
-    // TODO(jeremy@lewi.us): Should we regularize the edges? The merged
-    // node is XR(X). The forward and reverse complement sequences are the same.
-    // So should we force all edges to be to the forward strand?
-    // The regularization should probably happen in NodeMerger.
     return result.node;
   }
 }
