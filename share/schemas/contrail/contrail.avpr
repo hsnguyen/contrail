@@ -221,11 +221,7 @@
                 {"name": "strands",
                  "type": "contrail.sequences.StrandsForEdge",
                  "doc": ["The strands for the edge. The edge is always an ",
-                         "outgoing edge from from_node_id"]},
-                {"name": "is_palindrome",
-                 "type": "boolean",
-                 "doc": ["The node this message is coming from is a ",
-                         "palindrome outgoing edge from from_node_id"]}]
+                         "outgoing edge from from_node_id"]}]
     },
     {"name": "contrail.stages.CompressibleMapOutput",
      "type": "record",
@@ -243,8 +239,8 @@
     },
     {"name": "contrail.stages.CompressibleStrands",
      "type": "enum",
-     "symbols": ["NONE", "FORWARD", "REVERSE", "BOTH", "PALINDROME"],
-     "doc": "PALINDROME indicates its a compressible palindrome."
+     "symbols": ["NONE", "FORWARD", "REVERSE", "BOTH"],
+     "doc": "Enum indicating which strand(s) is compressible."
     },
     // Using an enum to store which strands are compressible should
     // be slightly more space efficient then a list of strands.
@@ -285,12 +281,6 @@
                 {"name": "old_strand",
                  "type": "contrail.sequences.DNAStrand",
                  "doc": "The strand of old_id that is being replaced."},
-                {"name": "is_palindrome",
-                 "type": "boolean",
-                 "doc": ["Old id refers to a node which was a palindrome. ",
-                         "The node being updated needs to take this into ",
-                         "account when identifying the edge to move."]
-                },
                 {"name": "new_id",
                  "type": "string",
                  "doc": "The id for the merged node."},

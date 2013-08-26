@@ -36,9 +36,7 @@ import contrail.graph.GraphTestUtil;
 import contrail.graph.GraphUtil;
 import contrail.graph.SimpleGraphBuilder;
 import contrail.io.AvroFileContentsIterator;
-import contrail.sequences.DNAAlphabetFactory;
 import contrail.sequences.DNAStrand;
-import contrail.sequences.Sequence;
 import contrail.sequences.StrandsForEdge;
 import contrail.sequences.StrandsUtil;
 
@@ -113,7 +111,6 @@ public class TestCompressibleAvro {
       for (EdgeTerminal terminal :
            node.getEdgeTerminals(strand, EdgeDirection.OUTGOING)){
         CompressibleMessage message = new CompressibleMessage();
-        message.setIsPalindrome(false);
         message.setFromNodeId(node.getNodeId());
         StrandsForEdge strands = StrandsUtil.form(strand, terminal.strand);
         message.setStrands(strands);
@@ -149,7 +146,6 @@ public class TestCompressibleAvro {
     {
       CompressibleMessage message = new CompressibleMessage();
       message.setFromNodeId(node.getNodeId());
-      message.setIsPalindrome(false);
 
       // Edge is CAT ->ATC
       // Since we only send outgoing edges the message is
@@ -163,43 +159,6 @@ public class TestCompressibleAvro {
     case_data.node = node.getData();
     case_data.expected_messages = expected_messages;
     return case_data;
-  }
-
-  private MapTestCaseData constructMergedStrandsTest() {
-    // Construct the following test case:
-    // A->X->R(X)->C.
-    // We want to verify that X and R(X) are merged and that the strands
-    // of the new node are marked as compressible.
-    GraphNode node = new GraphNode();
-    node.setNodeId("CAT");
-    node.setSequence(new Sequence("CAT", DNAAlphabetFactory.create()));
-
-    GraphUtil.addBidirectionalEdge(
-        node, DNAStrand.FORWARD, node, DNAStrand.REVERSE);
-
-    GraphNode nodeA = new GraphNode();
-    nodeA.setNodeId("A");
-    nodeA.setSequence(new Sequence("TCA", DNAAlphabetFactory.create()));
-
-    GraphUtil.addBidirectionalEdge(
-        nodeA, DNAStrand.FORWARD, node, DNAStrand.FORWARD);
-
-    MapTestCaseData testData = new MapTestCaseData();
-    testData.K = 3;
-    testData.node = node.getData();
-
-    CompressibleMessage messageA = new CompressibleMessage();
-    messageA.setFromNodeId(node.getNodeId());
-    // Strands are always with respect to the outgoing edge of the node
-    // sending the message. The forward and reverse strand of node CAT are
-    // the same after the merge so the strand for that node could be F or R
-    // depending on the implementation of NodeMerger.mergeConnectedStrands.
-    // But the mapper forces the from strand to always be forward.
-    messageA.setStrands(StrandsForEdge.FR);
-    messageA.setIsPalindrome(true);
-    testData.expected_messages.put(nodeA.getNodeId(), messageA);
-
-    return testData;
   }
 
   @Test
@@ -217,7 +176,6 @@ public class TestCompressibleAvro {
     ArrayList<MapTestCaseData> test_cases = new ArrayList<MapTestCaseData>();
     test_cases.add(constructMapLinearTestCase());
     test_cases.add(constructMapLinearTestBranching());
-    test_cases.add(constructMergedStrandsTest());
 
     for (MapTestCaseData case_data : test_cases) {
       JobConf job = new JobConf(CompressibleAvro.CompressibleMapper.class);
@@ -440,11 +398,12 @@ public class TestCompressibleAvro {
   }
 
   @Test
-  public void testMergedStrands() {
+  public void testMergedStrandsReverse() {
     // We construct the graph: TCA->CAT->ATG
     // This is a special case because CAT = R(ATG) so the two strands
     // of this node are connected. Furthermore, the result of merging CAT->ATG
-    // is CATG is a plaindrome.
+    // is CATG is a palindrome. In this case it is the reverse strand
+    // of the merged node "CAT" that is compressible.
     GraphNode nodeTCA = GraphTestUtil.createNode("TCA", "TCA");
     GraphNode nodeCAT = GraphTestUtil.createNode("CAT", "CAT");
     GraphUtil.addBidirectionalEdge(
@@ -463,9 +422,10 @@ public class TestCompressibleAvro {
 
     {
       CompressibleNodeData actual = outputs.get("CAT");
-      // The node is a palindrome so by convention we only mark the forward
-      // strand as compressible.
-      assertEquals(CompressibleStrands.FORWARD, actual.getCompressibleStrands());
+      // The graph after the merge is TCA->CATG
+      // So it should be the outgoing reverse strand of CATG that is
+      // compressible.
+      assertEquals(CompressibleStrands.REVERSE, actual.getCompressibleStrands());
       GraphNode actualNode = new GraphNode(actual.getNode());
       NodeDiff nodeDiff = expectedCAT.equalsWithInfo(actualNode);
       assertEquals(NodeDiff.NONE, nodeDiff);
@@ -475,6 +435,50 @@ public class TestCompressibleAvro {
       CompressibleNodeData actual = outputs.get("TCA");
       assertEquals(CompressibleStrands.FORWARD, actual.getCompressibleStrands());
       assertEquals(expectedTCA, new GraphNode(actual.getNode()));
+    }
+  }
+
+  @Test
+  public void testMergedStrandsForward() {
+    // We construct the graph: CAT->ATG->TGG
+    // This is a special case because CAT = R(ATG) so the two strands
+    // of this node are connected. Furthermore, the result of merging CAT->ATG
+    // is CATG is a palindrome.
+    // This is similar to the case testMergedStrandsReverse except its
+    // the forward strand of the resulting node that is compressible.
+    GraphNode nodeTGG = GraphTestUtil.createNode("TGG", "TGG");
+    GraphNode nodeATG = GraphTestUtil.createNode("ATG", "ATG");
+    GraphUtil.addBidirectionalEdge(
+        nodeATG, DNAStrand.FORWARD, nodeTGG, DNAStrand.FORWARD);
+    GraphUtil.addBidirectionalEdge(
+        nodeATG, DNAStrand.REVERSE, nodeATG, DNAStrand.FORWARD);
+
+    HashMap<String, CompressibleNodeData> outputs =
+        runStageTest(Arrays.asList(nodeATG, nodeTGG), 3);
+
+    GraphNode expectedATG = GraphTestUtil.createNode("ATG", "CATG");
+    GraphNode expectedTGG = GraphTestUtil.createNode("TGG", "TGG");
+
+    GraphUtil.addBidirectionalEdge(
+        expectedATG, DNAStrand.FORWARD, expectedTGG, DNAStrand.FORWARD);
+
+    {
+      CompressibleNodeData actual = outputs.get("ATG");
+      // The graph after the merge is TCA->CATG
+      // So it should be the outgoing reverse strand of CATG that is
+      // compressible.
+      assertEquals(CompressibleStrands.FORWARD, actual.getCompressibleStrands());
+      GraphNode actualNode = new GraphNode(actual.getNode());
+      NodeDiff nodeDiff = expectedATG.equalsWithInfo(actualNode);
+      assertEquals(NodeDiff.NONE, nodeDiff);
+    }
+
+    {
+      CompressibleNodeData actual = outputs.get("TGG");
+      assertEquals(
+          CompressibleStrands.REVERSE,
+          actual.getCompressibleStrands());
+      assertEquals(expectedTGG, new GraphNode(actual.getNode()));
     }
   }
 }

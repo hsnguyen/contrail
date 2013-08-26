@@ -43,7 +43,6 @@ import contrail.graph.GraphNodeData;
 import contrail.graph.NodeMerger;
 import contrail.graph.TailData;
 import contrail.sequences.DNAStrand;
-import contrail.sequences.DNAUtil;
 import contrail.sequences.StrandsForEdge;
 import contrail.sequences.StrandsUtil;
 import contrail.stages.GraphCounters.CounterName;
@@ -162,69 +161,31 @@ public class CompressibleAvro extends MRStage {
         node = nodeMerger.mergeConnectedStrands(node, K - 1);
       }
 
-      // Check if the forward and reverse complement of the node are the same.
-      if (DNAUtil.isPalindrome(node.getSequence())) {
-        reporter.incrCounter(
-            "Contrail","node-is-palindrome", 1);
-        // Since the sequence is a palindrome we need to consider both
-        // strands together because both strands represent the same edge.
-        // So in this case the criterion is that we have a single neighbor.
-        if (node.getNeighborIds().size() == 1) {
+      // We consider the outgoing edges from both strands.
+      // Recall that RC(X) -> Y  implies RC(Y) -> X.
+      for (DNAStrand strand: DNAStrand.values()) {
+        TailData tail = node.getTail(strand, EdgeDirection.OUTGOING);
+
+        if (tail != null) {
+          // We have a tail in this direction.
+          if (tail.terminal.nodeId.equals(node.getNodeId())) {
+            // Cycle so continue.
+            continue;
+          }
+
+          reporter.incrCounter("Contrail", "remotemark", 1);
+
           // Send a message to the neighbor telling it this node is
           // compressible.
           clearCompressibleMapOutput(map_output);
-          String otherId = node.getNeighborIds().iterator().next();
-          out_pair.key(otherId);
+          out_pair.key(tail.terminal.nodeId);
 
           message.setFromNodeId(node.getNodeId());
-
-          // The strand for the from node doesn't really matter. It will
-          // be up to the reducer to figure out the strand from the dest
-          // node and determine what to do.
-          StrandsForEdge strands =
-              node.findStrandsForEdge(
-                  otherId, EdgeDirection.OUTGOING).iterator().next();
-
-          // Force the src strand to always be from the forward strand so its
-          // deterministic. Otherwise, it will depend on the ordering in the
-          // set returned by findStrandsForEdge.
-          strands = StrandsUtil.form(
-              DNAStrand.FORWARD, StrandsUtil.dest(strands));
-          message.setIsPalindrome(true);
+          StrandsForEdge strands = StrandsUtil.form(
+              strand, tail.terminal.strand);
           message.setStrands(strands);
           map_output.setMessage(message);
           output.collect(out_pair);
-
-          reporter.incrCounter("Contrail", "remotemark-palindrome", 1);
-        }
-      } else {
-        // We consider the outgoing edges from both strands.
-        // Recall that RC(X) -> Y  implies RC(Y) -> X.
-        for (DNAStrand strand: DNAStrand.values()) {
-          TailData tail = node.getTail(strand, EdgeDirection.OUTGOING);
-
-          if (tail != null) {
-            // We have a tail in this direction.
-            if (tail.terminal.nodeId.equals(node.getNodeId())) {
-              // Cycle so continue.
-              continue;
-            }
-
-            reporter.incrCounter("Contrail", "remotemark", 1);
-
-            // Send a message to the neighbor telling it this node is
-            // compressible.
-            clearCompressibleMapOutput(map_output);
-            out_pair.key(tail.terminal.nodeId);
-
-            message.setFromNodeId(node.getNodeId());
-            message.setIsPalindrome(false);
-            StrandsForEdge strands = StrandsUtil.form(
-                strand, tail.terminal.strand);
-            message.setStrands(strands);
-            map_output.setMessage(message);
-            output.collect(out_pair);
-          }
         }
       }
 
@@ -248,13 +209,8 @@ public class CompressibleAvro extends MRStage {
     private GraphNode node = new GraphNode();
 
 
-    // We store the nodes sending messages in three sets.
-    // The first set is for messages from palindromes. Since the message is
-    // from a palindrome it doesn't matter which strand the message is sent to.
-    // For these messages we want to check if either strand has a tail to
-    // to the palindrome.
-    private final HashSet<String> p_neighbors = new HashSet<String>();
-    // We use another set store messages to the forward strand and another
+    // We store the nodes sending messages in two sets.
+    // We use one set store messages to the forward strand and another
     // corresponding to messages to the reverse strand.
     private final HashSet<EdgeTerminal> f_terminals =
         new HashSet<EdgeTerminal>();
@@ -273,52 +229,7 @@ public class CompressibleAvro extends MRStage {
     }
 
     /**
-     * Determine if a node which is a palindrome is compressible.
-     *
-     * Palindromes require special care because both strands represent the same
-     * sequence.
-     *
-     * @return
-     */
-    private CompressibleStrands isCompressiblePalindrome() {
-      // Since its a palindrome both strands are the same but we don't know
-      // which strand is used to store a given edge; i.e the edge X->Y and
-      // R(X)->Y are the same edge but we don't know which is being used.
-      // A palindrome can only be compressible though if it has a single
-      // neighbor. Suppose we have A->X->Y and X=RC(X)  then
-      // RC(Y)->RC(X)->RC(Y) => RC(Y)->X->RC(A) so
-      // RC(Y), A -> X -> RC(A), Y  so X would only be compressible
-      // if RC(A)=Y which implies X has a single neighbore.
-      if (node.getNeighborIds().size() != 1) {
-        return CompressibleStrands.NONE;
-      }
-
-      // Since we are a palindrome with a single neighbor we just need to
-      // check that we received a message from that neighbor saying it to
-      // is compressible. By convention we always mark the forward strand
-      // of the palindrome as compressible.
-      String neighborId = node.getNeighborIds().iterator().next();
-      for (EdgeTerminal terminal : f_terminals){
-        if (terminal.nodeId.equals(neighborId)) {
-          return CompressibleStrands.FORWARD;
-        }
-      }
-      for (EdgeTerminal terminal : r_terminals){
-        if (terminal.nodeId.equals(neighborId)) {
-          return CompressibleStrands.FORWARD;
-        }
-      }
-
-      // The neighbor isn't compressible so this node isn't compressible.
-      return CompressibleStrands.NONE;
-    }
-
-    /**
      * Determine if either of the node's strands are compressible.
-     *
-     * This function only works if the node isn't a palindrome. Palindromes
-     * need special treatment because a node and its neighbor might use
-     * different strands.
      *
      * @return
      */
@@ -342,7 +253,6 @@ public class CompressibleAvro extends MRStage {
           // If we can compress the reverse strand along its outgoing edge
           // that corresponds to compressing the forward strand along its
           // incoming edge.
-          //compressible_direction = EdgeDirection.INCOMING;
           terminals = r_terminals;
         }
 
@@ -356,12 +266,6 @@ public class CompressibleAvro extends MRStage {
 
         // Since there is a tail for this strand, check if there is a message
         // from the node in the tail.
-        if (!p_neighbors.contains(tail_data.terminal.nodeId) &&
-            !terminals.contains(tail_data.terminal)) {
-          // We can't compress.
-          continue;
-        }
-
         // Sanity check since we have a tail in this direction we should
         // have at most a single message.
         if (terminals.size() > 1) {
@@ -373,6 +277,16 @@ public class CompressibleAvro extends MRStage {
               "than 1 message for this strand. Number of messages is " +
               terminals.size());
         }
+        if (!terminals.iterator().next().nodeId.equals(
+            tail_data.terminal.nodeId)) {
+          EdgeTerminal next = terminals.iterator().next();
+          sLogger.fatal(
+              "Node: " + node.getNodeId() + "has a tail for strand: " +
+              strand + " to terminal " + tail_data.terminal.toString() + " " +
+              "but the compressible message is from terminal " +
+              next.toString(),
+              new RuntimeException("Inconsistent compressible messages."));
+        }
 
         if (strand == DNAStrand.FORWARD) {
           f_compressible = true;
@@ -380,7 +294,6 @@ public class CompressibleAvro extends MRStage {
         if (strand == DNAStrand.REVERSE) {
           r_compressible = true;
         }
-
       }
 
       if (f_compressible && r_compressible) {
@@ -402,7 +315,6 @@ public class CompressibleAvro extends MRStage {
       boolean has_node = false;
       f_terminals.clear();
       r_terminals.clear();
-      p_neighbors.clear();
       clearAnnotatedNode(annotated_node);
 
       Iterator<CompressibleMapOutput> iter = iterable.iterator();
@@ -432,24 +344,18 @@ public class CompressibleAvro extends MRStage {
         if (output.getMessage() != null) {
           CompressibleMessage msg = output.getMessage();
 
-          if (msg.getIsPalindrome()) {
-            // Since the message is from a palindrome we don't care about
-            // its strands since both are the same.
-            p_neighbors.add(msg.getFromNodeId().toString());
+          // Edge is always an outgoing message from the source node.
+          // So we reverse the edge strands to get the outgoing edges
+          // from this node.
+          StrandsForEdge strands = StrandsUtil.complement(msg.getStrands());
+          EdgeTerminal terminal = new EdgeTerminal(
+              msg.getFromNodeId().toString(),
+              StrandsUtil.dest(strands));
+          DNAStrand this_strand = StrandsUtil.src(strands);
+          if (this_strand == DNAStrand.FORWARD) {
+            f_terminals.add(terminal);
           } else {
-            // Edge is always an outgoing message from the source node.
-            // So we reverse the edge strands to get the outgoing edges
-            // from this node.
-            StrandsForEdge strands = StrandsUtil.complement(msg.getStrands());
-            EdgeTerminal terminal = new EdgeTerminal(
-                msg.getFromNodeId().toString(),
-                StrandsUtil.dest(strands));
-            DNAStrand this_strand = StrandsUtil.src(strands);
-            if (this_strand == DNAStrand.FORWARD) {
-              f_terminals.add(terminal);
-            } else {
-              r_terminals.add(terminal);
-            }
+            r_terminals.add(terminal);
           }
         }
       }
@@ -461,22 +367,13 @@ public class CompressibleAvro extends MRStage {
 
       annotated_node.setNode(node.getData());
 
-      boolean isPalindrome = DNAUtil.isPalindrome(node.getSequence());
       CompressibleStrands compressible_strands = null;
-      if (isPalindrome) {
-        compressible_strands = isCompressiblePalindrome();
-      } else {
-        compressible_strands = isCompressible();
-      }
+      compressible_strands = isCompressible();
 
       annotated_node.setCompressibleStrands(compressible_strands);
       if (compressible_strands != CompressibleStrands.NONE) {
         reporter.incrCounter(
             NUM_COMPRESSIBLE.group, NUM_COMPRESSIBLE.tag, 1);
-        if (isPalindrome) {
-          reporter.incrCounter(
-            NUM_COMPRESSIBLE.group, "compressible-palindrome", 1);
-        }
       }
       collector.collect(annotated_node);
     }
