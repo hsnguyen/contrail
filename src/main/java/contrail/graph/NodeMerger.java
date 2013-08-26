@@ -248,13 +248,22 @@ public class NodeMerger {
         (startTerminal.strand.equals(DNAStrandUtil.flip(endTerminal.strand)));
     boolean isPalindrome = DNAUtil.isPalindrome(canonicalSequence);
     if (isPalindrome) {
-      // We can only get a palindrome if we have
+      // Assuming the graph is the result of the standard contrail stages
+      // we can only get a palindrome if we have
       // ->X->...->R(X) or
       // ->R(X)->...->X
       // i.e suppose X->...->A = R(A)->...->R(X)
       // then X=R(A) so we have X->...->R(X)
       // Sanity check.
       if (!endIsRCStart) {
+        // It is possible to construct a graph which doesn't satisfy this
+        // condition. i.e suppose we have  CAT->ATCAT  the merged sequence
+        // is CATCAT and the two nodes are not the same. However, this
+        // graph should never be produced by the current set of contrail
+        // operations. Currently, all nodes would start with the same K so
+        // buildgraph would yield the graph CAT->ATC->TCA->CAT.
+        // This check protects us in case other parts of the code change
+        // and this assumption is violated.
         ArrayList<String> terminalStrings = new ArrayList<String>();
         for (EdgeTerminal t : chain) {
           terminalStrings.add(t.toString());
