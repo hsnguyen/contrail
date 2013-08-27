@@ -29,9 +29,7 @@ import contrail.graph.EdgeDirection;
 import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphNode;
 import contrail.graph.TailData;
-import contrail.sequences.DNAAlphabetFactory;
 import contrail.sequences.DNAStrand;
-import contrail.sequences.Sequence;
 import contrail.stages.GraphCounters.CounterName;
 
 /**
@@ -127,7 +125,7 @@ public class PairMarkAvro extends MRStage {
      * @param strand
      * @return
      */
-    public boolean canCompress(DNAStrand strand){
+    public boolean canCompress(DNAStrand strand) {
       if (data.getCompressibleStrands() == CompressibleStrands.BOTH) {
         return true;
       }
@@ -242,44 +240,20 @@ public class PairMarkAvro extends MRStage {
       edge_update.setNewId(edge_to_compress.other_terminal.nodeId);
       edge_update.setNewStrand(edge_to_compress.other_terminal.strand);
 
-      // Check if this node is a palindrome.
-      if (!compressible_node.getNode().isPalindrome()) {
-        edge_update.setIsPalindrome(false);
-        List<EdgeTerminal> incoming_terminals =
-            compressible_node.getNode().getEdgeTerminals(
-                edge_to_compress.strand, EdgeDirection.INCOMING);
+      List<EdgeTerminal> incoming_terminals =
+          compressible_node.getNode().getEdgeTerminals(
+              edge_to_compress.strand, EdgeDirection.INCOMING);
 
-        for (EdgeTerminal terminal: incoming_terminals) {
-          if (terminal.nodeId.equals(edge_to_compress.other_terminal.nodeId)) {
-            // The incoming edge is from the terminal we are about to merge
-            // with (e.g. we have a cycle). That edge will be moved when
-            // we merge the two nodes so we don't need to to handle it now.
-            continue;
-          }
-          out_pair.key(terminal.nodeId);
-          out_pair.value().setPayload(edge_update);
-          collector.collect(out_pair);
+      for (EdgeTerminal terminal: incoming_terminals) {
+        if (terminal.nodeId.equals(edge_to_compress.other_terminal.nodeId)) {
+          // The incoming edge is from the terminal we are about to merge
+          // with (e.g. we have a cycle). That edge will be moved when
+          // we merge the two nodes so we don't need to to handle it now.
+          continue;
         }
-      } else {
-        // The node is a palindrome . So the strand doesn't matter.
-        edge_update.setIsPalindrome(true);
-
-        // Since we are dealing with a palindrome we need to consider all
-        // neighbors rather than just looking at the incoming edges for
-        // EdgeToComprese because for a palindrome edges are randomly
-        // assigned to a strand since both strands are the same.
-        for (String neighborId : compressible_node.getNode().getNeighborIds()) {
-          if (neighborId.equals(edge_to_compress.other_terminal.nodeId)) {
-            // The incoming edge is from the terminal we are about to merge
-            // with (e.g. we have a cycle). That edge will be moved when
-            // we merge the two nodes so we don't need to to handle it now.
-            continue;
-          }
-
-          out_pair.key(terminal.nodeId);
-          out_pair.value().setPayload(edge_update);
-          collector.collect(out_pair);
-        }
+        out_pair.key(terminal.nodeId);
+        out_pair.value().setPayload(edge_update);
+        collector.collect(out_pair);
       }
     }
 

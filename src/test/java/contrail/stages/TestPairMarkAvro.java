@@ -33,7 +33,6 @@ import contrail.graph.SimpleGraphBuilder;
 import contrail.graph.TailData;
 import contrail.sequences.DNAAlphabetFactory;
 import contrail.sequences.DNAStrand;
-import contrail.sequences.DNAStrandUtil;
 import contrail.sequences.DNAUtil;
 import contrail.sequences.Sequence;
 import contrail.stages.CoinFlipper.CoinFlip;
@@ -867,17 +866,17 @@ public class TestPairMarkAvro extends PairMarkAvro {
 
   @Test
   public void testPalindrome() {
-    // We test a particular case involing palindromes.
+    // We test a particular case involving palindromes.
+    // Palindromes should be handled like any other case and this test confirms
+    // that.
     // Suppose we have A->B->C->D
     // B is a down node. A, C are up nodes (D isn't compressible).
     // Suppose B is a down node and we are merging it with C.
     // B preserves its strand and id so C sends a message to D telling D to
     // move the edge C->D to the new new node BC.
     //
-    // Now suppose C s a palindrome. Then the C might use a different strand
-    // then D to represent the edge in D.
-    // So node D should ignore the strand C says its from and use which ever
-    // edge it finds.
+    // TODO(jeremy@lewi.us) should we run the test twice once where C
+    // uses the forward strand and the other where it uses the reverse strand?
     GraphNode nodeA = GraphTestUtil.createNode("nodeA", "AAC");
     GraphNode nodeB = GraphTestUtil.createNode("nodeB", "ACA");
     GraphNode nodeC = GraphTestUtil.createNode("nodeC", "CATG");
@@ -888,19 +887,8 @@ public class TestPairMarkAvro extends PairMarkAvro {
     GraphUtil.addBidirectionalEdge(
         nodeB, DNAStrand.FORWARD, nodeC, DNAStrand.FORWARD);
 
-    // Node C will use the forward strand for the edge C->D but
-    // node D will use the reverse strand of C for its incoming edge C.
-    DNAStrand cStrand = DNAStrand.FORWARD;
-    nodeC.addOutgoingEdge(
-        cStrand, new EdgeTerminal(nodeD.getNodeId(), DNAStrand.FORWARD));
-
-    // We want D to be from the reverse strand of the palindrome because
-    // the only way the edge will be correct after the merge is if
-    // we recognize that node C is a palindrome when updating the edge.
-    nodeD.addIncomingEdge(
-        DNAStrand.FORWARD,
-        new EdgeTerminal(
-            nodeC.getNodeId(), DNAStrandUtil.flip(DNAStrand.FORWARD)));
+    GraphUtil.addBidirectionalEdge(
+        nodeC, DNAStrand.FORWARD, nodeD, DNAStrand.FORWARD);
 
     CompressibleNodeData nodeACompressible = new CompressibleNodeData();
     nodeACompressible.setNode(nodeA.getData());
@@ -910,9 +898,12 @@ public class TestPairMarkAvro extends PairMarkAvro {
     nodeBCompressible.setNode(nodeB.getData());
     nodeBCompressible.setCompressibleStrands(CompressibleStrands.BOTH);
 
+    // CompressibleAvro always marks the forward strand as the compressible
+    // strand for a palindrome. This field should be ignored if its a
+    // palindrome.
     CompressibleNodeData nodeCCompressible = new CompressibleNodeData();
     nodeCCompressible.setNode(nodeC.getData());
-    nodeCCompressible.setCompressibleStrands(CompressibleStrands.BOTH);
+    nodeCCompressible.setCompressibleStrands(CompressibleStrands.REVERSE);
 
     // We mark node D as not being compressible. We didn't bother adding
     // edges to make it truly not compressible.
@@ -947,14 +938,10 @@ public class TestPairMarkAvro extends PairMarkAvro {
     infoC.setCompressibleNode(nodeCCompressible);
     infoC.setStrandToMerge(CompressibleStrands.REVERSE);
 
-
     // NodeD should have its edge from C moved to point to the new merged
     // node. The merged sequence for A->B->C will be AACATG.
     // So clearly the edge to D("TG") is from the forward strand of the
-    // merged node. Note, that the original edge C->D was RF.
-    // B is merged with the forward strand of C. So if we don't recognize that
-    // C is a palindrome and send the update correctly we won't get the correct
-    // result.
+    // merged node.
     GraphNode expectedD = GraphTestUtil.createNode(
         "nodeD", nodeD.getSequence().toString());
     expectedD.addIncomingEdge(
@@ -968,7 +955,6 @@ public class TestPairMarkAvro extends PairMarkAvro {
     NodeInfoForMerge infoD = new NodeInfoForMerge();
     infoD.setCompressibleNode(expectedDCompressible);
     infoD.setStrandToMerge(CompressibleStrands.NONE);
-
 
     assertNodeInfoForMergeEqual(infoA, results.reduceOutputs.get(nodeA.getNodeId()));
     assertNodeInfoForMergeEqual(infoB, results.reduceOutputs.get(nodeB.getNodeId()));
