@@ -255,6 +255,11 @@ public class CompressibleAvro extends MRStage {
           // incoming edge.
           terminals = r_terminals;
         }
+        if (terminals.size() == 0) {
+          // There are no message in this direction so we don't be able
+          // to compress it.
+          continue;
+        }
 
         TailData tail_data = node.getTail(
             strand, EdgeDirection.OUTGOING);
