@@ -179,7 +179,7 @@ public class TestRemoveTipsAvro extends RemoveTipsAvro{
     // We construct the following special case where a node is connected
     // to itself with an edge for strands FR. This is an important case
     // because it means the reverse complement of the edge is the same edge FR.
-    // This test ensures we properly detec this is not a tip.
+    // This test ensures we properly detect this is not a tip.
     MapTestCaseData testCase = new MapTestCaseData();
 
     GraphNode node = new GraphNode();
