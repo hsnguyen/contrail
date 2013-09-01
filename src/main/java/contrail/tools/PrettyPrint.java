@@ -50,7 +50,7 @@ import contrail.stages.ParameterDefinition;
  *
  * TODO(jeremy@lewi.us):
  * 1. Allow the inputpath to specify a directory or glob path.
- * 2. If outputpath isn't specified dump to stdout.
+ * 2. If outputpath isn't specified dump to stdout. (see PrettyPrintGraph.java)
  */
 public class PrettyPrint extends NonMRStage {
   private static final Logger sLogger =
