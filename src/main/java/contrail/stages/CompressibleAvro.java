@@ -154,11 +154,16 @@ public class CompressibleAvro extends MRStage {
       CompressibleMapOutput map_output = out_pair.value();
 
       if (node.hasConnectedStrands()) {
-        // We merge the node.
         reporter.incrCounter(
-            "Contrail","nodes-with-connected-strands-merged", 1);
+            "Contrail","nodes-with-connected-strands", 1);
 
-        node = nodeMerger.mergeConnectedStrands(node, K - 1);
+        // We merge the strands if possible.
+        GraphNode newNode = nodeMerger.mergeConnectedStrands(node, K - 1);
+        if (newNode != null) {
+          reporter.incrCounter(
+              "Contrail","nodes-with-connected-strands-merged", 1);
+          node = newNode;
+        }
       }
 
       // We consider the outgoing edges from both strands.

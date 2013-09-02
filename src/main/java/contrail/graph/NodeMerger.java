@@ -385,10 +385,14 @@ public class NodeMerger {
    * However, Node A will store the edge A->Y as FF which is consistent with
    * Y->A being represented as RR. We want the two edges to remain consistent
    * because other parts of the code depend on the edges remaining consistent.
-   * @param node
+   *
+   * @param node: The new node if the strands were merged or null if the
+   * strands can't be merged.
+   *
    * @return
    */
-  public GraphNode mergeConnectedStrands(GraphNode node, int overlap) {
+  public GraphNode mergeConnectedStrands(
+      GraphNode node, int overlap) {
     if (!node.hasConnectedStrands()) {
       sLogger.fatal(
           "Tried to merge connected strands for a node without connected " +
@@ -409,6 +413,20 @@ public class NodeMerger {
     terminals.add(new EdgeTerminal(node.getNodeId(), srcStrand));
     terminals.add(new EdgeTerminal(
         node.getNodeId(), DNAStrandUtil.flip(srcStrand)));
+
+    if (node.getEdgeTerminals(
+            terminals.get(0).strand, EdgeDirection.OUTGOING).size() != 1) {
+      // Strands can't be merged because src strand has more than 1 outgoing
+      // edge.
+      return null;
+    }
+
+    if (node.getEdgeTerminals(
+        terminals.get(1).strand, EdgeDirection.INCOMING).size() != 1) {
+      // Strands can't be merged because dest strand has more than 1 incoming
+      // edge.
+      return null;
+    }
 
     HashMap<String, GraphNode> nodes = new HashMap<String, GraphNode>();
     nodes.put(node.getNodeId(), node);

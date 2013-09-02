@@ -781,4 +781,38 @@ public class TestNodeMerger extends NodeMerger {
       assertEquals(NodeDiff.NONE, diff);
     }
   }
+
+  @Test
+  public void testConnectedStrandsNotMergeable() {
+    // We test NodeMerger.mergeConnectedSrands doesn't merge the strands
+    // when the strands can't be merged.
+    // Suppose we have the graph X->R(X),A
+    // and we call mergeConnectedStrands on X, no merge should happen
+    // because X has outdegree 2.
+    for (DNAStrand xStrand : DNAStrand.values()) {
+      GraphNode node = new GraphNode();
+      node.setNodeId("X");
+
+      Sequence catSequence = new Sequence("CAT", DNAAlphabetFactory.create());
+      if (xStrand == DNAStrand.REVERSE) {
+        // Take the complete of the sequence so that the edge from Y will
+        // be the R strand of X.
+        node.setSequence(DNAUtil.reverseComplement(catSequence));
+      } else {
+        node.setSequence(catSequence);
+      }
+
+      GraphUtil.addBidirectionalEdge(
+          node, xStrand, node, DNAStrandUtil.flip(xStrand));
+
+      GraphNode nodeA = GraphTestUtil.createNode("A", "ATGG");
+
+      GraphUtil.addBidirectionalEdge(
+          node, xStrand, nodeA, DNAStrand.FORWARD);
+
+      NodeMerger merger = new NodeMerger();
+      GraphNode merged = merger.mergeConnectedStrands(node, 2);
+      assertEquals(null, merged);
+    }
+  }
 }
