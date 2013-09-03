@@ -473,6 +473,7 @@ public class TestNodeMerger extends NodeMerger {
     // Create a node with some edges.
     GraphNode node = new GraphNode();
     node.getData().setNodeId(nodeid);
+    node.setSequence(sequence);
 
     int num_edges = generator.nextInt(15);
     for (int edge_index = 0; edge_index < num_edges; edge_index++) {
@@ -494,7 +495,6 @@ public class TestNodeMerger extends NodeMerger {
         node.addOutgoingEdgeWithTags(strand, terminal, tags, kMaxThreads);
       }
     }
-    node.setSequence(sequence);
 
     return node;
   }

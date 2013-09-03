@@ -682,6 +682,12 @@ public class GraphNode {
       neighbors.add(dest_node);
     }
 
+    if (isPalindrome()) {
+      // Since its a palindrome we use the convention of always using the
+      // forward strand.
+      strand = DNAStrand.FORWARD;
+    }
+
     List<EdgeData> list_edge_strands = dest_node.getEdges();
     if (list_edge_strands == null) {
       list_edge_strands = new ArrayList<EdgeData> ();
@@ -1260,6 +1266,7 @@ public class GraphNode {
   public boolean isPalindrome() {
     return derived_data.isPalindrome();
   }
+
   /**
    * A comparator for sorting nodes by NodeId.
    */
