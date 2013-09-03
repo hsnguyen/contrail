@@ -22,6 +22,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 
 import contrail.ContrailConfig;
@@ -238,6 +239,47 @@ public class NodeMerger {
     Sequence canonicalSequence = DNAUtil.canonicalseq(mergedSequence);
     DNAStrand mergedStrand = DNAUtil.canonicaldir(mergedSequence);
 
+    // ->X->...->R(X) or
+    // ->R(X)->...->X
+    EdgeTerminal startTerminal = chain.get(0);
+    EdgeTerminal endTerminal = chain.get(chain.size() - 1);
+    boolean endIsRCStart =
+        (startTerminal.nodeId.equals(endTerminal.nodeId)) &&
+        (startTerminal.strand.equals(DNAStrandUtil.flip(endTerminal.strand)));
+    boolean isPalindrome = DNAUtil.isPalindrome(canonicalSequence);
+    if (isPalindrome) {
+      // Assuming the graph is the result of the standard contrail stages
+      // we can only get a palindrome if we have
+      // ->X->...->R(X) or
+      // ->R(X)->...->X
+      // i.e suppose X->...->A = R(A)->...->R(X)
+      // then X=R(A) so we have X->...->R(X)
+      // Sanity check.
+      if (!endIsRCStart) {
+        // It is possible to construct a graph which doesn't satisfy this
+        // condition. i.e suppose we have  CAT->ATCAT  the merged sequence
+        // is CATCAT and the two nodes are not the same. However, this
+        // graph should never be produced by the current set of contrail
+        // operations. Currently, all nodes would start with the same K so
+        // buildgraph would yield the graph CAT->ATC->TCA->CAT.
+        // This check protects us in case other parts of the code change
+        // and this assumption is violated.
+        ArrayList<String> terminalStrings = new ArrayList<String>();
+        for (EdgeTerminal t : chain) {
+          terminalStrings.add(t.toString());
+        }
+        sLogger.fatal(
+            "Something is wrong with the merge. The result of the merge " +
+            "is a palindrome but the start and end terminal are not the same " +
+            "nodes. The terminals to merge is: " +
+            StringUtils.join(terminalStrings, ","),
+            new RuntimeException("Unexpected palindrome."));
+      }
+
+      // We select the merged strand so that the strand of the incoming
+      // and outgoing edges will be preserved.
+      mergedStrand = startTerminal.strand;
+    }
     GraphNode newNode = new GraphNode();
     newNode.setNodeId(newId);
     newNode.setCoverage(coverage);
@@ -247,6 +289,7 @@ public class NodeMerger {
     if (mergedStrand == DNAStrand.REVERSE) {
       reverseReads(allTags, mergedSequence.size());
     }
+
     // We don't want to steal a reference to allTags because allTags
     // gets reused.
     newNode.getData().getR5Tags().addAll(allTags);
@@ -258,8 +301,6 @@ public class NodeMerger {
       idsInChain.add(terminal.nodeId);
     }
 
-    EdgeTerminal startTerminal = chain.get(0);
-    EdgeTerminal endTerminal = chain.get(chain.size() - 1);
     GraphNode startNode = nodes.get(chain.get(0).nodeId);
     GraphNode endNode = nodes.get(chain.get(chain.size() - 1).nodeId);
     // Preserve the edges we need to preserve the incoming/outgoing
@@ -272,22 +313,28 @@ public class NodeMerger {
         newNode, mergedStrand, startNode, startTerminal.strand,
         EdgeDirection.INCOMING, idsInChain);
 
-    // add the outgoing edges.
-    copyEdgesForStrand(
-        newNode, mergedStrand, endNode, endTerminal.strand,
-        EdgeDirection.OUTGOING, idsInChain);
+    // Copy the outgoing edges for the last node in the chain.
+    // We don't want to copy an edge twice. Consider the special case
+    // ->X->...->R(X).  So the incoming edges to X are the same edges
+    // as the outgoing edges for R(X). So for the forward strand we only
+    // need to copy the incoming edges. Similarly we don't need to consider
+    // the reverse complement because that yields the same sequence.
+    if (!endIsRCStart) {
+      copyEdgesForStrand(
+          newNode, mergedStrand, endNode, endTerminal.strand,
+          EdgeDirection.OUTGOING, idsInChain);
 
-    // Now add the incoming and outgoing edges for the reverse complement.
-    DNAStrand rcStrand = DNAStrandUtil.flip(mergedStrand);
+      // Now add the incoming and outgoing edges for the reverse complement.
+      DNAStrand rcStrand = DNAStrandUtil.flip(mergedStrand);
 
-    copyEdgesForStrand(
-        newNode, rcStrand, endNode, DNAStrandUtil.flip(endTerminal.strand),
-        EdgeDirection.INCOMING, idsInChain);
+      copyEdgesForStrand(
+          newNode, rcStrand, endNode, DNAStrandUtil.flip(endTerminal.strand),
+          EdgeDirection.INCOMING, idsInChain);
 
-    // add the outgoing edges.
-    copyEdgesForStrand(
-        newNode, rcStrand, startNode, DNAStrandUtil.flip(startTerminal.strand),
-        EdgeDirection.OUTGOING, idsInChain);
+      copyEdgesForStrand(
+          newNode, rcStrand, startNode, DNAStrandUtil.flip(startTerminal.strand),
+          EdgeDirection.OUTGOING, idsInChain);
+    }
 
     // TODO(jeremy@lewi.us): We should add options which allow cycles to be
     // broken.
@@ -330,10 +377,22 @@ public class NodeMerger {
    * edges to other nodes don't need to move because the sequence for both
    * strands of the merged sequence is the same.
    *
-   * @param node
+   * Note: The merge preserves the strand of any edges attached to the node.
+   * e.g Suppose we have A->X->RC(X)->RC(A)
+   * The merged graph is A->Y->RC(A)  where Y=RC(Y)
+   * Node Y has a single outgoing edge to RC(A). This edge could be represented
+   * as  FR or RR because Y is a palindrome.
+   * However, Node A will store the edge A->Y as FF which is consistent with
+   * Y->A being represented as RR. We want the two edges to remain consistent
+   * because other parts of the code depend on the edges remaining consistent.
+   *
+   * @param node: The new node if the strands were merged or null if the
+   * strands can't be merged.
+   *
    * @return
    */
-  public GraphNode mergeConnectedStrands(GraphNode node, int overlap) {
+  public GraphNode mergeConnectedStrands(
+      GraphNode node, int overlap) {
     if (!node.hasConnectedStrands()) {
       sLogger.fatal(
           "Tried to merge connected strands for a node without connected " +
@@ -355,15 +414,25 @@ public class NodeMerger {
     terminals.add(new EdgeTerminal(
         node.getNodeId(), DNAStrandUtil.flip(srcStrand)));
 
+    if (node.getEdgeTerminals(
+            terminals.get(0).strand, EdgeDirection.OUTGOING).size() != 1) {
+      // Strands can't be merged because src strand has more than 1 outgoing
+      // edge.
+      return null;
+    }
+
+    if (node.getEdgeTerminals(
+        terminals.get(1).strand, EdgeDirection.INCOMING).size() != 1) {
+      // Strands can't be merged because dest strand has more than 1 incoming
+      // edge.
+      return null;
+    }
 
     HashMap<String, GraphNode> nodes = new HashMap<String, GraphNode>();
     nodes.put(node.getNodeId(), node);
     MergeResult result = mergeNodes(
         node.getNodeId(), terminals, nodes, overlap);
 
-    // TODO(jeremy@lewi.us): Should we regularize the edges? The merged
-    // node is XR(X). The forward and reverse complement sequences are the same.
-    // So should we force all edges to be to the forward strand?
     return result.node;
   }
 }
