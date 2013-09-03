@@ -213,7 +213,6 @@ public class CompressibleAvro extends MRStage {
       AvroReducer<CharSequence, CompressibleMapOutput, CompressibleNodeData> {
     private GraphNode node = new GraphNode();
 
-
     // We store the nodes sending messages in two sets.
     // We use one set store messages to the forward strand and another
     // corresponding to messages to the reverse strand.
