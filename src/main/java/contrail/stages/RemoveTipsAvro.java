@@ -151,7 +151,12 @@ public class RemoveTipsAvro extends MRStage {
         return;
       }
 
-      if ((len <= tiplength) && (inDegree + outDegree <= 1))  {
+      // We need to make sure the node doesn't have connected strands.
+      // e.g A->R(A) inDegree + outdegree = 1 because the edge is only
+      // stored once.
+      // a cycle A->A would have indgree + outdegree =2.
+      if ((len <= tiplength) && (inDegree + outDegree <= 1) &&
+          !node.hasConnectedStrands())  {
         reporter.incrCounter("Contrail", "tips_found", 1);
 
         if (VERBOSE)	{
@@ -173,8 +178,7 @@ public class RemoveTipsAvro extends MRStage {
         msg.setEdgeStrands(key);
         out_pair.set( terminals.get(0).nodeId, msg);
         output.collect(out_pair);
-      }
-      else	{
+      } else	{
         msg.setNode(graph_data);
         msg.setEdgeStrands(null); /*setEdgeStrands is set null to indicate
 							  that this node is normal, not a tip*/

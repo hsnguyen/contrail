@@ -4,6 +4,8 @@
 # Ignore private files.
 .*
 
+# Compiled python files
+.*pyc
 # Miscellaneous files
 nbactions.xml
 
