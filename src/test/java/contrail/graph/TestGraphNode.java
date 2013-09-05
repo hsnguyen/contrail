@@ -639,6 +639,5 @@ public class TestGraphNode {
 
       assertFalse(node.hasConnectedStrands());
     }
-
   }
 }
