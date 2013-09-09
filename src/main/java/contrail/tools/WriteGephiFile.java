@@ -37,7 +37,6 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
@@ -56,6 +55,7 @@ import contrail.stages.ContrailParameters;
 import contrail.stages.NonMRStage;
 import contrail.stages.NotImplementedException;
 import contrail.stages.ParameterDefinition;
+import contrail.util.FileHelper;
 
 /**
  * Covert the graph into an gephi formatted XML file which can then be loaded
@@ -540,28 +540,8 @@ public class WriteGephiFile extends NonMRStage {
     String inputPathStr = (String) stage_options.get("inputpath");
     sLogger.info(" - input: "  + inputPathStr);;
 
-    // Check if path is a directory.
-    Path inputPath = new Path(inputPathStr);
-
-    FileStatus[] fileStates = null;
-    try {
-      fileStates = fs.globStatus(new Path(inputPathStr));
-    } catch (IOException e) {
-      sLogger.fatal("Could not get file status for inputpath:" + inputPath, e);
-      System.exit(-1);
-    }
-
-    ArrayList<Path> inputFiles = new ArrayList<Path>();
-
-    for (FileStatus status : fileStates) {
-     if (status.isDir()) {
-         sLogger.info("Skipping directory:" + status.getPath());
-         continue;
-      }
-      sLogger.info("Input file:" + status.getPath()) ;
-      inputFiles.add(status.getPath());
-    }
-
+    ArrayList<Path> inputFiles = FileHelper.matchGlobWithDefault(
+        getConf(), inputPathStr, "*.avro");
     if (inputFiles.size() == 0) {
       throw new RuntimeException("Didn't find any graph files.");
     }
