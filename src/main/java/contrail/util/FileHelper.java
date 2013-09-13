@@ -212,15 +212,28 @@ public class FileHelper {
     } catch (IOException e) {
       throw new RuntimeException("Can't get filesystem: " + e.getMessage());
     }
-    GlobPathFilter filter;
+    GlobPathFilter filter = null;
     Path directory;
     try {
-      if (fs.exists(globOrDirectoryPath) &&
-          fs.getFileStatus(globOrDirectoryPath).isDir()) {
-        filter = new GlobPathFilter(FilenameUtils.concat(
-            globOrDirectory, defaultGlob));
-        directory = globOrDirectoryPath;
+      if (fs.exists(globOrDirectoryPath)) {
+          if (fs.getFileStatus(globOrDirectoryPath).isDir()) {
+            String pattern = FilenameUtils.concat(
+                globOrDirectory, defaultGlob);
+            sLogger.info(String.format(
+                "Path:%s is an existing directory.\n Look for files " +
+                "matching glob:", globOrDirectoryPath, pattern));
+            filter = new GlobPathFilter(pattern);
+            directory = globOrDirectoryPath;
+          } else {
+            sLogger.info(String.format(
+                "Path:%s is an existing file.", globOrDirectoryPath));
+            ArrayList<Path> paths = new ArrayList<Path>();
+            paths.add(globOrDirectoryPath);
+            return paths;
+          }
       } else {
+        sLogger.info(String.format(
+            "Path:%s is a glob expression.", globOrDirectoryPath));
         filter = new GlobPathFilter(globOrDirectory);
         directory = new Path(FilenameUtils.getFullPath(globOrDirectory));
       }
