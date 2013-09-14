@@ -174,19 +174,34 @@ public class FileHelper {
 
   /**
    * A path filter which matches globular expressions.
+   *
+   * Note: Currently we ignore the file system. We do this because
+   * the glob might not have a filesystem prefix implying it uses the default
+   * filesystem. So the question is in accept what should we do
+   * when either the path or the glob specifies a filesystem and the other
+   * doesn't? We could add different modes. The most obvious would be to
+   * match filesystem's if they both specify them but if one doesn't then
+   * ignore them.
    */
   public static class GlobPathFilter implements PathFilter {
-    String pattern;
+    Path pattern;
 
-    public GlobPathFilter(String glob) {
+    // TODO(jlewi): Should we add options to control whether we match
+    // the filesystem prefix as well?
+    public GlobPathFilter(Path glob) {
       pattern = glob;
     }
 
     @Override
     public boolean accept(Path path) {
-      String stripped = path.toUri().getPath();
+      // By converting the paths to URI's and only matching the paths
+      // we ignore the filesystem.
       boolean result = FilenameUtils.wildcardMatch(
-          stripped, pattern, IOCase.SENSITIVE);
+          path.toUri().getPath(), pattern.toUri().getPath(), IOCase.SENSITIVE);
+
+      Boolean result_value = result;
+      sLogger.info(
+          String.format("file: %s pattern:%s match: %s", path, pattern, result_value.toString()));
       return result;
     }
   }
@@ -222,7 +237,7 @@ public class FileHelper {
             sLogger.info(String.format(
                 "Path:%s is an existing directory.\n Look for files " +
                 "matching glob:", globOrDirectoryPath, pattern));
-            filter = new GlobPathFilter(pattern);
+            filter = new GlobPathFilter(new Path(pattern));
             directory = globOrDirectoryPath;
           } else {
             sLogger.info(String.format(
@@ -234,7 +249,7 @@ public class FileHelper {
       } else {
         sLogger.info(String.format(
             "Path:%s is a glob expression.", globOrDirectoryPath));
-        filter = new GlobPathFilter(globOrDirectory);
+        filter = new GlobPathFilter(new Path(globOrDirectory));
         directory = new Path(FilenameUtils.getFullPath(globOrDirectory));
       }
     } catch(IOException e) {
@@ -242,6 +257,13 @@ public class FileHelper {
     }
 
     try {
+      sLogger.info(String.format(
+          "Search directory:%s with filter:%s", directory, filter.pattern));
+      // LEWI NO commit
+      for (FileStatus status : fs.listStatus(directory)) {
+        sLogger.info("Directory contains:" + status.getPath().toString());
+      }
+
       ArrayList<Path> paths = new ArrayList<Path>();
       for (FileStatus status : fs.listStatus(directory, filter)) {
         paths.add(status.getPath());
