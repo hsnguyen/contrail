@@ -25,14 +25,12 @@ import java.util.ArrayList;
 import java.util.Date;
 
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.io.IOCase;
 import org.apache.commons.io.filefilter.WildcardFileFilter;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.PathFilter;
 import org.apache.log4j.Logger;
 
 /**
@@ -165,45 +163,10 @@ public class FileHelper {
       return result;
     }
 
-
     for (File file : files) {
       result.add(file.getPath());
     }
     return result;
-  }
-
-  /**
-   * A path filter which matches globular expressions.
-   *
-   * Note: Currently we ignore the file system. We do this because
-   * the glob might not have a filesystem prefix implying it uses the default
-   * filesystem. So the question is in accept what should we do
-   * when either the path or the glob specifies a filesystem and the other
-   * doesn't? We could add different modes. The most obvious would be to
-   * match filesystem's if they both specify them but if one doesn't then
-   * ignore them.
-   */
-  public static class GlobPathFilter implements PathFilter {
-    Path pattern;
-
-    // TODO(jlewi): Should we add options to control whether we match
-    // the filesystem prefix as well?
-    public GlobPathFilter(Path glob) {
-      pattern = glob;
-    }
-
-    @Override
-    public boolean accept(Path path) {
-      // By converting the paths to URI's and only matching the paths
-      // we ignore the filesystem.
-      boolean result = FilenameUtils.wildcardMatch(
-          path.toUri().getPath(), pattern.toUri().getPath(), IOCase.SENSITIVE);
-
-      Boolean result_value = result;
-      sLogger.info(
-          String.format("file: %s pattern:%s match: %s", path, pattern, result_value.toString()));
-      return result;
-    }
   }
 
   /**
@@ -227,8 +190,7 @@ public class FileHelper {
     } catch (IOException e) {
       throw new RuntimeException("Can't get filesystem: " + e.getMessage());
     }
-    GlobPathFilter filter = null;
-    Path directory;
+
     try {
       if (fs.exists(globOrDirectoryPath)) {
           if (fs.getFileStatus(globOrDirectoryPath).isDir()) {
@@ -237,8 +199,7 @@ public class FileHelper {
             sLogger.info(String.format(
                 "Path:%s is an existing directory.\n Look for files " +
                 "matching glob:", globOrDirectoryPath, pattern));
-            filter = new GlobPathFilter(new Path(pattern));
-            directory = globOrDirectoryPath;
+            globOrDirectoryPath = new Path(pattern);
           } else {
             sLogger.info(String.format(
                 "Path:%s is an existing file.", globOrDirectoryPath));
@@ -249,23 +210,14 @@ public class FileHelper {
       } else {
         sLogger.info(String.format(
             "Path:%s is a glob expression.", globOrDirectoryPath));
-        filter = new GlobPathFilter(new Path(globOrDirectory));
-        directory = new Path(FilenameUtils.getFullPath(globOrDirectory));
       }
     } catch(IOException e) {
       throw new RuntimeException(e);
     }
 
     try {
-      sLogger.info(String.format(
-          "Search directory:%s with filter:%s", directory, filter.pattern));
-      // LEWI NO commit
-      for (FileStatus status : fs.listStatus(directory)) {
-        sLogger.info("Directory contains:" + status.getPath().toString());
-      }
-
       ArrayList<Path> paths = new ArrayList<Path>();
-      for (FileStatus status : fs.listStatus(directory, filter)) {
+      for (FileStatus status : fs.globStatus(globOrDirectoryPath)) {
         paths.add(status.getPath());
       }
       return paths;
