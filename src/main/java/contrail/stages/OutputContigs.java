@@ -16,8 +16,6 @@
 // Author: Jeremy Lewi (jeremy@lewi.us)
 package contrail.stages;
 
-import contrail.graph.GraphNode;
-import contrail.graph.GraphNodeData;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,22 +27,22 @@ import org.apache.avro.mapred.AvroJob;
 import org.apache.avro.mapred.AvroWrapper;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.FileOutputFormat;
-import org.apache.hadoop.mapred.JobClient;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.MapReduceBase;
 import org.apache.hadoop.mapred.Mapper;
 import org.apache.hadoop.mapred.OutputCollector;
 import org.apache.hadoop.mapred.Reporter;
-import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.mapred.TextOutputFormat;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
+
+import contrail.graph.GraphNode;
+import contrail.graph.GraphNodeData;
 
 /**
  * Output the contigs in TIGER/GDE contig format.
@@ -58,12 +56,13 @@ import org.apache.log4j.Logger;
  * https://sourceforge.net/apps/mediawiki/amos/index.php?title=Bank2contig
  * for a reference regarding the format.
  */
-public class OutputContigs extends Stage {
+public class OutputContigs extends MRStage {
   private static final Logger sLogger = Logger.getLogger(OutputContigs.class);
 
   /**
    * Get the parameters used by this stage.
    */
+  @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
         new HashMap<String, ParameterDefinition>();
@@ -88,12 +87,14 @@ public class OutputContigs extends Stage {
     private Text textOutput;
     private GraphNode node;
     private ArrayList<String> lines;
+    @Override
     public void configure(JobConf job) {
       textOutput = new Text();
       node = new GraphNode();
       lines = new ArrayList<String>();
     }
 
+    @Override
     public void map(AvroWrapper<GraphNodeData> nodeData, NullWritable inputValue,
         OutputCollector<Text, NullWritable> output, Reporter reporter)
             throws IOException {
@@ -114,18 +115,16 @@ public class OutputContigs extends Stage {
   }
 
   @Override
-  public RunningJob runJob() throws Exception {
+  protected void setupConfHook() {
     String inputPath = (String) stage_options.get("inputpath");
     String outputPath = (String) stage_options.get("outputpath");
 
     sLogger.info(" - inputpath: "  + inputPath);
     sLogger.info(" - outputpath: " + outputPath);
 
-    JobConf conf = new JobConf(GraphToFasta.class);
+    JobConf conf = (JobConf) getConf();
 
     AvroJob.setInputSchema(conf, GraphNodeData.SCHEMA$);
-
-    initializeJobConfiguration(conf);
 
     FileInputFormat.addInputPath(conf, new Path(inputPath));
     FileOutputFormat.setOutputPath(conf, new Path(outputPath));
@@ -141,30 +140,6 @@ public class OutputContigs extends Stage {
     // Make it mapper only.
     conf.setNumReduceTasks(0);
     conf.setMapperClass(GraphToFastqMapper.class);
-
-    if (stage_options.containsKey("writeconfig")) {
-      writeJobConfig(conf);
-    } else {
-      // Delete the output directory if it exists already
-      Path out_path = new Path(outputPath);
-      if (FileSystem.get(conf).exists(out_path)) {
-        // TODO(jlewi): We should only delete an existing directory
-        // if explicitly told to do so.
-        sLogger.info("Deleting output path: " + out_path.toString() + " " +
-            "because it already exists.");
-        FileSystem.get(conf).delete(out_path, true);
-      }
-
-      long starttime = System.currentTimeMillis();
-      RunningJob result = JobClient.runJob(conf);
-      long endtime = System.currentTimeMillis();
-
-      float diff = (float) ((endtime - starttime) / 1000.0);
-
-      System.out.println("Runtime: " + diff + " s");
-      return result;
-    }
-    return null;
   }
 
   public static void main(String[] args) throws Exception {
