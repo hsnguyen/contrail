@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+
 import org.apache.avro.Schema;
 import org.apache.avro.mapred.AvroCollector;
 import org.apache.avro.mapred.AvroJob;
@@ -13,14 +14,11 @@ import org.apache.avro.mapred.AvroMapper;
 import org.apache.avro.mapred.AvroReducer;
 import org.apache.avro.mapred.Pair;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.FileOutputFormat;
-import org.apache.hadoop.mapred.JobClient;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.Reporter;
-import org.apache.hadoop.mapred.RunningJob;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
@@ -35,7 +33,7 @@ import contrail.graph.R5Tag;
  * The output of this MR job is key, value pairs nodeID->SequenceRead.
  * Each pair associates the data for a read with the contig it is aligned with.
  */
-public class TagReadsWithContigID extends Stage {
+public class TagReadsWithContigID extends MRStage {
   private static final Logger sLogger = Logger.getLogger(
       TagReadsWithContigID.class);
 
@@ -45,6 +43,7 @@ public class TagReadsWithContigID extends Stage {
 
     private Pair<CharSequence, TagReadsOutput> outPair;
     private CompressedRead read;
+    @Override
     public void configure(JobConf job) {
       outPair = new Pair<CharSequence, TagReadsOutput>(
           "", new TagReadsOutput());
@@ -90,6 +89,7 @@ public class TagReadsWithContigID extends Stage {
     private Pair<CharSequence, CompressedRead> outPair;
     private ArrayList<String> nodeIDs;
 
+    @Override
     public void configure(JobConf job) {
       outPair =
           new Pair<CharSequence, CompressedRead>("", new CompressedRead());
@@ -127,6 +127,7 @@ public class TagReadsWithContigID extends Stage {
     }
   }
 
+  @Override
   protected Map<String, ParameterDefinition>
       createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
@@ -160,26 +161,17 @@ public class TagReadsWithContigID extends Stage {
 
 
   @Override
-  public RunningJob runJob() throws Exception {
+  protected void setupConfHook() {
     String[] required_args = {"graphpath", "readpath", "outputpath"};
-    checkHasParametersOrDie(required_args);
 
     String readPath = (String) stage_options.get("readpath");
     String graphPath = (String) stage_options.get("graphpath");
     String outputPath = (String) stage_options.get("outputpath");
 
-    Configuration base_conf = getConf();
-    JobConf conf = null;
-    if (base_conf == null) {
-      conf = new JobConf(QuickMergeAvro.class);
-    } else {
-      conf = new JobConf(base_conf, QuickMergeAvro.class);
-    }
-    this.setConf(conf);
+
+    JobConf conf = (JobConf) getConf();
 
     conf.setJobName("TagReadsWithContigID");
-
-    initializeJobConfiguration(conf);
 
     FileInputFormat.addInputPath(conf, new Path(graphPath));
     FileInputFormat.addInputPath(conf, new Path(readPath));
@@ -204,30 +196,6 @@ public class TagReadsWithContigID extends Stage {
 
     AvroJob.setMapperClass(conf, Mapper.class);
     AvroJob.setReducerClass(conf, Reducer.class);
-
-    if (stage_options.containsKey("writeconfig")) {
-      writeJobConfig(conf);
-    } else {
-      // Delete the output directory if it exists already
-      Path out_path = new Path(outputPath);
-      if (FileSystem.get(conf).exists(out_path)) {
-        // TODO(jlewi): We should only delete an existing directory
-        // if explicitly told to do so.
-        sLogger.info("Deleting output path: " + out_path.toString() + " " +
-            "because it already exists.");
-        FileSystem.get(conf).delete(out_path, true);
-      }
-
-      long starttime = System.currentTimeMillis();
-      RunningJob result = JobClient.runJob(conf);
-      long endtime = System.currentTimeMillis();
-      float diff = (float) ((endtime - starttime) / 1000.0);
-
-      sLogger.info("Runtime: " + diff + " s");
-
-      return result;
-    }
-    return null;
   }
 
   public static void main(String[] args) throws Exception {
