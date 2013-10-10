@@ -132,6 +132,20 @@ abstract public class StageBase extends Configured implements Tool {
   }
 
   /**
+   * Add definitions to the list of parameters.
+   * This is used by subclasses for which the list of parameters isn't fully
+   * known until runtime
+   */
+  protected void addParameterDefinitions(
+      Map<String, ParameterDefinition> newDefs) {
+    HashMap<String, ParameterDefinition> parameters =
+        new HashMap<String, ParameterDefinition>();
+    parameters.putAll(getParameterDefinitions());
+    parameters.putAll(newDefs);
+    definitions = Collections.unmodifiableMap(parameters);
+  }
+
+  /**
    * Return a list of the parameter definitions for this stage.
    */
   final public Map<String, ParameterDefinition> getParameterDefinitions() {
