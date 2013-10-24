@@ -33,11 +33,11 @@ import contrail.stages.ParameterDefinition;
  */
 public class FilterByName extends FilterBase {
   @Override
-  public Map<String, ParameterDefinition> getParameterDefinitions() {
+  protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> defs =
         new HashMap<String, ParameterDefinition>();
 
-    defs.putAll(super.getParameterDefinitions());
+    defs.putAll(super.createParameterDefinitions());
 
     ParameterDefinition filter = new ParameterDefinition(
         "nodes",

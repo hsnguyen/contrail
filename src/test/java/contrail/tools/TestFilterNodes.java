@@ -54,7 +54,9 @@ public class TestFilterNodes {
     stage.setParameter("inputpath", avroFile.toString());
     stage.setParameter("outputpath", outputPath.toString());
     stage.setParameter("filter", FilterByName.class.getName());
-    stage.setParameter("nodes", StringUtils.join(targets, ","));
+    stage.setParameter(
+        "filter_options",
+        "--nodes=" + StringUtils.join(targets, ","));
     assertTrue(stage.execute());
 
     GraphNodeFilesIterator outputs = GraphNodeFilesIterator.fromGlob(

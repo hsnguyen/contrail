@@ -62,12 +62,27 @@ public class FilterNodes extends MRStage {
         String.class,
         null);
     defs.put(filter.getName(), filter);
+
+    ParameterDefinition filter_options = new ParameterDefinition(
+        "filter_options",
+        "semi-colon separated list of options which configure the filter. " +
+        "e.g --filter_options=--option1=value;--option2=value.",
+        String.class,
+        null);
+
+    defs.put(filter.getName(), filter);
+    defs.put(filter_options.getName(), filter_options);
     return Collections.unmodifiableMap(defs);
   }
 
   private FilterBase newFilterBase() {
     FilterBase base = null;
     String filter = (String) stage_options.get("filter");
+    if (filter == null) {
+      sLogger.fatal("No value for filter specified.");
+      System.exit(-1);
+    }
+
     try {
       base =
           Class.forName(filter).asSubclass(FilterBase.class).newInstance();
@@ -80,14 +95,6 @@ public class FilterNodes extends MRStage {
     }
 
     return base;
-  }
-
-  @Override
-  protected void startExecuteHook() {
-    // Determine the list of required parameters by looking at the
-    // filter.
-    FilterBase base = newFilterBase();
-    addParameterDefinitions(base.getParameterDefinitions());
   }
 
   @Override
@@ -116,6 +123,13 @@ public class FilterNodes extends MRStage {
     AvroJob.setOutputSchema(conf, nodeData.getSchema());
 
     FilterBase base = newFilterBase();
+
+    // We need to parse the filter specific options.
+    String filter_options = (String) stage_options.get("filter_options");
+    base.addParameters(filter_options);
+    base.validateParametersOrDie();
+    base.addParametersToJobConf(conf);
+
     AvroJob.setMapperClass(conf, base.filterClass());
 
     // Reducer only.
@@ -123,7 +137,7 @@ public class FilterNodes extends MRStage {
   }
 
   public static void main(String[] args) throws Exception {
-    int res = ToolRunner.run(new Configuration(), new SortGraph(), args);
+    int res = ToolRunner.run(new Configuration(), new FilterNodes(), args);
     System.exit(res);
   }
 }

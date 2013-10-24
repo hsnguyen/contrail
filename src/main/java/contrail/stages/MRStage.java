@@ -60,6 +60,11 @@ public class MRStage extends StageBase {
    * This should be used rarely. its mostly intended for the situation
    * in which the list of expected parameters is determined at runtime
    * based on the values of other parameters.
+   * TODO(jlewi): I don't think we can actually use it for that purpose
+   * because parseCommandLine is invoked before startExecuteHook so
+   * any options which are added by startExecuteHook won't be available
+   * when parseCommandLine is called.
+   * TODO(jlewi): Delete this since its useless.
    */
   protected void startExecuteHook() {
     // Do nothing by default.
