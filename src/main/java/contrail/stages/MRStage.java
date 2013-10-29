@@ -55,22 +55,6 @@ public class MRStage extends StageBase {
   }
 
   /**
-   * Subclasses can override this hook to do processing at the start of execute.
-   *
-   * This should be used rarely. its mostly intended for the situation
-   * in which the list of expected parameters is determined at runtime
-   * based on the values of other parameters.
-   * TODO(jlewi): I don't think we can actually use it for that purpose
-   * because parseCommandLine is invoked before startExecuteHook so
-   * any options which are added by startExecuteHook won't be available
-   * when parseCommandLine is called.
-   * TODO(jlewi): Delete this since its useless.
-   */
-  protected void startExecuteHook() {
-    // Do nothing by default.
-  }
-
-  /**
    * Subclasses should override this hook and use it to configure the job.
    *
    * For example, the subclass should set the input/output format for the
@@ -155,7 +139,6 @@ public class MRStage extends StageBase {
   @Override
   final public boolean execute() {
     setupLogging();
-    startExecuteHook();
     checkHasParametersOrDie(getRequiredParameters().toArray(new String[]{}));
     setDefaultParameters();
     List<InvalidParameter> invalidParameters = validateParameters();
