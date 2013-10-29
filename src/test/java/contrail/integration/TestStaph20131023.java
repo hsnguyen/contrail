@@ -14,11 +14,11 @@
 package contrail.integration;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -30,24 +30,28 @@ import org.apache.hadoop.fs.Path;
 import org.apache.log4j.Logger;
 import org.junit.Test;
 
-import contrail.graph.EdgeTerminal;
 import contrail.graph.GraphError;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
 import contrail.graph.GraphNodeFilesIterator;
 import contrail.graph.GraphUtil;
-import contrail.graph.NodeMerger;
-import contrail.sequences.DNAStrand;
 import contrail.stages.QuickMergeAvro;
 import contrail.util.AvroFileUtil;
 import contrail.util.FileHelper;
 
 /**
- * This test is uses a graph which caused problems with the Staph dataset
+ * This test uses a graph which caused problems with the Staph dataset
  * on 2013 10 23.
  *
- * Currently this test just reproduces the invalid graph we were seeing
- * in the staph dataset.
+ * This is a data driven test. The data is a json file containing the
+ * GraphNode's representing the graph. The json file should be colocated in
+ * the same package as the test.
+ *
+ * The bug was caused by the graph:
+ * Z->A
+ * A->B->C->D->A
+ * In this case QuickMerge will try to merge chain B->-C->-D.
+ * The bug was in updating the edges in A to the merged nodes.
  */
 public class TestStaph20131023 {
   private static final Logger sLogger =
@@ -55,31 +59,37 @@ public class TestStaph20131023 {
 
   private final int K = 41;
 
+  // The name of the file resource to use. This resource should be the json
+  // file which contains the subgraph extracted from the staph dataset.
+  // The graph should have been pruned so that it is a valid graph.
+  private static String graphResourcePath =
+      "contrail/integrationstaph_2013_1023_subgraph.json";
+
   /**
    * Read and validate the json records.
    */
-  private ArrayList<GraphNode> readJsonInput() {
-    // Read the json file containing the graph.
-    // TODO(jlewi): This is hardcoded we should figure out how to include
-    // it as a resource.
-    Path inPath = new Path(
-        "/home/jlewi/git_contrail/src/test/java/contrail/integration/" +
-        "DebugGraphToJson.json");
+  private HashMap<String, GraphNode> readJsonInput() {
+    String jsonResource = "contrail/integration/DebugGraphToJson.json";
+    InputStream inStream = this.getClass().getClassLoader().getResourceAsStream(
+        "contrail/integration/DebugGraphToJson.json");
+
+    if (inStream == null) {
+      fail("Could not find resource:" + jsonResource);
+    }
 
     Schema schema = new GraphNodeData().getSchema();
     Configuration conf = new Configuration();
     ArrayList<GraphNodeData> records =
-        AvroFileUtil.readJsonRecords(conf, inPath, schema);
+        AvroFileUtil.readJsonRecords(inStream, schema);
+
+    HashMap<String, GraphNode> graph = new HashMap<String, GraphNode>();
+    for (GraphNodeData data : records) {
+      graph.put(data.getNodeId().toString(), new GraphNode(data));
+    }
 
     // Make sure the input graph is valid.
-    ArrayList<GraphNode> inputNodes = new ArrayList<GraphNode>();
-    for (GraphNodeData data : records) {
-        inputNodes.add(new GraphNode(data).clone());
-    }
-    List<GraphError> inputErrors = GraphUtil.validateGraph(inputNodes, 41);
-    assertEquals(0, inputErrors.size());
-
-    return inputNodes;
+    assertTrue(isValid(graph));
+    return graph;
   }
 
   private boolean isValid(HashMap<String, GraphNode> nodes) {
@@ -90,78 +100,15 @@ public class TestStaph20131023 {
     return errors.isEmpty();
   }
 
-  /**
-   * Merge some of the nodes to try to simplify the graph
-   * while still reproducing the error.
-   */
-  private void mergeLoop(
-      HashMap<String, GraphNode> nodes) {
-    NodeMerger merger = new NodeMerger();
-
-    // Terminals to merge.
-    ArrayList<EdgeTerminal> terminals = new ArrayList<EdgeTerminal>();
-    terminals.add(new EdgeTerminal("BvPgzf8RsLLxDwA", DNAStrand.FORWARD));
-    terminals.add(new EdgeTerminal("MEGZz_-fwdzbQAI", DNAStrand.FORWARD));
-    terminals.add(new EdgeTerminal("-QRBHCgBHw9xNgI", DNAStrand.FORWARD));
-    terminals.add(new EdgeTerminal("4PTchw4OQ_HcIAM", DNAStrand.REVERSE));
-
-    NodeMerger.MergeResult result =
-        merger.mergeNodes("merged_loop_bv", terminals, nodes, K - 1 );
-
-    nodes.put(result.node.getNodeId(), result.node);
-    for (EdgeTerminal terminal : terminals) {
-      nodes.remove(terminal.nodeId);
-    }
-
-    assertTrue(isValid(nodes));
-  }
-
-  /**
-   * Remove a bunch of nodes
-   */
-  private void removeNodes(HashMap<String, GraphNode> nodes) {
-    nodes.remove("4Mc0IIi8vuNxCQM");
-    nodes.remove("xM9_IQgPiBuCHAA");
-    nodes.remove("zdMC_HE8U3dFvwA");
-    nodes.remove("xi8_gjzzJJnL_wA");
-    nodes.get("zIbzA2DB8t9s_AI").removeNeighbor("xi8_gjzzJJnL_wA");
-
-    assertTrue(isValid(nodes));
-  }
-
-  private void remove2ndTail(HashMap<String, GraphNode> nodes) {
-    // "xXdCwdS1DTC1MQA"
-    String[] ids = {
-        "YdHDIAM_zzCzDgA", "hUUPgwz8PMPMOgA",
-        "D67t9PIf_QA8BwA", "jBSSxmf0x9gMzQA", "yBrML8P_gAtw4AA"};
-
-    for (String id : ids) {
-      nodes.remove(id);
-    }
-
-    //nodes.get("hXwSLP_Exi2D_AE").removeNeighbor("xXdCwdS1DTC1MQA");
-    nodes.get("xXdCwdS1DTC1MQA").removeNeighbor("YdHDIAM_zzCzDgA");
-    assertTrue(isValid(nodes));
-  }
-
   @Test
   public void testGraph() {
-    ArrayList<GraphNode> inputNodes = readJsonInput();
+    HashMap<String, GraphNode> graph = readJsonInput();
 
     File tempDir = FileHelper.createLocalTempDir();
     String inputPath = FilenameUtils.concat(
         tempDir.getAbsolutePath(), "input");
     String mergedPath = FilenameUtils.concat(
         tempDir.getAbsolutePath(), "merged");
-
-    HashMap<String, GraphNode> graph = new HashMap<String, GraphNode>();
-    for (GraphNode n : inputNodes) {
-      graph.put(n.getNodeId(), n);
-    }
-    removeNodes(graph);
-    //remove2ndTail(graph);
-    mergeLoop(graph);
-
 
     Configuration conf = new Configuration();
     GraphUtil.writeGraphToPath(
@@ -178,15 +125,6 @@ public class TestStaph20131023 {
       fail("QuickMerge failed.");
     }
 
-//    ValidateGraph validate = new ValidateGraph();
-//    validate.setParameter("inputpath", mergedPath);
-//    validate.setParameter("outputpath",
-//        FilenameUtils.concat(tempDir.getAbsolutePath(), "validated"));
-//    validate.setParameter("K", K);
-//    if (!validate.execute()) {
-//      fail("validate failed.");
-//    }
-
     GraphNodeFilesIterator outputs = GraphNodeFilesIterator.fromGlob(
         new Configuration(),
         FilenameUtils.concat(mergedPath, "*.avro"));
@@ -196,9 +134,22 @@ public class TestStaph20131023 {
       mergedGraph.put(n.getNodeId(), n.clone());
     }
 
-    // The graph shouldn't be valid because we are trying to reproduce the
-    // error at this point. Once we have fixed the problem we will want to
-    // get rid of this and ensure the graph is valid.
-    assertFalse(isValid(mergedGraph));
+    // Verify the graph is valid.
+    assertTrue(isValid(mergedGraph));
+
+    long numCompressedChains = quickMerge.getCounter(
+        QuickMergeAvro.NUM_COMPRESSED_CHAINS.group,
+        QuickMergeAvro.NUM_COMPRESSED_CHAINS.tag);
+
+    assertEquals(4, numCompressedChains);
+
+    long numNodesCompressed = quickMerge.getCounter(
+        QuickMergeAvro.NUM_COMPRESSED_NODES.group,
+        QuickMergeAvro.NUM_COMPRESSED_NODES.tag);
+
+    assertEquals(14, numNodesCompressed);
+
+    long numOutputNodes = quickMerge.getNumReduceOutputRecords();
+    assertEquals(7, numOutputNodes);
   }
 }
