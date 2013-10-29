@@ -17,6 +17,7 @@ package contrail.util;
 import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 
@@ -67,11 +68,9 @@ public class AvroFileUtil {
    * Read records from a json file produced with PrettyPrint.
    */
   public static <T> ArrayList<T> readJsonRecords(
-      Configuration conf, Path path, Schema schema) {
+      InputStream inStream, Schema schema) {
     ArrayList<T> records = new ArrayList<T>();
     try {
-      FSDataInputStream inStream = path.getFileSystem(conf).open(path);
-
       SpecificDatumReader<T> reader = new SpecificDatumReader<T>(schema);
       JsonDecoder decoder = DecoderFactory.get().jsonDecoder(schema , inStream);
 
@@ -84,6 +83,22 @@ public class AvroFileUtil {
         // Reached the end of the file.
       }
 
+    } catch(IOException e) {
+      sLogger.fatal("IOException.", e);
+    }
+    return records;
+  }
+
+  /**
+   * Read records from a json file produced with PrettyPrint.
+   */
+  public static <T> ArrayList<T> readJsonRecords(
+      Configuration conf, Path path, Schema schema) {
+    ArrayList<T> records = null;
+    try {
+      FSDataInputStream inStream = path.getFileSystem(conf).open(path);
+
+      records = readJsonRecords(inStream, schema);
       inStream.close();
     } catch(IOException e) {
       sLogger.fatal("IOException.", e);
