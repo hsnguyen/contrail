@@ -36,12 +36,14 @@ import contrail.stages.MRStage;
 import contrail.stages.ParameterDefinition;
 
 /**
- * Base class for selecting nodes.
- * Subclasses are used to determine the actual filtering criterion.
+ * An executable stage for filtering nodes.
+ *
+ * The actual filter is determined by a subclass of FilterBase. The filter
+ * is selected using a stage parameter.
  */
 public class FilterNodes extends MRStage {
   private static final Logger sLogger =
-      Logger.getLogger(SelectNodes.class);
+      Logger.getLogger(FilterNodes.class);
 
   @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {

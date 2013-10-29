@@ -53,7 +53,7 @@ public class FilterByName extends FilterBase {
 
     @Override
     public void configure(JobConf job)    {
-      SelectNodes stage = new SelectNodes();
+      FilterByName stage = new FilterByName();
       ParameterDefinition parameter =
           stage.getParameterDefinitions().get("nodes");
       String value = (String)parameter.parseJobConf(job);
