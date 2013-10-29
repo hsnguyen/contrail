@@ -63,18 +63,17 @@ public class TestStaph20131023 {
   // file which contains the subgraph extracted from the staph dataset.
   // The graph should have been pruned so that it is a valid graph.
   private static String graphResourcePath =
-      "contrail/integrationstaph_2013_1023_subgraph.json";
+      "contrail/integration/staph_2013_1023_subgraph.json";
 
   /**
    * Read and validate the json records.
    */
   private HashMap<String, GraphNode> readJsonInput() {
-    String jsonResource = "contrail/integration/DebugGraphToJson.json";
     InputStream inStream = this.getClass().getClassLoader().getResourceAsStream(
-        "contrail/integration/DebugGraphToJson.json");
+        graphResourcePath);
 
     if (inStream == null) {
-      fail("Could not find resource:" + jsonResource);
+      fail("Could not find resource:" + graphResourcePath);
     }
 
     Schema schema = new GraphNodeData().getSchema();
