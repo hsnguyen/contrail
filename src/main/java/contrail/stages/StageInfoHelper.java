@@ -16,6 +16,7 @@ package contrail.stages;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
@@ -302,5 +303,13 @@ public class StageInfoHelper {
    */
   public DFSIterator DFSSearch() {
     return new DFSIterator(info);
+  }
+
+  public HashMap<String, Long> getCounters() {
+    HashMap<String, Long> counters = new HashMap<String, Long>();
+    for (CounterInfo counter : this.info.getCounters()) {
+      counters.put(counter.getName().toString(), counter.getValue());
+    }
+    return counters;
   }
 }
