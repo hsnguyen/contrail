@@ -15,6 +15,7 @@
 package contrail.util;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -60,6 +61,18 @@ public class TestFileHelper {
     expected.add(FilenameUtils.concat(tempDir, "file2.avro"));
     assertEquals(2, matches.size());
     assertEquals(expected, pathToStringSet(matches));
+  }
+
+  @Test
+  public void testMatchGlobWithDefaultNoExist() {
+    // Test that the match returns an empty list when we supply a directory
+    // which doesn't exist.
+    Configuration conf = new Configuration();
+
+    ArrayList<Path> matches = FileHelper.matchGlobWithDefault(
+        conf, "/some/nonexistent/directory/123adf234!@#", "*");
+
+    assertTrue(matches.isEmpty());
   }
 
   @Test
@@ -142,5 +155,40 @@ public class TestFileHelper {
     expected.add(FilenameUtils.concat(tempDir, "pattern2.txt"));
     assertEquals(5, matches.size());
     assertEquals(expected, pathToStringSet(matches));
+  }
+
+  @Test
+  public void testMatchLocalListOfGlobs() {
+    String tempDir = FileHelper.createLocalTempDir().getAbsolutePath();
+    Configuration conf = new Configuration();
+
+    for (String name : new String[]{
+         "somefile.avro", "file1.rnd", "file2.rnd", "pattern1.txt",
+         "pattern2.txt", "nomatch.no"}) {
+      Path path = new Path(FilenameUtils.concat(tempDir, name));
+      List<String> nodeData = Arrays.asList("some text");
+      AvroFileUtil.writeRecords(
+          conf, path, nodeData, Schema.create(Type.STRING));
+    }
+
+    // The glob is a comma separated list of a specific file and globs.
+    String globList = StringUtils.join(new String[]{
+      FilenameUtils.concat(tempDir, "somefile.avro"),
+      FilenameUtils.concat(tempDir, "*.rnd"),
+      FilenameUtils.concat(tempDir, "*.txt")}, ",");
+
+    ArrayList<String> matches = FileHelper.matchListOfGlobs(globList);
+
+    HashSet<String> expected = new HashSet<String>();
+    expected.add(FilenameUtils.concat(tempDir, "somefile.avro"));
+    expected.add(FilenameUtils.concat(tempDir, "file1.rnd"));
+    expected.add(FilenameUtils.concat(tempDir, "file2.rnd"));
+    expected.add(FilenameUtils.concat(tempDir, "pattern1.txt"));
+    expected.add(FilenameUtils.concat(tempDir, "pattern2.txt"));
+    assertEquals(5, matches.size());
+
+    HashSet<String> matched = new HashSet<String>();
+    matched.addAll(matches);
+    assertEquals(expected, matched);
   }
 }
