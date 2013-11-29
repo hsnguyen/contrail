@@ -161,6 +161,20 @@ public class StageInfoHelper {
     }
   }
 
+  public static StageInfoHelper loadFromPath(Configuration conf, Path path) {
+    Schema schema = (new StageInfo()).getSchema();
+    ArrayList<StageInfo> info =
+        AvroFileUtil.readJsonRecords(conf, path, schema);
+
+    if (info.size() != 1) {
+      sLogger.fatal(String.format(
+          "Expected exactly 1 record in the stage info file but there were " +
+          "%d records.", info.size()));
+    }
+
+    return new StageInfoHelper(info.get(0), path);
+  }
+
   /**
    * Load the most recent stage info file in the specified directory.
    *
@@ -181,17 +195,7 @@ public class StageInfoHelper {
     Path path = stageFiles.get(stageFiles.size() - 1);
     sLogger.info("Most recent stage info file:" + path.toString());
 
-    Schema schema = (new StageInfo()).getSchema();
-    ArrayList<StageInfo> info =
-        AvroFileUtil.readJsonRecords(conf, path, schema);
-
-    if (info.size() != 1) {
-      sLogger.fatal(String.format(
-          "Expected exactly 1 record in the stage info file but there were " +
-          "%d records.", info.size()));
-    }
-
-    return new StageInfoHelper(info.get(0), path);
+    return loadFromPath(conf, path);
   }
 
   /**
