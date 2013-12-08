@@ -67,7 +67,7 @@ public class GroupByLibraryTest {
     expected2.setId("ABC");
     expected2.setLibrary("");
     expected2.setMateId(MatePairId.RIGHT);
-
+    
     Iterable<Pair<ReadId, Read>> materializedOutput = outputs.materialize();
     assertEquals(ImmutableList.of(
         new Pair<ReadId, Read>(expected1, read1),
