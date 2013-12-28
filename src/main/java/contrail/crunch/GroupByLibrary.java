@@ -107,7 +107,7 @@ public class GroupByLibrary
   @Override
   protected void stageMain() {
     // Create an object to coordinate pipeline creation and execution.
-    Pipeline pipeline = new MRPipeline(GroupByLibraryTest.class, getConf());
+    Pipeline pipeline = new MRPipeline(GroupByLibrary.class, getConf());
 
     String inputPath = (String) stage_options.get("inputpath");
 
