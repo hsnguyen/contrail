@@ -36,6 +36,18 @@
                       "actual read this allows us to verify that the ",
                       "alignment is specified correctly."]}                      
          ]
+    },
+    {"name": "MatePairMappings",
+        "type": "record",
+        "doc": ["Structure the mappings for a pair of rieds."],              
+        "fields":[
+            {"name": "mate_id", "type":"string", "doc":"ID for the mate pair."},
+            {"name": "library_id", "type":"string", 
+             "doc":"The id for the library."},
+            {"name": "mappings", 
+             "type": {"type":"array", "items": "BowtieMapping"}, 
+             "doc":"The mappings associated with this mate pair.."}                                  
+         ]
     }
   ]
 }
