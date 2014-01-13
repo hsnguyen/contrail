@@ -68,6 +68,18 @@ public class ReadIdUtil {
   }
 
   /**
+   * Returns the mate pair suffix or "" if not matched.
+   */
+  public static String getMatePairSuffix(String id) {
+    Matcher suffix = MATE_PAIR_SUFFIX_PATTERN.matcher(id);
+    if(!suffix.find()) {
+      // There is no mate id suffix.
+      return "";
+    }
+    return id.substring(suffix.start() + 1);
+  }
+
+  /**
    * Checks if two reads form a mate pair.
    *
    * The expectation is the two reads should be the same except for the

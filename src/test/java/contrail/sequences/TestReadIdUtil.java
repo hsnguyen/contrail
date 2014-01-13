@@ -64,4 +64,22 @@ public class TestReadIdUtil {
     assertFalse(ReadIdUtil.isMatePair("somei/1", "someid/2"));
     assertFalse(ReadIdUtil.isMatePair("someid/1", "someid/1"));
   }
+
+  @Test
+  public void testMatePairSuffix() {
+    assertEquals("1", ReadIdUtil.getMatePairSuffix("3/1"));
+    assertEquals("2", ReadIdUtil.getMatePairSuffix("2/2"));
+    assertEquals(
+        "1",
+        ReadIdUtil.getMatePairSuffix(
+            "gi|30260195|ref|NC_003997.3|_500_735_3:1:0_0:0:0_4/1"));
+
+    assertEquals("", ReadIdUtil.getMatePairSuffix("someid/11"));
+    assertEquals("", ReadIdUtil.getMatePairSuffix("2_"));
+    assertEquals("", ReadIdUtil.getMatePairSuffix("2/"));
+    assertEquals(
+        "",
+        ReadIdUtil.getMatePairSuffix(
+            "gi|30260195|ref|NC_003997.3|_500_735_3:1:0_0:0:0_4"));
+  }
 }
