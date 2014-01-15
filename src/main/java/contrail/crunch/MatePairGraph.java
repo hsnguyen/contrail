@@ -43,7 +43,6 @@ import org.apache.log4j.Logger;
 import contrail.scaffolding.BowtieMapping;
 import contrail.scaffolding.ContigLink;
 import contrail.scaffolding.ContigNode;
-import contrail.scaffolding.MatePairMappings;
 import contrail.sequences.ReadIdUtil;
 import contrail.stages.ContrailParameters;
 import contrail.stages.ParameterDefinition;
@@ -95,6 +94,9 @@ public class MatePairGraph extends CrunchStage {
    * The output is the id of a contig. The value is ContigNode representing
    * that node. The ContigNode contains links to other nodes in the graph.
    * The links are formed by the mate pairs.
+   *
+   * TODO(jeremy@lewi.us): We should probably reuse
+   * FilterBowtieAlignments.BuildMatePairMappings.
    */
   public static class BuildNodes
       extends DoFn<Pair<String, Iterable<BowtieMapping>>,
@@ -103,11 +105,7 @@ public class MatePairGraph extends CrunchStage {
     public void process(
         Pair<String, Iterable<BowtieMapping>> pair,
         Emitter<Pair<String, ContigNode>> emitter) {
-      MatePairMappings mateData = new MatePairMappings();
-      mateData.setMateId(pair.first());
-      mateData.setMappings(new ArrayList<BowtieMapping>());
-
-      this.getContext().getCounter("Contrail", "mates").increment(1);
+      this.increment("Contrail", "mates");
 
       // Keep track of the reads that the left and right mates align to.
       // The key is the mate pair suffix. The value is the set of contigs

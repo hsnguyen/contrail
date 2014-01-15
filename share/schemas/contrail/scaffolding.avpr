@@ -44,9 +44,13 @@
             {"name": "mate_id", "type":"string", "doc":"ID for the mate pair."},
             {"name": "library_id", "type":"string", 
              "doc":"The id for the library."},
-            {"name": "mappings", 
+            {"name": "left_mappings", 
              "type": {"type":"array", "items": "BowtieMapping"}, 
-             "doc":"The mappings associated with this mate pair."}                                  
+             "doc": "The mappings associated with one read in the mate pair."},
+            {"name": "right_mappings", 
+             "type": {"type":"array", "items": "BowtieMapping"}, 
+             "doc": ["The mappings associated with the other read in the mate ",
+                     "pair."]}                                  
          ]
     },
     {"name": "ContigLink",
