@@ -28,6 +28,9 @@ public class FastUtil {
   /**
    * Write a fastq record to the stream.
    *
+   * (Deprecated): Using an OutputStream is preferable to using a PrintStream
+   * because PrintStream hides the errors.
+   *
    * @param record
    */
   public static void writeFastQRecord(PrintStream stream, FastQRecord record) {
