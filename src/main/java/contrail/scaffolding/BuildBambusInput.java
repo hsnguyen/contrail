@@ -213,9 +213,13 @@ public class BuildBambusInput extends NonMRStage {
   }
 
   /**
-   * For each pair of mates shorten write an entry to the library
-   * file. We also write the full reads to the fasta file. We need to put
-   * all the reads into one file because toAmos_new expects that.
+   * For each pair of mates write an entry to the library
+   * file. We also shorten the reads and write them to the fasta file.
+   * We need to put all the reads into one file because toAmos_new expects that.
+   *
+   * The reads are truncated because BOWTIE is a short read aligner and only
+   * works with short reads. Therefore, Bambus needs to use the shortened reads
+   * otherwise the alignment coordinates reported by Bambus won't be consistent.
    *
    * The code assumes that the reads in two mate pair files are already
    * aligned. i.e The i'th record in frag_1.fastq is the mate pair for
@@ -232,6 +236,7 @@ public class BuildBambusInput extends NonMRStage {
       Collection<MateFilePair> matePairs, File fastaOutputFile,
       File libraryOutputFile) {
     LibraryFileWriter libWriter = null;
+    int readLength = (Integer) stage_options.get("readLength");
     try {
       libWriter = new LibraryFileWriter(libraryOutputFile);
     } catch (IOException e) {
@@ -289,6 +294,10 @@ public class BuildBambusInput extends NonMRStage {
 
         for (FastQRecord fastq : new FastQRecord[] {left, right}) {
           fasta.setId(fastq.getId());
+
+          // Truncate the read because bowtie can only handle short reads.
+          fasta.setRead(fastq.getRead().subSequence(0, readLength));
+
           FastUtil.writeFastARecord(fastaStream, fasta);
         }
 
@@ -539,6 +548,17 @@ public class BuildBambusInput extends NonMRStage {
             "fasta files containg the reference genome. Should be on the " +
             "local filesystem.",
             String.class, null);
+
+    ParameterDefinition readLength =
+        new ParameterDefinition(
+            "read_length",
+            "How short to make the reads. The value needs to be consistent " +
+            "with the value used in AlignReadsWithBowtie. Bowtie requires " +
+            "short reads. Bambus needs to use the same read lengths as those " +
+            "used by bowtie because otherwise there could be issues with " +
+            "contig distances because read start/end coordinates for the " +
+            "alignments aren't consistent.",
+            Integer.class, 25);
 
     ParameterDefinition libsizePath =
         new ParameterDefinition(
