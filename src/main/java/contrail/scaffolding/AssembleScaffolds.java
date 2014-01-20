@@ -32,8 +32,6 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
@@ -77,9 +75,6 @@ public class AssembleScaffolds extends PipelineStage {
 
     definitions.putAll(super.createParameterDefinitions());
 
-    BuildBambusInput bambusInputStage = new BuildBambusInput();
-    definitions.putAll(bambusInputStage.getParameterDefinitions());
-
     ParameterDefinition amosPath =
         new ParameterDefinition(
             "amos_path", "The directory where the amos tools are installed.",
@@ -104,8 +99,36 @@ public class AssembleScaffolds extends PipelineStage {
             "all steps are run. This option is mostly for debugging.",
             String.class, "build_input");
 
+    // The data to load into Amos which is produced by BuildBambusInput.
+    // TODO(jlewi): We should an option to allow BuildBambusInput to be run.
+    ParameterDefinition fastaFile =
+        new ParameterDefinition(
+            "fasta_file",
+            "A single fasta file on the local filesystem containing all the " +
+            "reads .",
+            String.class, null);
+
+    ParameterDefinition tigrFile =
+        new ParameterDefinition(
+            "tigr_file",
+            "The tigr file containing the contigs and information about the " +
+            " aligned reads. This should be on the local filesystem.",
+            String.class, null);
+
+    ParameterDefinition matesFile =
+        new ParameterDefinition(
+            "mates_file",
+            "The mates file containing information about the mate pairs. " +
+            "This should be on the local filesystem.",
+            String.class, null);
+
+    ParameterDefinition output = new ParameterDefinition(
+        "outputpath", "The local directory where the output should be " +
+        "written to.", String.class, null);
+
     for (ParameterDefinition def: new ParameterDefinition[] {
-            amosPath, maxOverlap, noReduce, startStep}) {
+            amosPath, maxOverlap, noReduce, startStep, fastaFile, tigrFile,
+            matesFile, output}) {
       definitions.put(def.getName(), def);
     }
     return Collections.unmodifiableMap(definitions);
@@ -119,7 +142,7 @@ public class AssembleScaffolds extends PipelineStage {
         "outputpath")));
 
     invalid.addAll(this.checkParameterIsExistingLocalFile(Arrays.asList(
-        "amos_path")));
+        "amos_path", "fasta_file", "mates_file", "tigr_file")));
 
     String startStep = (String) stage_options.get("start_step");
     startStep = startStep.toUpperCase();
@@ -137,9 +160,9 @@ public class AssembleScaffolds extends PipelineStage {
       invalid.add(parameter);
     }
 
-    BuildBambusInput bambusInput = new BuildBambusInput();
-    bambusInput.initializeAsChild(this);
-    invalid.addAll(bambusInput.validateParameters());
+//    BuildBambusInput bambusInput = new BuildBambusInput();
+//    bambusInput.initializeAsChild(this);
+//    invalid.addAll(bambusInput.validateParameters());
 
     return invalid;
   }
@@ -342,6 +365,7 @@ public class AssembleScaffolds extends PipelineStage {
     sLogger.info("Executing bambus.");
     String amosPath = (String) stage_options.get("amos_path");
     String outputPath = (String) stage_options.get("outputpath");
+
     // It looks like goBambus2 can't take the path to the bank. The script
     // needs to be executed from the directory containing the bank.
     ArrayList<String> bambusCommand = new ArrayList<String>();
@@ -427,6 +451,14 @@ public class AssembleScaffolds extends PipelineStage {
 
     String amosPath = (String) stage_options.get("amos_path");
     String outputPath = (String) stage_options.get("outputpath");
+
+    File outDir = new File(outputPath);
+    if (!outDir.exists()) {
+      if (!outDir.mkdirs()) {
+        sLogger.fatal("Could not create directory:" + outputPath);
+        System.exit(-1);
+      }
+    }
 
     sLogger.info("Load the data into amos.");
     ArrayList<String> loadCommand = new ArrayList<String>();
@@ -557,28 +589,8 @@ public class AssembleScaffolds extends PipelineStage {
 
   private void deleteExistingDirs() {
     // Delete any output directories that already exist.
-
-    // Delete the hdfs path.
-    String hdfsPath = (String) stage_options.get("hdfs_path");
-    try {
-      Path outPath = new Path(hdfsPath);
-      FileSystem outFs = outPath.getFileSystem(getConf());
-      if (outFs.exists(outPath)) {
-        // TODO(jlewi): We should only delete an existing directory
-        // if explicitly told to do so.
-        sLogger.info("Deleting output path: " + outPath.toString() + " "
-            + "because it already exists.");
-        outFs.delete(outPath, true);
-      }
-    } catch (IOException e) {
-      sLogger.fatal(
-          "There was a problem checking if the directory:" +
-          hdfsPath + " exists and deleting it if it does.", e);
-      System.exit(-1);
-    }
-
     // Delete the posix, local outputpath.
-    String outputPath = (String) stage_options.get("hdfs_path");
+    String outputPath = (String) stage_options.get("outputpath");
     File outDir = new File(outputPath);
     if (outDir.exists()) {
       try {
@@ -617,12 +629,12 @@ public class AssembleScaffolds extends PipelineStage {
     switch (startStep) {
       case BUILD_INPUT:
         deleteExistingDirs();
-        bambusInputStage.execute();
+//        bambusInputStage.execute();
       case LOAD_INTO_AMOS:
         runLoadIntoAmos(
-            bambusInputStage.getFastaOutputFile().getPath(),
-            bambusInputStage.getLibraryOutputFile().getPath(),
-            bambusInputStage.getContigOutputFile().getPath());
+            (String) stage_options.get("fasta_file"),
+            (String) stage_options.get("mates_file"),
+            (String) stage_options.get("tigr_file"));
       case RUN_BAMBUS:
         runGoBambus();
       case RUN_ORIENT_CONTIGS:
