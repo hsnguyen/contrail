@@ -72,6 +72,6 @@
              "type": {"type":"array", "items": "ContigLink"}, 
              "doc":"Links to other nodes."}                                  
          ]
-    }
+    }    
   ]
 }

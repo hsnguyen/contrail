@@ -14,20 +14,16 @@
 // Author: Jeremy Lewi (jeremy@lewi.us)
 package contrail.crunch;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.avro.specific.SpecificData;
 import org.apache.crunch.DoFn;
 import org.apache.crunch.Emitter;
 import org.apache.crunch.PCollection;
 import org.apache.crunch.PGroupedTable;
-import org.apache.crunch.Pair;
 import org.apache.crunch.Pipeline;
 import org.apache.crunch.PipelineResult;
 import org.apache.crunch.Source;
@@ -39,10 +35,10 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
 
+import contrail.crunch.BowtieDoFns.BuildMatePairMappings;
 import contrail.crunch.MatePairGraph.KeyByMateIdDo;
 import contrail.scaffolding.BowtieMapping;
 import contrail.scaffolding.MatePairMappings;
-import contrail.sequences.ReadIdUtil;
 import contrail.stages.ContrailParameters;
 import contrail.stages.ParameterDefinition;
 
@@ -66,70 +62,6 @@ public class FilterBowtieAlignments extends CrunchStage {
       defs.put(def.getName(), def);
     }
     return Collections.unmodifiableMap(defs);
-  }
-
-  /**
-   * Build a record conting all the alignments for a given mate pair.
-   *
-   * Input is keyed by the id for a mate pair. The values are the alignments
-   * of the reads associated with that mate pair to contigs.
-   *
-   */
-  public static class BuildMatePairMappings
-      extends DoFn<Pair<String, Iterable<BowtieMapping>>,
-                   MatePairMappings> {
-    @Override
-    public void process(
-        Pair<String, Iterable<BowtieMapping>> pair,
-        Emitter<MatePairMappings> emitter) {
-      MatePairMappings mateData = new MatePairMappings();
-      mateData.setMateId(pair.first());
-      mateData.setLeftMappings(new ArrayList<BowtieMapping>());
-      mateData.setRightMappings(new ArrayList<BowtieMapping>());
-
-      this.increment("Contrail", "mates");
-
-      // Keep track of the mappings associated with each suffix.
-      HashMap<String, ArrayList<BowtieMapping>> suffixContigs =
-          new HashMap<String, ArrayList<BowtieMapping>>();
-
-      for (BowtieMapping mapping : pair.second()) {
-        String suffix =
-            ReadIdUtil.getMatePairSuffix(mapping.getReadId().toString());
-
-        if (!suffixContigs.containsKey(suffix)) {
-          suffixContigs.put(suffix, new ArrayList<BowtieMapping>());
-        }
-
-       suffixContigs.get(suffix).add(SpecificData.get().deepCopy(
-           mapping.getSchema(), mapping));
-      }
-
-      // Get the links.
-      if (suffixContigs.size() > 2) {
-        // Error.
-        this.increment("Contrail-errors", "too-many-mate-pair-suffixes");
-        return;
-      }
-      if (suffixContigs.size() == 1) {
-        // Error.
-        this.increment("Contrail-errors", "single-reads");
-      }
-
-      Iterator<ArrayList<BowtieMapping>> iter =
-          suffixContigs.values().iterator();
-
-      if (iter.hasNext()) {
-        mateData.setLeftMappings(iter.next());
-      }
-
-      if (iter.hasNext()) {
-        mateData.setRightMappings(iter.next()) ;
-      } else {
-        mateData.setRightMappings(new ArrayList<BowtieMapping>());
-      }
-      emitter.emit(mateData);
-    }
   }
 
   /**

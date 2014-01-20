@@ -52,7 +52,7 @@ import contrail.stages.ParameterDefinition;
  */
 public class MatePairGraph extends CrunchStage {
   private static final Logger sLogger = Logger.getLogger(
-      GroupBowtieAlignments.class);
+      MatePairGraph.class);
 
   /**
    *  creates the custom definitions that we need for this phase
