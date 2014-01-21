@@ -99,6 +99,13 @@ public class AssembleScaffolds extends PipelineStage {
             "all steps are run. This option is mostly for debugging.",
             String.class, "build_input");
 
+    ParameterDefinition stopStep =
+        new ParameterDefinition(
+            "stop_step",
+            "The last step in the scaffolding pipeline to run. By default " +
+            "all steps are run. This option is mostly for debugging.",
+            String.class, "write_report");
+
     // The data to load into Amos which is produced by BuildBambusInput.
     // TODO(jlewi): We should an option to allow BuildBambusInput to be run.
     ParameterDefinition fastaFile =
@@ -127,8 +134,8 @@ public class AssembleScaffolds extends PipelineStage {
         "written to.", String.class, null);
 
     for (ParameterDefinition def: new ParameterDefinition[] {
-            amosPath, maxOverlap, noReduce, startStep, fastaFile, tigrFile,
-            matesFile, output}) {
+            amosPath, maxOverlap, noReduce, startStep, stopStep, fastaFile,
+            tigrFile, matesFile, output}) {
       definitions.put(def.getName(), def);
     }
     return Collections.unmodifiableMap(definitions);
@@ -606,8 +613,11 @@ public class AssembleScaffolds extends PipelineStage {
   @Override
   protected void stageMain() {
     String startPhase = (String) stage_options.get("start_step");
+    String stopPhase = (String) stage_options.get("stop_step");
     ScaffoldingSteps startStep = ScaffoldingSteps.valueOf(
         startPhase.toUpperCase());
+    ScaffoldingSteps stopStep = ScaffoldingSteps.valueOf(
+        stopPhase.toUpperCase());
 
     String outputPath = (String) stage_options.get("outputpath");
 
@@ -630,27 +640,57 @@ public class AssembleScaffolds extends PipelineStage {
       case BUILD_INPUT:
         deleteExistingDirs();
 //        bambusInputStage.execute();
+        if (stopStep == ScaffoldingSteps.BUILD_INPUT) {
+          break;
+        }
       case LOAD_INTO_AMOS:
         runLoadIntoAmos(
             (String) stage_options.get("fasta_file"),
             (String) stage_options.get("mates_file"),
             (String) stage_options.get("tigr_file"));
+        if (stopStep == ScaffoldingSteps.LOAD_INTO_AMOS) {
+          break;
+        }
       case RUN_BAMBUS:
         runGoBambus();
+        if (stopStep == ScaffoldingSteps.RUN_BAMBUS) {
+          break;
+        }
       case RUN_ORIENT_CONTIGS:
         runOrientContigs();
+        if (stopStep == ScaffoldingSteps.RUN_ORIENT_CONTIGS) {
+          break;
+        }
       case NONLINEAR_OUTPUT:
         runNonlinearOutputResults();
+        if (stopStep == ScaffoldingSteps.NONLINEAR_OUTPUT) {
+          break;
+        }
       case BANK_TO_FASTA:
         runBank2Fasta();
+        if (stopStep == ScaffoldingSteps.BANK_TO_FASTA) {
+          break;
+        }
       case OUTPUT_NONLINEAR_SCAFFOLDS:
         runOutputScaffolds(nonLinearScaffoldFile);
+        if (stopStep == ScaffoldingSteps.OUTPUT_NONLINEAR_SCAFFOLDS) {
+          break;
+        }
       case LINEARIZE:
         runLinearize();
+        if (stopStep == ScaffoldingSteps.LINEARIZE) {
+          break;
+        }
       case LINEAR_OUTPUT:
         runLinearOutputResults();
+        if (stopStep == ScaffoldingSteps.LINEAR_OUTPUT) {
+          break;
+        }
       case OUTPUT_LINEAR_SCAFFOLDS:
         runOutputScaffolds(linearScaffoldFile);
+        if (stopStep == ScaffoldingSteps.OUTPUT_LINEAR_SCAFFOLDS) {
+          break;
+        }
       case WRITE_REPORT:
         ArrayList<SequenceSize> contigSizes = getSequenceSizes(
             nonLinearScaffoldFile);
@@ -659,7 +699,9 @@ public class AssembleScaffolds extends PipelineStage {
         String reportFile = FilenameUtils.concat(
             outputPath, getOutputPrefix() + "scaffolds.report.html");
         writeReport(reportFile, contigSizes, linearSizes);
-        break;
+        if (stopStep == ScaffoldingSteps.WRITE_REPORT) {
+          break;
+        }
       default:
         sLogger.fatal(String.format(
             "%s is not a valid start phase.", startPhase));
