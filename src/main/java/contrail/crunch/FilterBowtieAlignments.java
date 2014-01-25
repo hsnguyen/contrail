@@ -45,7 +45,10 @@ import contrail.stages.ParameterDefinition;
 /**
  * Remove all bowtie mappings if:
  * 1) Both reads align to the same mate pair.
- * 2) Only of the reads in the pair aligns to a contig.
+ * 2) One of the reads in the pair doesn't align to a contig.
+ *
+ * We then group the mappings based on the contigs they link. We remove
+ * all links that are supported by a single mate pair.
  */
 public class FilterBowtieAlignments extends CrunchStage {
   /**

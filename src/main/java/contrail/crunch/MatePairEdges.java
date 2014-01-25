@@ -108,7 +108,6 @@ public class MatePairEdges extends CrunchStage {
     }
   }
 
-
   /**
    * Key edges by major minor id so we can combine them.
    */
