@@ -249,19 +249,27 @@ public class AssembleScaffolds extends PipelineStage {
     Collections.reverse(sizes);
     int gapped = 0;
     int ungapped = 0;
+    int numContigs = 0;
     try {
       writer.append("<h1>" + header + "</h1>");
       writer.append("<table border=1>");
       writer.append("<tr><td>Scaffold Id</td>");
       writer.append("<td>Size with gaps.</td>");
-      writer.append("<td>UngappedSize</td></tr>");
+      writer.append("<td>UngappedSize</td>");
+      writer.append("<td>Cumulative Num of contigs</td>");
+      writer.append("<td>Cumulative Gapped Size</td>");
+      writer.append("<td>Cumulative Ungapped Size</td></tr>");
       for (SequenceSize sequence : sizes) {
+        numContigs += 1;
         gapped += sequence.gapped;
         ungapped += sequence.ungapped;
         writer.append("<tr>");
         writer.append(String.format("<td>%s</td>", sequence.id));
         writer.append(String.format("<td>%d</td>", sequence.gapped));
         writer.append(String.format("<td>%d</td>", sequence.ungapped));
+        writer.append(String.format("<td>%d</td>", numContigs));
+        writer.append(String.format("<td>%d</td>", gapped));
+        writer.append(String.format("<td>%d</td>", ungapped));
         writer.append("</tr>");
       }
       // Totals.
