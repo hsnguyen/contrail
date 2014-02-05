@@ -22,6 +22,8 @@ echo "Reference:" $REF
 echo "Contigs:" $CONTIGS
 echo "Scaffolds:" $SCAFFOLDS
 
+#*****************************************************************************************************************
+#Contig 
 GENOMESIZE=`java -cp $JAVA_PATH SizeFasta $REF |awk '{SUM+=$NF; print SUM}'|tail -n 1`
 echo "Genome size: $GENOMESIZE"
 echo "Contig Stats"
