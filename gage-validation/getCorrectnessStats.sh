@@ -14,6 +14,7 @@ fi
 REF=$1
 CONTIGS=$2
 SCAFFOLDS=$3
+MINLENGTH=$4
 
 CONTIG_FILE=$(basename $CONTIGS)
 SCAFFOLD_FILE=$(basename $SCAFFOLDS)
@@ -25,7 +26,7 @@ echo "Scaffolds:" $SCAFFOLDS
 GENOMESIZE=`java -cp $JAVA_PATH SizeFasta $REF |awk '{SUM+=$NF; print SUM}'|tail -n 1`
 echo "Genome size: $GENOMESIZE"
 echo "Contig Stats"
-java -cp $JAVA_PATH GetFastaStats -o -min 200 -genomeSize $GENOMESIZE $CONTIGS 2>/dev/null
+java -cp $JAVA_PATH GetFastaStats -o -min ${MINLENGTH} -genomeSize $GNEOMESIZE $CONTIGS 2>/dev/null
 $MUMMER/nucmer --maxmatch -p $CONTIG_FILE -l 30 -banded -D 5 $REF $CONTIGS
 $MUMMER/delta-filter -o 95 -i 95 $CONTIG_FILE.delta > $CONTIG_FILE.fdelta
 $MUMMER/dnadiff -d $CONTIG_FILE.fdelta
@@ -35,7 +36,7 @@ cat out.1coords |awk '{print NR" "$5}' > $CONTIG_FILE.matches.lens
 
 echo ""
 echo "Corrected Contig Stats"
-java -cp $JAVA_PATH:. GetFastaStats -o -min 200 -genomeSize $GENOMESIZE $CONTIG_FILE.matches.lens 2> /dev/null
+java -cp $JAVA_PATH:. GetFastaStats -o -min ${MINLENGTH} -genomeSize $GENOMESIZE $CONTIG_FILE.matches.lens 2> /dev/null
 
 java -cp $JAVA_PATH SplitFastaByLetter $SCAFFOLDS N > tmp_scf.fasta
 $MUMMER/nucmer --maxmatch -p $SCAFFOLD_FILE -l 30 -banded -D 5 $REF tmp_scf.fasta
