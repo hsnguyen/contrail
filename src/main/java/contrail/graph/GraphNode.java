@@ -1,16 +1,5 @@
 package contrail.graph;
 
-import contrail.graph.EdgeTerminal;
-import contrail.graph.TailData;
-
-import contrail.sequences.CompressedSequence;
-import contrail.sequences.DNAAlphabetFactory;
-import contrail.sequences.DNAStrand;
-import contrail.sequences.DNAStrandUtil;
-import contrail.sequences.KMerReadTag;
-import contrail.sequences.Sequence;
-import contrail.sequences.StrandsForEdge;
-import contrail.sequences.StrandsUtil;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -24,6 +13,16 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.avro.specific.SpecificData;
+
+import contrail.sequences.CompressedSequence;
+import contrail.sequences.DNAAlphabetFactory;
+import contrail.sequences.DNAStrand;
+import contrail.sequences.DNAStrandUtil;
+import contrail.sequences.DNAUtil;
+import contrail.sequences.KMerReadTag;
+import contrail.sequences.Sequence;
+import contrail.sequences.StrandsForEdge;
+import contrail.sequences.StrandsUtil;
 
 /**
  * Wrapper class for accessing modifying the GraphNodeData structure.
@@ -41,7 +40,7 @@ public class GraphNode {
    * we want to avoid recomputing each time it is accessed.
    */
   protected static class DerivedData {
-    private GraphNodeData data;
+    private final GraphNodeData data;
 
 
     // Whether we have created the edge lists.
@@ -72,6 +71,8 @@ public class GraphNode {
     private HashMap<EdgeTerminal, List<CharSequence>> r_edge_tags_map;
 
     private HashSet<String> neighborIds;
+
+    private boolean isPalindrome;
 
     public DerivedData(GraphNodeData data) {
       this.data = data;
@@ -320,12 +321,18 @@ public class GraphNode {
     public void setNeighborIds(HashSet<String> idSet) {
       neighborIds = idSet;
     }
+
+    public boolean isPalindrome() {
+      Sequence sequence = new Sequence(DNAAlphabetFactory.create());
+      sequence.readCompressedSequence(data.getSequence());
+      return DNAUtil.isPalindrome(sequence);
+    }
   }
 
   protected DerivedData derived_data;
 
   private NodeDiff lastDiff = null;
-  
+
   /**
    * Enumeration is used to provide additional information when comparing two nodes.
    */
@@ -336,9 +343,9 @@ public class GraphNode {
     COVERAGE,
     NEIGHBORS,
     R5TAGS,
-    SEQUENCE, EDGETERMINALS, EDGETAGS, 
+    SEQUENCE, EDGETERMINALS, EDGETAGS,
   }
-  
+
   /**
    * Construct a new object with a new GraphNodeData to store the data.
    */
@@ -380,6 +387,7 @@ public class GraphNode {
   /**
    * Make a copy of the object.
    */
+  @Override
   public GraphNode clone() {
     // TODO(jlewi): The preferred way to make copies of avro records is
     // GraphNodeData data = GraphNodeData.newBuilder(value).build();
@@ -632,7 +640,7 @@ public class GraphNode {
     for (DNAStrand thisStrand : DNAStrand.values()) {
       for (DNAStrand otherStrand : DNAStrand.values()) {
         EdgeTerminal destTerminal = new EdgeTerminal(otherNode, otherStrand);
-  
+
         if (this.getEdgeTerminalsSet(thisStrand, direction).contains(destTerminal)) {
           StrandsForEdge s = null;
           if (direction == EdgeDirection.OUTGOING) {
@@ -691,7 +699,7 @@ public class GraphNode {
       edge.setReadTags(new ArrayList<CharSequence>());
     }
 
-    if (tags !=null) {
+    if (tags != null) {
       if (edge.getReadTags().size() < MAXTHREADREADS){
         List<CharSequence> edge_tags = edge.getReadTags();
         long max_insert = MAXTHREADREADS - edge.getReadTags().size();
@@ -920,7 +928,7 @@ public class GraphNode {
     lastDiff = NodeDiff.NONE;
     return true;
   }
-  
+
   public String getNodeId() {
     return data.getNodeId().toString();
   }
@@ -944,7 +952,7 @@ public class GraphNode {
 
   /**
    * Check if two nodes are equal and if not return information about where the functions differed.
-   * 
+   *
    * This function is primarily useful for debugging and unittests.
    * @param other
    * @return
@@ -955,7 +963,7 @@ public class GraphNode {
     }
     return lastDiff;
   }
-  
+
   /**
    * Return a list of the canonical compressed sequences for the specific
    * link direction;
@@ -1003,6 +1011,40 @@ public class GraphNode {
   }
 
   /**
+   * Return true if the node forms a cycle with itself.
+   *
+   * A self cycle is the graph X->X.
+   * X->R(X) is not a self cycle but a chain.
+   *
+   * @return
+   */
+  public boolean hasSelfCycle() {
+    Set<EdgeTerminal> terminals = getEdgeTerminalsSet(
+        DNAStrand.FORWARD, EdgeDirection.OUTGOING);
+    return terminals.contains(new EdgeTerminal(getNodeId(), DNAStrand.FORWARD));
+  }
+
+  /**
+   * Returns true if the forward and reverse strands are connected.
+   *
+   * The strands are connected if we have the graph X->R(X) or R(X)->X.
+   * The graph X->X will return false. Use hasSelfCycle to detect X->X.
+   */
+  public boolean hasConnectedStrands() {
+    // We need to check both strands.
+    for (DNAStrand strand : DNAStrand.values()) {
+      Set<EdgeTerminal> terminals = getEdgeTerminalsSet(
+          strand, EdgeDirection.OUTGOING);
+      EdgeTerminal other = new EdgeTerminal(
+          getNodeId(), DNAStrandUtil.flip(strand));
+      if (terminals.contains(other)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Return an unmodifiable view of the ids of all neighbors.
    */
   public Set<String> getNeighborIds() {
@@ -1024,6 +1066,7 @@ public class GraphNode {
    * in a debugger. This representation is likely to change and it should
    * not be relied upon for any processing.
    */
+  @Override
   public String toString() {
     String represent = "Id:" + getNodeId() + " ";
     represent += "Sequence:" + this.getSequence().toString();
@@ -1209,6 +1252,13 @@ public class GraphNode {
       }
     }
     return neighbor;
+  }
+
+  /**
+   * Return's true if the sequence represented by this node is a palindrome.
+   */
+  public boolean isPalindrome() {
+    return derived_data.isPalindrome();
   }
 
   /**

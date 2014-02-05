@@ -37,7 +37,6 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
@@ -56,6 +55,7 @@ import contrail.stages.ContrailParameters;
 import contrail.stages.NonMRStage;
 import contrail.stages.NotImplementedException;
 import contrail.stages.ParameterDefinition;
+import contrail.util.FileHelper;
 
 /**
  * Covert the graph into an gephi formatted XML file which can then be loaded
@@ -109,10 +109,10 @@ public class WriteGephiFile extends NonMRStage {
 
     ParameterDefinition start_node = new ParameterDefinition(
         "start_node", "(Optional) if supplied num_hops must also be given.",
-        String.class, null);
+        String.class, "");
     ParameterDefinition num_hops = new ParameterDefinition(
         "num_hops", "(Optional) Number of hops to take starting at start_node.",
-        Integer.class, null);
+        Integer.class, 0);
 
     ParameterDefinition sequence = new ParameterDefinition(
         "sequence",
@@ -540,28 +540,8 @@ public class WriteGephiFile extends NonMRStage {
     String inputPathStr = (String) stage_options.get("inputpath");
     sLogger.info(" - input: "  + inputPathStr);;
 
-    // Check if path is a directory.
-    Path inputPath = new Path(inputPathStr);
-
-    FileStatus[] fileStates = null;
-    try {
-      fileStates = fs.globStatus(new Path(inputPathStr));
-    } catch (IOException e) {
-      sLogger.fatal("Could not get file status for inputpath:" + inputPath, e);
-      System.exit(-1);
-    }
-
-    ArrayList<Path> inputFiles = new ArrayList<Path>();
-
-    for (FileStatus status : fileStates) {
-     if (status.isDir()) {
-         sLogger.info("Skipping directory:" + status.getPath());
-         continue;
-      }
-      sLogger.info("Input file:" + status.getPath()) ;
-      inputFiles.add(status.getPath());
-    }
-
+    ArrayList<Path> inputFiles = FileHelper.matchGlobWithDefault(
+        getConf(), inputPathStr, "*.avro");
     if (inputFiles.size() == 0) {
       throw new RuntimeException("Didn't find any graph files.");
     }
@@ -640,15 +620,12 @@ public class WriteGephiFile extends NonMRStage {
       sLogger.fatal(e.getMessage(), e);
       System.exit(-1);
     }
-    // Check for missing arguments.
-    String[] required_args = {"inputpath", "outputpath"};
-    checkHasParametersOrDie(required_args);
-
     String outputPath = (String) stage_options.get("outputpath");
     sLogger.info(" - output: " + outputPath);
 
     Iterable<GraphNode> nodesToPlot;
-    if (stage_options.containsKey("start_node")) {
+    String start_nodes = (String) stage_options.get("start_node");
+    if (!start_nodes.isEmpty()) {
       // If we're plotting a subgraph then we need to be able to load
       // the particular node. We should really use an indexed AvroFile
       // to facilitate quick lookups.

@@ -23,16 +23,15 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 
 import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.io.IOCase;
 import org.apache.commons.io.filefilter.WildcardFileFilter;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.PathFilter;
 import org.apache.log4j.Logger;
 
 /**
@@ -165,7 +164,6 @@ public class FileHelper {
       return result;
     }
 
-
     for (File file : files) {
       result.add(file.getPath());
     }
@@ -173,22 +171,24 @@ public class FileHelper {
   }
 
   /**
-   * A path filter which matches globular expressions.
+   * Find files matching a list of globular expressions.
+   *
+   * This only works for the local/non hadoop filesystem
+   * .
+   * @param glob
+   * @return
    */
-  public static class GlobPathFilter implements PathFilter {
-    String pattern;
-
-    public GlobPathFilter(String glob) {
-      pattern = glob;
+  public static ArrayList<String> matchListOfGlobs(String globs) {
+    HashSet<String> matches = new HashSet<String>();
+    for (String glob : globs.split(",")) {
+      ArrayList<String> newMatches =  FileHelper.matchFiles(glob);
+      sLogger.info(String.format("%s matched %d files", glob,
+          newMatches.size()));
+      matches.addAll(newMatches);
     }
-
-    @Override
-    public boolean accept(Path path) {
-      String stripped = path.toUri().getPath();
-      boolean result = FilenameUtils.wildcardMatch(
-          stripped, pattern, IOCase.SENSITIVE);
-      return result;
-    }
+    ArrayList<String> result = new ArrayList<String>();
+    result.addAll(matches);
+    return result;
   }
 
   /**
@@ -207,22 +207,37 @@ public class FileHelper {
       Configuration conf, String globOrDirectory,  String defaultGlob) {
     Path globOrDirectoryPath = new Path(globOrDirectory);
     FileSystem fs = null;
+    if (conf == null) {
+      sLogger.fatal("conf cannot be null.",
+          new IllegalArgumentException("conf is null."));
+      System.exit(-1);
+    }
+
     try{
-      fs = FileSystem.get(conf);
+      fs = globOrDirectoryPath.getFileSystem(conf);
     } catch (IOException e) {
       throw new RuntimeException("Can't get filesystem: " + e.getMessage());
     }
-    GlobPathFilter filter;
-    Path directory;
+
     try {
-      if (fs.exists(globOrDirectoryPath) &&
-          fs.getFileStatus(globOrDirectoryPath).isDir()) {
-        filter = new GlobPathFilter(FilenameUtils.concat(
-            globOrDirectory, defaultGlob));
-        directory = globOrDirectoryPath;
+      if (fs.exists(globOrDirectoryPath)) {
+          if (fs.getFileStatus(globOrDirectoryPath).isDir()) {
+            String pattern = FilenameUtils.concat(
+                globOrDirectory, defaultGlob);
+            sLogger.info(String.format(
+                "Path:%s is an existing directory.\n Look for files " +
+                "matching glob:%s", globOrDirectoryPath, pattern));
+            globOrDirectoryPath = new Path(pattern);
+          } else {
+            sLogger.info(String.format(
+                "Path:%s is an existing file.", globOrDirectoryPath));
+            ArrayList<Path> paths = new ArrayList<Path>();
+            paths.add(globOrDirectoryPath);
+            return paths;
+          }
       } else {
-        filter = new GlobPathFilter(globOrDirectory);
-        directory = new Path(FilenameUtils.getFullPath(globOrDirectory));
+        sLogger.info(String.format(
+            "Path:%s is a glob expression.", globOrDirectoryPath));
       }
     } catch(IOException e) {
       throw new RuntimeException(e);
@@ -230,12 +245,38 @@ public class FileHelper {
 
     try {
       ArrayList<Path> paths = new ArrayList<Path>();
-      for (FileStatus status : fs.listStatus(directory, filter)) {
+      // globStatus returns null if path doesn't exist.
+      FileStatus[] statuses = fs.globStatus(globOrDirectoryPath);
+      if (statuses == null) {
+        return paths;
+      }
+      for (FileStatus status : statuses) {
         paths.add(status.getPath());
       }
       return paths;
     } catch (IOException e) {
       throw new RuntimeException("Problem moving the files: " + e.getMessage());
     }
+  }
+
+  /**
+   * Find all the files matching a comma separated list of globs.
+   *
+   * The result can contain duplicates if a file matches more than one
+   * expression.
+   *
+   * @param conf
+   * @param listOfGlobs: a comma separated string of directories or globs.
+   * @param defaultGlob
+   * @return
+   */
+  public static ArrayList<Path> matchListOfGlobsWithDefault(
+      Configuration conf, String listOfGlobs,  String defaultGlob) {
+    ArrayList<Path> results = new ArrayList<Path>();
+    String[] globs = listOfGlobs.split(",");
+    for (String glob : globs) {
+      results.addAll(matchGlobWithDefault(conf, glob, defaultGlob));
+    }
+    return results;
   }
 }

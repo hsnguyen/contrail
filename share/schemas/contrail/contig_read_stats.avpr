@@ -1,0 +1,23 @@
+{
+  "namespace": "contrail.crunch",
+  "protocol": "ContrailProtocol",
+  "doc": "Data structures for crunch.",
+
+  "types": [
+     {"name": "ContigReadStats",
+        "type": "record",
+        "doc": ["Structure representing the output of bowtie. Each record ",
+                "describes how a read aligns to a contig."],              
+        "fields":[
+            {"name": "contig_id", "type":"string", "doc":"ID for the contig."},
+            {"name": "max_degree", "type": "int",
+                     "doc": "The maximum degree." },
+            {"name": "min_degree", "type":"int", "doc": "The minimum degree."},
+            {"name": "coverage", "type": "float"},
+            {"name": "length", "type": "int", "doc": "Length of the contig."},
+            {"name": "num_aligned_reads", "type": "int", 
+             "doc": "Number of reads that align to this contig."}
+        ]
+    }  
+  ]
+}

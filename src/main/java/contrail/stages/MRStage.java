@@ -174,6 +174,12 @@ public class MRStage extends StageBase {
       // TODO(jlewi): We should add an option to disable this so we don't
       // accidentally override data.
       Path outPath = FileOutputFormat.getOutputPath(conf);
+      if (outPath == null) {
+        sLogger.fatal(
+            "No output path is set in the job configuration. Did you set it " +
+            "in setupConfHook()?");
+        System.exit(-1);
+      }
       try {
         FileSystem outFs = outPath.getFileSystem(conf);
         if (outFs.exists(outPath)) {
@@ -225,6 +231,26 @@ public class MRStage extends StageBase {
       return job.getCounters().findCounter(
           "org.apache.hadoop.mapred.Task$Counter",
           "MAP_INPUT_RECORDS").getValue();
+
+    } catch (IOException e) {
+      sLogger.fatal("Couldn't get job state.", e);
+      System.exit(-1);
+    }
+    return -1;
+  }
+
+  /**
+   * Return the number of reduce output records.
+   * @return: If the job hasn't run returns -1.
+   */
+  public long getNumReduceOutputRecords() {
+    try {
+      if (!job.isSuccessful()) {
+        return -1;
+      }
+      return job.getCounters().findCounter(
+          "org.apache.hadoop.mapred.Task$Counter",
+          "REDUCE_OUTPUT_RECORDS").getValue();
 
     } catch (IOException e) {
       sLogger.fatal("Couldn't get job state.", e);

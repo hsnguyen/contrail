@@ -239,7 +239,8 @@
     },
     {"name": "contrail.stages.CompressibleStrands",
      "type": "enum",
-     "symbols": ["NONE", "FORWARD", "REVERSE", "BOTH"]
+     "symbols": ["NONE", "FORWARD", "REVERSE", "BOTH"],
+     "doc": "Enum indicating which strand(s) is compressible."
     },
     // Using an enum to store which strands are compressible should
     // be slightly more space efficient then a list of strands.
@@ -491,10 +492,6 @@
                           "use a list because of cases like ",
                           "X->{A, B, C}->Y in which we need to tell Y to ",
                           "remove edges from B and C."]
-                },
-                {"name": "palindrome_neighbors",
-                 "type": {"type": "array", "items": "string"},
-                 "doc": "A list of neighbors which are palindromes."
                 }
                ]
     },

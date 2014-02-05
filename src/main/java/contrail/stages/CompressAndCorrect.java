@@ -20,10 +20,10 @@ import java.text.DecimalFormat;
 import java.util.Collections;
 import java.util.Formatter;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
@@ -51,11 +51,11 @@ public class CompressAndCorrect extends PipelineStage {
         new HashMap<String, ParameterDefinition>();
 
     // We add all the options for the stages we depend on.
-    Stage[] substages =
+    StageBase[] substages =
       {new CompressChains(), new RemoveTipsAvro(), new FindBubblesAvro(),
        new PopBubblesAvro(), new RemoveLowCoverageAvro()};
 
-    for (Stage stage: substages) {
+    for (StageBase stage: substages) {
       definitions.putAll(stage.getParameterDefinitions());
     }
 
@@ -171,17 +171,13 @@ public class CompressAndCorrect extends PipelineStage {
 
     executeChild(findStage);
 
-    // Check if any bubbles or palindromes were found.
+    // Check if any bubbles were found.
     long bubblesFound = findStage.job.getCounters().findCounter(
         FindBubblesAvro.NUM_BUBBLES.group,
         FindBubblesAvro.NUM_BUBBLES.tag).getValue();
 
-    long palindromesFound = findStage.job.getCounters().findCounter(
-        FindBubblesAvro.NUM_PALINDROMES.group,
-        FindBubblesAvro.NUM_PALINDROMES.tag).getValue();
-
-    if (bubblesFound == 0 && palindromesFound == 0) {
-      // Since no bubbles and no palindromes were found,
+    if (bubblesFound == 0) {
+      // Since no bubbles were found,
       // we don't need to run the second phase of pop bubbles.
       JobInfo result = new JobInfo();
       result.graphChanged = false;
@@ -189,7 +185,7 @@ public class CompressAndCorrect extends PipelineStage {
       // the graph.
       result.graphPath = inputPath;
       result.logMessage =
-          "FindBubbles found 0 bubbles and 0 palindromes.";
+          "FindBubbles found 0 bubbles.";
       return result;
     }
 
@@ -283,48 +279,49 @@ public class CompressAndCorrect extends PipelineStage {
   /**
    * Delete old step directories.
    *
-   * We delete all paths "basePath/step_##" where ## is <= minStep;
+   * We delete old paths by looking at the stageinfo path.
    *
    * @param conf
-   * @param basePath
-   * @param minStep
+   * @param exclude: List of paths to exclude. This should include
+   *   the paths needed for the current stage.
    */
-  protected static void deletePastSteps(
-      Configuration conf, String basePath, int minStep) {
-    FileSystem fs = null;
-    Path base = new Path(basePath);
-    try{
-      fs = base.getFileSystem(conf);
-    } catch (IOException e) {
-      throw new RuntimeException("Can't get filesystem: " + e.getMessage());
-    }
+  protected void deletePastSteps(HashSet<String> exclude) {
+    StageInfo stageInfo = getWorkflowInfo();
+    StageInfoHelper helper = new StageInfoHelper(stageInfo);
+    HashSet<String> pathsToDelete =  helper.listOutputPaths(exclude);
+
     try {
-      FileStatus[] contents = fs.listStatus(base);
-      if (contents == null) {
-        // Path doesn't exist.
-        return;
-      }
-      for (FileStatus status : contents) {
-        Path itemPath = status.getPath();
-        String name = itemPath.getName();
-        if (!name.matches("step_[0123456789]*")) {
+      for (String filePath : pathsToDelete) {
+        Path path = new Path(filePath);
+        FileSystem fs = path.getFileSystem(getConf());
+        if (!fs.exists(path)) {
+          sLogger.info("Path doesn't exist:" + filePath);
           continue;
         }
-        String[] pieces = name.split("_", 2);
-        int step = Integer.parseInt(pieces[1]);
-        if (step <= minStep) {
-          sLogger.info("Deleting: " + itemPath.toString());
-          fs.delete(itemPath, true);
-        }
+
+        sLogger.info("Deleting: " + filePath);
+
+        fs.delete(path, true);
       }
     } catch (IOException e) {
-      throw new RuntimeException("Problem moving the files: " + e.getMessage());
+      throw new RuntimeException("Directory deletion failed. Error: " +
+          e.getMessage());
+    }
+
+    // Mark the paths as deleted in stage info.
+    helper.markPathsAsDeleted(pathsToDelete);
+
+    // Save the stage info.
+    if (infoWriter != null) {
+      infoWriter.write(getWorkflowInfo());
     }
   }
+
   /**
    * Compress the graph as much as possible, removing tips and popping bubbles.
    *
-   * @param step: Integer identifying the step number.
+   * @param step: Integer identifying the last step number. This will be
+   *   incremented to generate this step.
    */
   private CompressionResult compressAsMuchAsPossible(
       int step, String stepInputPath) throws Exception {
@@ -347,9 +344,9 @@ public class CompressAndCorrect extends PipelineStage {
           tempPath(), "step_" +sf.format(step)).toString();
 
       if ((Boolean) stage_options.get("cleanup")) {
-        // Delete the old step directories. We need to keep the current
-        // step and the previous step directory.
-        deletePastSteps(getConf(), tempPath(), step - 2);
+        HashSet<String> exclude = new HashSet<String>();
+        exclude.add(stepInputPath);
+        deletePastSteps(exclude);
       }
 
       // Paths to use for this round. The paths for the compressed graph

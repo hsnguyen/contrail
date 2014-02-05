@@ -20,21 +20,27 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
 import contrail.sequences.FastQFileReader;
 import contrail.sequences.FastQRecord;
+import contrail.sequences.FastUtil;
 import contrail.sequences.FastaRecord;
+import contrail.sequences.ReadIdUtil;
 import contrail.stages.NonMRStage;
 import contrail.stages.ParameterDefinition;
 import contrail.util.FileHelper;
@@ -42,24 +48,25 @@ import contrail.util.FileHelper;
 /**
  * This class constructs the input needed to run Bambus for scaffolding.
  *
- * The input is the original reads and the assembled contigs. The reads
- * are aligned to the contigs using the Bowtie aligner. The aligned reads
- * and contigs are then outputted in the appropriate format for use with
- * Bambus.
+ * The input is:
+ *   1. The original reads
+ *   2. The assembled contigs
+ *   3. The alignments of the reads to the contigs produced by bowtie.
+ *   4. A libSize file listing each library and the min/max insert size.
+ *
+ * The output is:
+ *   1. A single fasta file containing all the original reads.
+ *   2. A library file which lists the ids of each mate pair in each library.
+ *   3. A tigr file containing the contigs and information about how the reads
+ *      align to the contigs.
  */
 public class BuildBambusInput extends NonMRStage {
   private static final Logger sLogger =
       Logger.getLogger(BuildBambusInput.class);
-  private static final int SUB_LEN = 25;
-
-  private File fastaOutputFile;
-  private File libraryOutputFile;
-  private File contigOutputFile;
-
   /**
    * This class stores a pair of files containing mate pairs.
    */
-  private static class MateFilePair {
+  protected static class MateFilePair implements Comparable {
     public String leftFile;
     public String rightFile;
     public String libraryName;
@@ -70,6 +77,35 @@ public class BuildBambusInput extends NonMRStage {
       this.leftFile = leftFile;
       this.rightFile = rightFile;
     }
+
+    @Override
+    public int compareTo(Object o) {
+      if (!(o instanceof MateFilePair)) {
+        throw new RuntimeException("Can only compare to other MateFilePair");
+      }
+
+      MateFilePair other = (MateFilePair) o;
+      return this.libraryName.compareTo(other.libraryName);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (!(o instanceof MateFilePair)) {
+        throw new RuntimeException("o must be an instance of MateFilePair");
+      }
+
+      MateFilePair other = (MateFilePair) o;
+      if (!leftFile.equals(other.leftFile)) {
+        return false;
+      }
+      if (!rightFile.equals(other.rightFile)) {
+        return false;
+      }
+      if (!libraryName.equals(other.libraryName)) {
+        return false;
+      }
+      return true;
+    }
   }
 
   /**
@@ -78,7 +114,7 @@ public class BuildBambusInput extends NonMRStage {
   private static class LibrarySize {
     final public int minimum;
     final public int maximum;
-    private int libSize;
+    private final int libSize;
 
     public LibrarySize(int first, int second) {
       minimum = Math.min(first, second);
@@ -93,13 +129,13 @@ public class BuildBambusInput extends NonMRStage {
 
   // libSizes stores the sizes for each read library. The key is the
   // prefix of the FastQ files for that library. The value is a pair
-  // which stores the lower and uppoer bound for the library size.
+  // which stores the lower and upper bound for the library size.
   private HashMap<String, LibrarySize> libSizes;
 
   /**
    * Parse the library file and extract the library sizes.
    */
-  private void parseLibSizes(String libFile) {
+  protected void parseLibSizes(String libFile) {
     try {
       libSizes = new HashMap<String, LibrarySize>();
       BufferedReader libSizeFile =
@@ -125,7 +161,8 @@ public class BuildBambusInput extends NonMRStage {
    *
    * @param readFiles
    */
-  private ArrayList<MateFilePair> buildMatePairs(Collection<String> readFiles) {
+  protected ArrayList<MateFilePair> buildMatePairs(
+      Collection<String> readFiles) {
     HashMap<String, ArrayList<String>> libraryFiles =
         new HashMap<String, ArrayList<String>>();
 
@@ -165,6 +202,7 @@ public class BuildBambusInput extends NonMRStage {
         }
         sLogger.fatal(message, new RuntimeException(message));
       }
+      Collections.sort(files);
       MateFilePair pair = new MateFilePair(
           libraryName, files.get(0), files.get(1));
       matePairs.add(pair);
@@ -175,251 +213,190 @@ public class BuildBambusInput extends NonMRStage {
   }
 
   /**
-   * Create an index of mate pairs for each library and write fasta output.
+   * For each pair of mates write an entry to the library
+   * file. We also shorten the reads and write them to the fasta file.
+   * We need to put all the reads into one file because toAmos_new expects that.
    *
-   * @param: The file to write the truncated reads to.
-   * @return: A hash map of the mate pairs for each library.
-   *  The key for the hash map is the prefix for the library and identifies
-   *  a set of mate pairs.
-   *  The value is a hashmap with two keys "left" and "right". Each key
-   *  stores one set of reads in the mate pairs for this library. The value
-   *  of "left" and "right" is an array of strings storing the ids of all
-   *  the reads. Thus
-   *  mates[prefix]["left"][i] and mates[prefix]["right"][i] should be the
-   *  id's of the the i'th mate pair in the library given by prefix.
+   * The reads are truncated because BOWTIE is a short read aligner and only
+   * works with short reads. Therefore, Bambus needs to use the shortened reads
+   * otherwise the alignment coordinates reported by Bambus won't be consistent.
    *
    * The code assumes that the reads in two mate pair files are already
    * aligned. i.e The i'th record in frag_1.fastq is the mate pair for
    * the i'th record in frag_2.fastq
    *
-   * This function also processes all the reads, and truncates the reads to
-   * length SUB_LEN. All of the truncated reads are then written to
-   * fastaOutputFile. The reads are truncated because BOWTIE is a short
-   * read aligner.
+   * The reads are written to fastaOutputFile.
+   *
+   * @param matePairs: A collection of file pairs representing mate pair
+   *    libraries.
+   * @param fastaOutputFile: The file to write the shortened reads to.
+   * @param libraryOutputFile: The file to write the library information to.
    */
-  private HashMap<String, HashMap<String, ArrayList<String>>> shortenReads(
-      Collection<MateFilePair> matePairs,
-      File fastaOutputFile) {
-    sLogger.info(
-        String.format(
-            "Shortening the reads to align to %d bases and writing them " +
-             "to: %s", SUB_LEN, fastaOutputFile.getPath()));
-    HashMap<String, HashMap<String, ArrayList<String>>> mates = null;
+  protected void createFastaAndLibraryFiles(
+      Collection<MateFilePair> matePairs, File fastaOutputFile,
+      File libraryOutputFile) {
+    LibraryFileWriter libWriter = null;
+    int readLength = (Integer) stage_options.get("readLength");
     try {
-      PrintStream out = new PrintStream(fastaOutputFile);
-      mates = new HashMap<String, HashMap<String, ArrayList<String>>>();
-
-      FastaRecord fastaRecord = new FastaRecord();
-
-      final int NUM_READS = 200;
-      for (MateFilePair matePair : matePairs) {
-        // first trim to 25bp
-        sLogger.info(
-            "Processing reads for library:" + matePair.libraryName);
-        mates.put(
-            matePair.libraryName, new HashMap<String, ArrayList<String>>());
-        mates.get(matePair.libraryName).put(
-            "left", new ArrayList<String>(NUM_READS));
-        mates.get(matePair.libraryName).put(
-            "right", new ArrayList<String>(NUM_READS));
-
-        for (int i = 0; i < 2; ++i) {
-          String readFile = null;
-          ArrayList<String> readIds = null;
-          if (i == 0) {
-            readFile = matePair.leftFile;
-            readIds = mates.get(matePair.libraryName).get("left");
-          } else {
-            readFile = matePair.rightFile;
-            readIds = mates.get(matePair.libraryName).get("right");
-          }
-          FastQFileReader reader = new FastQFileReader(readFile);
-
-          int counter = 0;
-          while (reader.hasNext()) {
-            FastQRecord record = reader.next();
-
-            // Prefix the id by the libraryName.
-            // TODO(jeremy@lewi.us): The original code add the library name
-            // as a prefix to the read id and then replaced "/" with "_".
-            // I think manipulating the readId's is risky because we need to
-            // be consistent. So we don't prepend the library name.
-            // However, some programs e.g bowtie cut the "/" off and set a
-            // a special code. So to be consistent we use the function
-            // safeReadId to convert readId's to a version that can be safely
-            // used everywhere.
-            fastaRecord.setId(Utils.safeReadId(record.getId().toString()));
-
-            // Truncate the read because bowtie can only handle short reads.
-            fastaRecord.setRead(record.getRead().subSequence(0, SUB_LEN));
-
-            out.println(">" +  fastaRecord.getId());
-            out.println(fastaRecord.getRead());
-
-            readIds.add(fastaRecord.getId().toString());
-
-            ++counter;
-            if (counter % 1000000 == 0) {
-              sLogger.info("Processed " + counter + " reads");
-              out.flush();
-            }
-            counter++;
-          }
-        }
-      }
-      out.close();
-    } catch (Exception e) {
-      sLogger.fatal("Exception occured while shortening the reads.", e);
-      System.exit(-1);
-    }
-    return mates;
-  }
-
-  /**
-   * Create a library file.
-   * The library file lists each mate pair in each ibrary.
-   *
-   * @param libraryOutputFile: The file to write to.
-   * @param mates: A hash map specifying the mate pairs in each library.
-   *
-   * For each library fetch the library size or throw an error if there
-   * is no size for this library.
-   * Write out the library file. The library is a text file.
-   * For each library there is a line starting wtih "library" which
-   * contains the name of the library and the size for the library.
-   * For each mate pair in the library we write a line with the id's
-   * of the reads forming the pair and the name of the library they come
-   * from.
-   */
-  private void createLibraryFile(
-      File libraryOutputFile,
-      HashMap<String, HashMap<String, ArrayList<String>>> mates) {
-    try {
-      PrintStream libOut = new PrintStream(libraryOutputFile);
-      for (String lib : mates.keySet()) {
-        HashMap<String, ArrayList<String>> libMates = mates.get(lib);
-        String libName = lib.replaceAll("_", "");
-        if (libSizes.get(libName) == null) {
-          String knownLibraries = "";
-          for (String library : libSizes.keySet()) {
-            knownLibraries += library + ",";
-          }
-          // Strip the last column.
-          knownLibraries = knownLibraries.substring(
-              0, knownLibraries.length() - 1);
-          sLogger.fatal(
-              "No library sizes are defined for libray:" + libName + " . Known " +
-              "libraries are: " + knownLibraries,
-              new RuntimeException("No library sizes for libray:" + libName));
-        }
-        libOut.println(
-            "library " + libName + " " + libSizes.get(libName).minimum + " " +
-            libSizes.get(libName).maximum);
-        ArrayList<String> left = libMates.get("left");
-        ArrayList<String> right = libMates.get("right");
-
-        if (left.size() != right.size()) {
-          sLogger.fatal(
-              "Not all reads in library " + libName + " have a mat.",
-              new RuntimeException("Not all reads are paired."));
-        }
-
-        for (int whichMate = 0; whichMate < left.size(); whichMate++) {
-          // If the left read name starts with "l", "p" or "#" because
-          // the binary toAmos_new in the amos package reserves uses these
-          // characters to identify special types of rows in the file.
-          String leftRead = left.get(whichMate);
-          if (leftRead.startsWith("l") || leftRead.startsWith("p") ||
-              leftRead.startsWith("#")) {
-            sLogger.fatal(
-                "The read named:" + leftRead + " will cause problems with the " +
-                "amos binary toAmos_new. The amos binary attributes special " +
-                "meaning to rows in the library file starting with 'p', 'l' or " +
-                "'#' so if the id for a read starts with any of those " +
-                "characters it will mess up amos.",
-                new RuntimeException("Invalid read name"));
-            System.exit(-1);
-          }
-          libOut.println(
-              left.get(whichMate) + " " + right.get(whichMate) + " " + libName);
-        }
-      }
-      libOut.close();
-    } catch (Exception e){
-      sLogger.fatal("Exception occured while creating library file.", e);
-      System.exit(-1);
-    }
-  }
-
-  /**
-   * Convert the output of bowtie to an avro file.
-   *
-   * @return: The path where the converted bowtie files are located.
-   */
-  private String convertBowtieToAvro (Collection<String> bowtieOutFiles){
-    // Copy the file alignments to the hadoop filesystem so that we can
-    // run mapreduce on them.
-    FileSystem fs;
-    try{
-      fs = FileSystem.get(this.getConf());
+      libWriter = new LibraryFileWriter(libraryOutputFile);
     } catch (IOException e) {
-      throw new RuntimeException("Can't get filesystem: " + e.getMessage());
+      sLogger.fatal("Could not create library file: " + libraryOutputFile, e);
     }
 
-    sLogger.info("Create directory on HDFS for bowtie alignments.");
+    PrintStream fastaStream = null;
 
-    String hdfsPath = (String)stage_options.get("hdfs_path");
-    String hdfsAlignDir = FilenameUtils.concat(hdfsPath, "bowtie_output");
-
-    sLogger.info("Creating hdfs directory:" + hdfsAlignDir);
     try {
-      if (!fs.mkdirs(new Path(hdfsAlignDir))) {
-        sLogger.fatal(
-            "Could not create hdfs directory:" + hdfsAlignDir,
-            new RuntimeException("Failed to create directory."));
-        System.exit(-1);
-      }
-    } catch (IOException e) {
-      sLogger.fatal(
-          "Could not create hdfs directory:" + hdfsAlignDir + " error:" +
-          e.getMessage(), e);
+      fastaStream = new PrintStream(fastaOutputFile);
+    } catch(IOException e) {
+      sLogger.fatal(String.format(
+          "Could not open %s for writing.", fastaOutputFile), e);
       System.exit(-1);
     }
 
-    sLogger.info("Copy bowtie outputs to hdfs.");
-    for (String bowtieFile : bowtieOutFiles) {
-      String name = FilenameUtils.getName(bowtieFile);
-      String newFile = FilenameUtils.concat(hdfsAlignDir, name);
-      try {
-        fs.copyFromLocalFile(new Path(bowtieFile), new Path(newFile));
-      } catch (IOException e) {
+    for (MateFilePair matePair : matePairs) {
+      libWriter.writeLibrary(
+          matePair.libraryName, getLibSize(matePair.libraryName));
+
+      FastQFileReader leftReader = new FastQFileReader(matePair.leftFile);
+      FastQFileReader rightReader = new FastQFileReader(matePair.rightFile);
+
+      int counter = 0;
+
+      FastaRecord fasta = new FastaRecord();
+
+      while (leftReader.hasNext() && rightReader.hasNext()) {
+        FastQRecord left = leftReader.next();
+        FastQRecord right = rightReader.next();
+
+        String leftId = left.getId().toString();
+        String rightId = right.getId().toString();
+        if (!ReadIdUtil.isMatePair(leftId, rightId)) {
+          sLogger.fatal(String.format(
+              "Expecting a mate pair but the read ids: %s, %s do not form " +
+                  "a valid mate pair.", leftId, rightId));
+          System.exit(-1);
+        }
+
+        // TODO(jeremy@lewi.us): The original code added the library name
+        // as a prefix to the read id and then replaced "/" with "_".
+        // I think manipulating the readId's is risky because we need to
+        // be consistent. So we don't prepend the library name.
+        // However, some programs e.g bowtie cut the "/" off and set a
+        // a special code. So to be consistent we use the function
+        // safeReadId to convert readId's to a version that can be safely
+        // used everywhere.
+        left.setId(Utils.safeReadId(left.getId().toString()));
+        right.setId(Utils.safeReadId(right.getId().toString()));
+
+        libWriter.writeMateIds(
+            left.getId().toString(), right.getId().toString(),
+            matePair.libraryName);
+
+        for (FastQRecord fastq : new FastQRecord[] {left, right}) {
+          fasta.setId(fastq.getId());
+
+          // Truncate the read because bowtie can only handle short reads.
+          fasta.setRead(fastq.getRead().subSequence(0, readLength));
+
+          FastUtil.writeFastARecord(fastaStream, fasta);
+        }
+
+        ++counter;
+        if (counter % 1000000 == 0) {
+          sLogger.info("Processed " + counter + " reads");
+          fastaStream.flush();
+        }
+        counter++;
+      }
+
+      if (leftReader.hasNext() != rightReader.hasNext()) {
         sLogger.fatal(String.format(
-            "Could not copy %s to %s error: %s", bowtieFile, newFile,
-            e.getMessage()), e);
+            "The mait pair files %s and %s don't have the same number of " +
+                "reads this indicates the reads aren't properly paired as mate " +
+                "pairs.", matePair.leftFile, matePair.rightFile));
+      }
+      leftReader.close();
+      rightReader.close();
+    }
+
+    libWriter.close();
+  }
+
+  /**
+   * Writer for the library file.
+   *
+   * The library file lists each mate pair in each library.
+   *
+   * For more info on the bambus format see:
+   * http://www.cs.jhu.edu/~genomics/Bambus/Manual.html#matesfile
+   */
+  private static class LibraryFileWriter {
+    private PrintStream outStream;
+    private File libraryFile;
+
+    // TODO(jeremy@lewi.us): Do we really want to throw an exception in the
+    // constructor?
+    public LibraryFileWriter(File file) throws IOException {
+      libraryFile = file;
+      outStream = new PrintStream(libraryFile);
+    }
+
+    /**
+     * Write the name of a library and its min and max insert size.
+     */
+    public void writeLibrary(String name, LibrarySize libSize) {
+      String libName = name.replaceAll("_", "");
+
+      outStream.println(
+          "library " + libName + " " + libSize.minimum + " " + libSize.maximum);
+    }
+
+    /**
+     * Write the ids of a mate pair.
+     */
+    public void writeMateIds(String leftId, String rightId, String libName) {
+      // If the left read name starts with "l", "p" or "#" we have a problem
+      // because  the binary toAmos_new in the amos package reserves uses these
+      // characters to identify special types of rows in the file.
+      if (leftId.startsWith("l") || leftId.startsWith("p") ||
+          leftId.startsWith("#")) {
+        sLogger.fatal(
+            "The read named:" + leftId + " will cause problems with the " +
+            "amos binary toAmos_new. The amos binary attributes special " +
+            "meaning to rows in the library file starting with 'p', 'l' or " +
+            "'#' so if the id for a read starts with any of those " +
+            "characters it will mess up amos.",
+            new RuntimeException("Invalid read name"));
         System.exit(-1);
       }
+      outStream.println(leftId + " " + rightId + " " + libName);
     }
 
-    // Read the bowtie output.
-    BowtieConverter converter = new BowtieConverter();
-    HashMap<String, Object> convertOptions = new HashMap<String, Object>();
+    public void close() {
+      outStream.close();
+    }
+  }
 
-    String convertedPath = FilenameUtils.concat(
-        hdfsPath, BowtieConverter.class.getSimpleName());
-    convertOptions.put("inputpath", hdfsAlignDir);
-    convertOptions.put("outputpath", convertedPath);
-
-    converter.setConf(getConf());
-    converter.setParameters(convertOptions);
-
-    if (!converter.execute()) {
+  /**
+   * Return the size of the library.
+   */
+  private LibrarySize getLibSize(String lib) {
+    String libName = lib.replaceAll("_", "");
+    LibrarySize result = libSizes.get(libName);
+    if (result == null) {
+      String knownLibraries = "";
+      for (String library : libSizes.keySet()) {
+        knownLibraries += library + ",";
+      }
+      // Strip the last column.
+      knownLibraries = knownLibraries.substring(
+          0, knownLibraries.length() - 1);
       sLogger.fatal(
-          "Failed to convert bowtie output to avro records.",
-          new RuntimeException("BowtieConverter failed."));
-      System.exit(-1);
+          "No library sizes are defined for libray:" + libName + " . Known " +
+          "libraries are: " + knownLibraries,
+          new RuntimeException("No library sizes for libray:" + libName));
     }
-
-    return convertedPath;
+    return result;
   }
 
   /**
@@ -430,20 +407,16 @@ public class BuildBambusInput extends NonMRStage {
     String graphPath = (String) stage_options.get("graph_glob");
     // Convert the data to a tigr file.
     TigrCreator tigrCreator = new TigrCreator();
-    HashMap<String, Object> tigrOptions = new HashMap<String, Object>();
+    tigrCreator.initializeAsChild(this);
 
     String hdfsPath = (String)stage_options.get("hdfs_path");
 
-    tigrOptions.put(
+    tigrCreator.setParameter(
         "inputpath", StringUtils.join(
             new String[]{bowtieAvroPath, graphPath}, ","));
 
     String outputPath = FilenameUtils.concat(hdfsPath, "tigr");
-
-    tigrOptions.put("outputpath", outputPath);
-
-    tigrCreator.setConf(getConf());
-    tigrCreator.setParameters(tigrOptions);
+    tigrCreator.setParameter("outputpath", outputPath);
 
     if (!tigrCreator.execute()) {
       sLogger.fatal(
@@ -476,6 +449,8 @@ public class BuildBambusInput extends NonMRStage {
       System.exit(-1);
     }
 
+    File contigOutputFile = getContigOutputFile();
+
     // TODO(jlewi): How can we verify that the copy completes successfully.
     try {
       fs.copyToLocalFile(
@@ -499,14 +474,8 @@ public class BuildBambusInput extends NonMRStage {
     String libFile = (String) this.stage_options.get("libsize");
     parseLibSizes(libFile);
 
-    ArrayList<String> readFiles = new ArrayList<String>();
-
     String globs = (String) this.stage_options.get("reads_glob");
-    for (String glob : globs.split(",")) {
-      ArrayList<String> matches =  FileHelper.matchFiles(glob);
-      sLogger.info(String.format("%s matched %d files", glob, matches.size()));
-      readFiles.addAll(matches);
-    }
+    ArrayList<String> readFiles = FileHelper.matchListOfGlobs(globs);
 
     if (readFiles.isEmpty()) {
       sLogger.fatal(
@@ -521,24 +490,7 @@ public class BuildBambusInput extends NonMRStage {
       sLogger.info("read file:" + file);
     }
     ArrayList<MateFilePair> matePairs = buildMatePairs(readFiles);
-
-    String referenceGlob = (String) this.stage_options.get("reference_glob");
-    ArrayList<String> contigFiles = FileHelper.matchFiles(referenceGlob);
-
-    if (contigFiles.isEmpty()) {
-      sLogger.fatal(
-          "No contig files matched:"  + referenceGlob,
-          new RuntimeException("Missing inputs."));
-      System.exit(-1);
-    }
-
-    sLogger.info("Files containing contings to align reads to are:");
-    for (String file : contigFiles) {
-      sLogger.info("contig file:" + file);
-    }
-
     String resultDir = (String) stage_options.get("outputpath");
-    String outPrefix = (String) stage_options.get("outprefix");
 
     File resultDirFile = new File(resultDir);
     if (!resultDirFile.exists()) {
@@ -549,43 +501,19 @@ public class BuildBambusInput extends NonMRStage {
         System.exit(-1);
       }
     }
-    fastaOutputFile = new File(resultDir, outPrefix + ".fasta");
-    libraryOutputFile = new File(resultDir, outPrefix + ".library");
-    contigOutputFile = new File(resultDir, outPrefix + ".contig");
+
+    File fastaOutputFile = getFastaOutputFile();
+    File libraryOutputFile = getLibraryOutputFile();
+    File contigOutputFile = getContigOutputFile();
 
     sLogger.info("Outputs will be written to:");
     sLogger.info("Fasta file: " + fastaOutputFile.getName());
     sLogger.info("Library file: " + libraryOutputFile.getName());
     sLogger.info("Contig Aligned file: " + contigOutputFile.getName());
 
-    HashMap<String, HashMap<String, ArrayList<String>>> mates =
-        shortenReads(matePairs, fastaOutputFile);
+    createFastaAndLibraryFiles(matePairs, fastaOutputFile, libraryOutputFile);
 
-    createLibraryFile(libraryOutputFile, mates);
-    sLogger.info("Library file written:" + libraryOutputFile.getPath());
-
-    // Run the bowtie aligner
-    BowtieRunner runner = new BowtieRunner(
-        (String)stage_options.get("bowtie_path"),
-        (String)stage_options.get("bowtiebuild_path"));
-
-    String bowtieIndexDir = FilenameUtils.concat(resultDir, "bowtie-index");
-    String bowtieIndexBase = "index";
-    if (!runner.bowtieBuildIndex(
-        contigFiles, bowtieIndexDir, bowtieIndexBase)) {
-      sLogger.fatal(
-          "There was a problem building the bowtie index.",
-          new RuntimeException("Failed to build bowtie index."));
-      System.exit(-1);
-    }
-
-    String alignDir = FilenameUtils.concat(resultDir, "bowtie-alignments");
-    BowtieRunner.AlignResult alignResult = runner.alignReads(
-        bowtieIndexDir, bowtieIndexBase, readFiles, alignDir,
-        SUB_LEN);
-
-    String bowtieAvroPath = convertBowtieToAvro(alignResult.outputs.values());
-
+    String bowtieAvroPath = (String) stage_options.get("bowtie_alignments");
     createTigrFile(bowtieAvroPath);
   }
 
@@ -599,28 +527,38 @@ public class BuildBambusInput extends NonMRStage {
 
     definitions.putAll(super.createParameterDefinitions());
 
-    ParameterDefinition bowtiePath =
+    ParameterDefinition bowtieAlignments =
         new ParameterDefinition(
-            "bowtie_path", "The path to the bowtie binary.",
-            String.class, null);
-
-    ParameterDefinition bowtieBuildPath =
-        new ParameterDefinition(
-            "bowtiebuild_path", "The path to the bowtie-build binary.",
+            "bowtie_alignments",
+            "The hdfs path to the avro files containing the alignments " +
+            "produced by bowtie of the reads to the contigs.",
             String.class, null);
 
     ParameterDefinition readsGlob =
         new ParameterDefinition(
             "reads_glob", "A glob expression matching the path to the fastq " +
-            "files containg the reads to align to the reference genome.",
+            "files containg the reads to align to the reference genome. " +
+            "Should be a local file system.",
             String.class, null);
 
     // Currently these need to be on the local filesystem.
     ParameterDefinition contigsGlob =
         new ParameterDefinition(
             "reference_glob", "A glob expression matching the path to the " +
-            "fasta files containg the reference genome.",
+            "fasta files containg the reference genome. Should be on the " +
+            "local filesystem.",
             String.class, null);
+
+    ParameterDefinition readLength =
+        new ParameterDefinition(
+            "read_length",
+            "How short to make the reads. The value needs to be consistent " +
+            "with the value used in AlignReadsWithBowtie. Bowtie requires " +
+            "short reads. Bambus needs to use the same read lengths as those " +
+            "used by bowtie because otherwise there could be issues with " +
+            "contig distances because read start/end coordinates for the " +
+            "alignments aren't consistent.",
+            Integer.class, 25);
 
     ParameterDefinition libsizePath =
         new ParameterDefinition(
@@ -653,7 +591,7 @@ public class BuildBambusInput extends NonMRStage {
 
     for (ParameterDefinition def:
       new ParameterDefinition[] {
-        bowtiePath, bowtieBuildPath, readsGlob, contigsGlob, libsizePath,
+        bowtieAlignments, readsGlob, contigsGlob, libsizePath,
         outputPath, outputPrefix, hdfsPath, graphPath}) {
       definitions.put(def.getName(), def);
     }
@@ -661,12 +599,33 @@ public class BuildBambusInput extends NonMRStage {
     return Collections.unmodifiableMap(definitions);
   }
 
+  @Override
+  public List<InvalidParameter> validateParameters() {
+    List<InvalidParameter> invalid = super.validateParameters();
+
+    invalid.addAll(this.checkParameterIsNonEmptyString(Arrays.asList(
+        "outputpath", "outprefix", "hdfs_path")));
+
+    invalid.addAll(this.checkParameterIsExistingLocalFile(Arrays.asList(
+        "libsize")));
+
+    invalid.addAll(this.checkParameterMatchesLocalFiles(Arrays.asList(
+        "reference_glob", "reads_glob")));
+
+    invalid.addAll(this.checkParameterMatchesFiles(Arrays.asList(
+        "graph_glob")));
+
+    return invalid;
+  }
+
   /**
    * Returns the name of the output file containing the shortened fasta reads.
    * @return
    */
   public File getFastaOutputFile() {
-    return fastaOutputFile;
+    String resultDir = (String) stage_options.get("outputpath");
+    String outPrefix = (String) stage_options.get("outprefix");
+    return new File(resultDir, outPrefix + ".fasta");
   }
 
   /**
@@ -674,7 +633,9 @@ public class BuildBambusInput extends NonMRStage {
    * @return
    */
   public File getContigOutputFile() {
-    return contigOutputFile;
+    String resultDir = (String) stage_options.get("outputpath");
+    String outPrefix = (String) stage_options.get("outprefix");
+    return new File(resultDir, outPrefix + ".contig");
   }
 
   /**
@@ -682,12 +643,14 @@ public class BuildBambusInput extends NonMRStage {
    * @return
    */
   public File getLibraryOutputFile() {
-    return libraryOutputFile;
+    String resultDir = (String) stage_options.get("outputpath");
+    String outPrefix = (String) stage_options.get("outprefix");
+    return new File(resultDir, outPrefix + ".library");
   }
 
   public static void main(String[] args) throws Exception {
-    BuildBambusInput stage = new BuildBambusInput();
-    int res = stage.run(args);
+    int res = ToolRunner.run(
+        new Configuration(), new BuildBambusInput(), args);
     System.exit(res);
   }
 }

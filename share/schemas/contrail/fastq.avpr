@@ -42,9 +42,9 @@
         "name":"QuakeReadCorrection",
         "doc": "Store information about the corrections quake made to a read.",
         "fields": [ { "name":"corrected",
-                  	  "type": "boolean",
-                  	  "doc": "Read had errors that quake corrected."
-                  	},
+                      "type": "boolean",
+                      "doc": "Read had errors that quake corrected."
+                    },
 	                { "name":"trim_length", 
 	                  "type":"int",
 	                  "doc": "Number of bases trimmed from the read."
@@ -58,13 +58,39 @@
                 "variety of formats. We can also associate different metadata ",
                 "with the read."],
         "fields": [ { "name":"fastq",
-                  	  "type": ["null", "contrail.sequences.FastQRecord"],
-                  	  "doc": "FastQ representation if supplied."
-                  	},
-                  	{
-                  	  "name":"quake_read_correction", 
-                  	   "type":"contrail.sequences.QuakeReadCorrection"
-                  	}
+                      "type": ["null", "contrail.sequences.FastQRecord"],
+                      "doc": "FastQ representation if supplied."
+                    },
+                    {
+                      "name":"quake_read_correction", 
+                       "type":"contrail.sequences.QuakeReadCorrection"
+                    }
+                  ]
+        },
+        {"name": "MatePairId",
+     	 "type":  "enum",        
+     	 "doc": "Enumeration for representing two reads forming a mate pair.",
+         "symbols": ["LEFT", "RIGHT"]
+    	},
+        {"type": "record",
+        "name":"ReadId",
+        "doc": ["The id for a read."],
+        "fields": [ { "name":"library",
+                      "type": "string",
+                      "doc": "The library this read came from.."
+                    },
+                    {
+                      "name":"id", 
+                      "type":"string",
+                      "doc": ["The unique identifier for this read. Should ",
+                               "not include the library name or mate pair."]
+                    },
+                    {
+                      "name": "mate_id",
+                   	  "type": ["null", "MatePairId"],
+                   	  "doc": ["Which part of a mate pair this read is or ",
+                   	          "null if not part of a read."]
+                    }
                   ]
         }
         ] //end types

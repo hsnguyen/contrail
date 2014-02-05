@@ -36,6 +36,39 @@
                   "type": "double"
                  }
                 ]
+     },
+     {"type": "record",
+        "name": "contrail.graph.MinMaxDegree",
+        "doc": ["The min and max degree for a contig."],
+        "fields": [ { "name":"max",
+                      "type": "int",
+                      "doc": "The maximum degree."
+                    },
+                    {
+                      "name":"min", 
+                      "type":"int",
+					  "doc": "The minimum degree."
+                    }
+                  ]
+     },
+     {"type": "record",
+      "name": "contrail.graph.MinMaxDegreeStats",
+      "doc": ["The stats for the min and max degree for contigs."],
+      "fields": [ { "name":"max",
+                    "type": "int",
+                    "doc": "The maximum degree."
+                  },
+                  {
+                    "name":"min", 
+                    "type":"int",
+				    "doc": "The minimum degree."
+                  },
+                  {
+                    "name":"count", 
+                    "type":"long",
+				    "doc": "The number of records with this degree."
+                  }
+                ]
      }
   ] 
  }

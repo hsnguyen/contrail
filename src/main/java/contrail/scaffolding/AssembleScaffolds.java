@@ -21,18 +21,22 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
 import contrail.sequences.FastaFileReader;
 import contrail.sequences.FastaRecord;
-import contrail.stages.ContrailParameters;
 import contrail.stages.ParameterDefinition;
 import contrail.stages.PipelineStage;
 import contrail.util.ShellUtil;
@@ -59,6 +63,7 @@ import contrail.util.ShellUtil;
  * The final input is a fasta file containing shortened versions of all of
  * the original reads. The shortened reads are the subsequences
  * used with bowtie to align the reads to the contigs.
+ *
  */
 public class AssembleScaffolds extends PipelineStage {
   private static final Logger sLogger = Logger.getLogger(
@@ -69,9 +74,6 @@ public class AssembleScaffolds extends PipelineStage {
         new HashMap<String, ParameterDefinition>();
 
     definitions.putAll(super.createParameterDefinitions());
-
-    BuildBambusInput bambusInputStage = new BuildBambusInput();
-    definitions.putAll(bambusInputStage.getParameterDefinitions());
 
     ParameterDefinition amosPath =
         new ParameterDefinition(
@@ -90,11 +92,86 @@ public class AssembleScaffolds extends PipelineStage {
             "noreduce", "Turn off graph simplification in orient contigs.",
             Boolean.class, true);
 
+    ParameterDefinition startStep =
+        new ParameterDefinition(
+            "start_step",
+            "Which step in the scaffolding pipeline to start at. By default " +
+            "all steps are run. This option is mostly for debugging.",
+            String.class, "build_input");
+
+    ParameterDefinition stopStep =
+        new ParameterDefinition(
+            "stop_step",
+            "The last step in the scaffolding pipeline to run. By default " +
+            "all steps are run. This option is mostly for debugging.",
+            String.class, "write_report");
+
+    // The data to load into Amos which is produced by BuildBambusInput.
+    // TODO(jlewi): We should an option to allow BuildBambusInput to be run.
+    ParameterDefinition fastaFile =
+        new ParameterDefinition(
+            "fasta_file",
+            "A single fasta file on the local filesystem containing all the " +
+            "reads .",
+            String.class, null);
+
+    ParameterDefinition tigrFile =
+        new ParameterDefinition(
+            "tigr_file",
+            "The tigr file containing the contigs and information about the " +
+            " aligned reads. This should be on the local filesystem.",
+            String.class, null);
+
+    ParameterDefinition matesFile =
+        new ParameterDefinition(
+            "mates_file",
+            "The mates file containing information about the mate pairs. " +
+            "This should be on the local filesystem.",
+            String.class, null);
+
+    ParameterDefinition output = new ParameterDefinition(
+        "outputpath", "The local directory where the output should be " +
+        "written to.", String.class, null);
+
     for (ParameterDefinition def: new ParameterDefinition[] {
-            amosPath, maxOverlap, noReduce}) {
+            amosPath, maxOverlap, noReduce, startStep, stopStep, fastaFile,
+            tigrFile, matesFile, output}) {
       definitions.put(def.getName(), def);
     }
     return Collections.unmodifiableMap(definitions);
+  }
+
+  @Override
+  public List<InvalidParameter> validateParameters() {
+    List<InvalidParameter> invalid = super.validateParameters();
+
+    invalid.addAll(this.checkParameterIsNonEmptyString(Arrays.asList(
+        "outputpath")));
+
+    invalid.addAll(this.checkParameterIsExistingLocalFile(Arrays.asList(
+        "amos_path", "fasta_file", "mates_file", "tigr_file")));
+
+    String startStep = (String) stage_options.get("start_step");
+    startStep = startStep.toUpperCase();
+
+    HashSet<String> validSteps = new HashSet<String>();
+    for (ScaffoldingSteps step : ScaffoldingSteps.values()) {
+      validSteps.add(step.name());
+    }
+
+    if (!validSteps.contains(startStep)) {
+      InvalidParameter parameter = new InvalidParameter(
+          "step_path", String.format(
+          "The value of --step_path is invalid. Allowed values are: %s",
+          StringUtils.join(ScaffoldingSteps.values(), ",")));
+      invalid.add(parameter);
+    }
+
+//    BuildBambusInput bambusInput = new BuildBambusInput();
+//    bambusInput.initializeAsChild(this);
+//    invalid.addAll(bambusInput.validateParameters());
+
+    return invalid;
   }
 
   /**
@@ -111,6 +188,7 @@ public class AssembleScaffolds extends PipelineStage {
     }
 
     // Implement the compare and equals method so we can sort by size.
+    @Override
     public int compareTo(SequenceSize other) {
       if (this.gapped < other.gapped) {
         return -1;
@@ -294,6 +372,7 @@ public class AssembleScaffolds extends PipelineStage {
     sLogger.info("Executing bambus.");
     String amosPath = (String) stage_options.get("amos_path");
     String outputPath = (String) stage_options.get("outputpath");
+
     // It looks like goBambus2 can't take the path to the bank. The script
     // needs to be executed from the directory containing the bank.
     ArrayList<String> bambusCommand = new ArrayList<String>();
@@ -309,6 +388,18 @@ public class AssembleScaffolds extends PipelineStage {
       sLogger.fatal(
           "Bambus failed.",
           new RuntimeException("Bambus failed."));
+      System.exit(-1);
+    }
+
+    // Make a copy of the bambus log because when we rerun bambus in
+    // later stage the log will get overwritten.
+    // TODO(jeremy@lewi.us): Do we still need this?
+    try {
+      FileUtils.copyFile(
+          new File(outputPath, "bambus2.log"),
+          new File(outputPath, "bambus2.log.initial_stages"));
+    } catch (IOException e) {
+      sLogger.fatal("Failed to copy files.", e);
       System.exit(-1);
     }
   }
@@ -353,7 +444,29 @@ public class AssembleScaffolds extends PipelineStage {
 
   private void runLoadIntoAmos(
       String fastaFile, String libraryFile, String contigOutputFile) {
+    if (new File(getBankPath()).exists()) {
+      sLogger.info(String.format("Deleting existing bank: %s", getBankPath()));
+      try {
+        FileUtils.deleteDirectory(new File(getBankPath()));
+      } catch (IOException e) {
+        sLogger.fatal(
+            String.format("Error deleting bank: %s", getBankPath()),
+            e);
+        System.exit(-1);
+      }
+    }
+
     String amosPath = (String) stage_options.get("amos_path");
+    String outputPath = (String) stage_options.get("outputpath");
+
+    File outDir = new File(outputPath);
+    if (!outDir.exists()) {
+      if (!outDir.mkdirs()) {
+        sLogger.fatal("Could not create directory:" + outputPath);
+        System.exit(-1);
+      }
+    }
+
     sLogger.info("Load the data into amos.");
     ArrayList<String> loadCommand = new ArrayList<String>();
     loadCommand.add(amosPath + "/toAmos_new");
@@ -366,7 +479,8 @@ public class AssembleScaffolds extends PipelineStage {
     loadCommand.add("-b");
     loadCommand.add(getBankPath());
 
-    if (ShellUtil.execute(loadCommand, null, "toAmos_new:", sLogger) != 0) {
+    if (ShellUtil.execute(loadCommand, outputPath, "toAmos_new:", sLogger)
+        != 0) {
       sLogger.fatal(
           "Failed to load the bambus input into the amos bank",
           new RuntimeException("Failed to load bambus input into amos bank."));
@@ -464,87 +578,140 @@ public class AssembleScaffolds extends PipelineStage {
     scaffoldStream.close();
   }
 
-  @Override
-  protected void stageMain() {
-    // TODO(jeremy@lewi.us) we should check if all the parameters
-    // required by all the child sub stages are supplied.
-    String[] required_args = {"outputpath", "amos_path"};
-    checkHasParametersOrDie(required_args);
+  // Different steps in scaffolding.
+  private static enum ScaffoldingSteps {
+    BUILD_INPUT,
+    LOAD_INTO_AMOS,
+    RUN_AMOS,
+    RUN_BAMBUS,
+    RUN_ORIENT_CONTIGS,
+    NONLINEAR_OUTPUT,
+    BANK_TO_FASTA,
+    OUTPUT_NONLINEAR_SCAFFOLDS,
+    LINEARIZE,
+    LINEAR_OUTPUT,
+    OUTPUT_LINEAR_SCAFFOLDS,
+    WRITE_REPORT
+  }
 
+  private void deleteExistingDirs() {
+    // Delete any output directories that already exist.
+    // Delete the posix, local outputpath.
     String outputPath = (String) stage_options.get("outputpath");
-    File outputPathFile = new File(outputPath);
-    if (outputPathFile.exists()) {
-      sLogger.warn(
-          "Outputpath: " + outputPath + " exists and will be deleted.");
+    File outDir = new File(outputPath);
+    if (outDir.exists()) {
       try {
-        FileUtils.deleteDirectory(outputPathFile);
+        FileUtils.deleteDirectory(outDir);
       } catch (IOException e) {
-        sLogger.fatal("Couldn't delete the outputpath:" + outputPath, e);
+        sLogger.fatal(
+            "There was a problem deleting the directory: " + outputPath, e);
         System.exit(-1);
       }
     }
+  }
+
+  @Override
+  protected void stageMain() {
+    String startPhase = (String) stage_options.get("start_step");
+    String stopPhase = (String) stage_options.get("stop_step");
+    ScaffoldingSteps startStep = ScaffoldingSteps.valueOf(
+        startPhase.toUpperCase());
+    ScaffoldingSteps stopStep = ScaffoldingSteps.valueOf(
+        stopPhase.toUpperCase());
+
+    String outputPath = (String) stage_options.get("outputpath");
+
+    String nonLinearScaffoldFile = FilenameUtils.concat(
+        outputPath, getOutputPrefix() + "scaffolds.nonlinear.fasta");
+
+    String linearScaffoldFile = FilenameUtils.concat(
+        outputPath, getOutputPrefix() + "scaffolds.linear.fasta");
 
     BuildBambusInput bambusInputStage = new BuildBambusInput();
-    // Make a shallow copy of the stage options required by the stage.
-    Map<String, Object> stageOptions =
-        ContrailParameters.extractParameters(
-            this.stage_options,
-            bambusInputStage.getParameterDefinitions().values());
-
+    bambusInputStage.initializeAsChild(this);
     // Set the directory for the bambus inputs to be a subdirectory
     // of the output directory.
     String bambusOutputDir = FilenameUtils.concat(
         (String)stage_options.get("outputpath"), "bambus-input");
-    stageOptions.put("outputpath", bambusOutputDir);
-    bambusInputStage.setParameters(stageOptions);
-    bambusInputStage.execute();
+    bambusInputStage.setParameter("outputpath", bambusOutputDir);
 
-    runLoadIntoAmos(
-        bambusInputStage.getFastaOutputFile().getPath(),
-        bambusInputStage.getLibraryOutputFile().getPath(),
-        bambusInputStage.getContigOutputFile().getPath());
-
-    runGoBambus();
-    // Make a copy of the bambus log because when we rerun bambus below
-    // the log will get overwritten.
-    // TODO(jeremy@lewi.us): Do we still need this?
-    try {
-      FileUtils.copyFile(
-          new File(outputPath, "bambus2.log"),
-          new File(outputPath, "bambus2.log.initial_stages"));
-    } catch (IOException e) {
-      sLogger.fatal("Failed to copy files.", e);
-      System.exit(-1);
+    // Run all steps starting at start step.
+    switch (startStep) {
+      case BUILD_INPUT:
+        deleteExistingDirs();
+//        bambusInputStage.execute();
+        if (stopStep == ScaffoldingSteps.BUILD_INPUT) {
+          break;
+        }
+      case LOAD_INTO_AMOS:
+        runLoadIntoAmos(
+            (String) stage_options.get("fasta_file"),
+            (String) stage_options.get("mates_file"),
+            (String) stage_options.get("tigr_file"));
+        if (stopStep == ScaffoldingSteps.LOAD_INTO_AMOS) {
+          break;
+        }
+      case RUN_BAMBUS:
+        runGoBambus();
+        if (stopStep == ScaffoldingSteps.RUN_BAMBUS) {
+          break;
+        }
+      case RUN_ORIENT_CONTIGS:
+        runOrientContigs();
+        if (stopStep == ScaffoldingSteps.RUN_ORIENT_CONTIGS) {
+          break;
+        }
+      case NONLINEAR_OUTPUT:
+        runNonlinearOutputResults();
+        if (stopStep == ScaffoldingSteps.NONLINEAR_OUTPUT) {
+          break;
+        }
+      case BANK_TO_FASTA:
+        runBank2Fasta();
+        if (stopStep == ScaffoldingSteps.BANK_TO_FASTA) {
+          break;
+        }
+      case OUTPUT_NONLINEAR_SCAFFOLDS:
+        runOutputScaffolds(nonLinearScaffoldFile);
+        if (stopStep == ScaffoldingSteps.OUTPUT_NONLINEAR_SCAFFOLDS) {
+          break;
+        }
+      case LINEARIZE:
+        runLinearize();
+        if (stopStep == ScaffoldingSteps.LINEARIZE) {
+          break;
+        }
+      case LINEAR_OUTPUT:
+        runLinearOutputResults();
+        if (stopStep == ScaffoldingSteps.LINEAR_OUTPUT) {
+          break;
+        }
+      case OUTPUT_LINEAR_SCAFFOLDS:
+        runOutputScaffolds(linearScaffoldFile);
+        if (stopStep == ScaffoldingSteps.OUTPUT_LINEAR_SCAFFOLDS) {
+          break;
+        }
+      case WRITE_REPORT:
+        ArrayList<SequenceSize> contigSizes = getSequenceSizes(
+            nonLinearScaffoldFile);
+        ArrayList<SequenceSize> linearSizes = getSequenceSizes(
+            linearScaffoldFile);
+        String reportFile = FilenameUtils.concat(
+            outputPath, getOutputPrefix() + "scaffolds.report.html");
+        writeReport(reportFile, contigSizes, linearSizes);
+        if (stopStep == ScaffoldingSteps.WRITE_REPORT) {
+          break;
+        }
+      default:
+        sLogger.fatal(String.format(
+            "%s is not a valid start phase.", startPhase));
+        System.exit(-1);
     }
-
-    runOrientContigs();
-    runNonlinearOutputResults();
-    runBank2Fasta();
-
-    String nonLinearScaffoldFile = FilenameUtils.concat(
-        outputPath, getOutputPrefix() + "scaffolds.nonlinear.fasta");
-    runOutputScaffolds(nonLinearScaffoldFile);
-
-    runLinearize();
-    runLinearOutputResults();
-    String linearScaffoldFile = FilenameUtils.concat(
-        outputPath, getOutputPrefix() + "scaffolds.linear.fasta");
-    runOutputScaffolds(linearScaffoldFile);
-
-    ArrayList<SequenceSize> contigSizes = getSequenceSizes(
-        nonLinearScaffoldFile);
-    ArrayList<SequenceSize> linearSizes = getSequenceSizes(
-        linearScaffoldFile);
-    String reportFile = FilenameUtils.concat(
-        outputPath, getOutputPrefix() + "scaffolds.report.html");
-    writeReport(reportFile, contigSizes, linearSizes);
-    // Run the stage.
-    // TODO(jeremy@lewi.us): Process the data and generate a report.
   }
 
   public static void main(String[] args) throws Exception {
-    AssembleScaffolds stage = new AssembleScaffolds();
-    int res = stage.run(args);
+    int res = ToolRunner.run(
+        new Configuration(), new AssembleScaffolds(), args);
     System.exit(res);
   }
 }
