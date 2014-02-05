@@ -25,12 +25,14 @@ import org.apache.crunch.impl.mem.MemPipeline;
 import org.apache.crunch.types.avro.Avros;
 import org.junit.Test;
 
+import contrail.crunch.FilterBowtieAlignments.ExtractMappings;
 import contrail.scaffolding.BowtieMapping;
+import contrail.scaffolding.MatePairMappings;
 
 public class TestFilterBowtieAlignments {
   @Test
-  public void testPipeline() {
-    // Run the entire pipeline to make sure mappings are properly filtered.
+  public void testFilterMatePairs() {
+    // Test to make sure mappings are properly filtered.
 
     ArrayList<BowtieMapping> mappings = new ArrayList<BowtieMapping>();
 
@@ -116,11 +118,112 @@ public class TestFilterBowtieAlignments {
                 mappings);
 
     PCollection<BowtieMapping> outputs =
-        FilterBowtieAlignments.buildFilterPipeline(input);
+        FilterBowtieAlignments.filterMatePairs(
+            FilterBowtieAlignments.buildMatePairs(input)).parallelDo(
+            new ExtractMappings(), Avros.specifics(BowtieMapping.class));
 
     Iterable<BowtieMapping> materializedOutput = outputs.materialize();
-
+    ArrayList<BowtieMapping> actual = new ArrayList<BowtieMapping>();
+    for (BowtieMapping mapping : materializedOutput) {
+      actual.add(mapping);
+    }
     Collections.reverse(expectedOutput);
-    assertEquals(expectedOutput, materializedOutput);
+    assertEquals(expectedOutput, actual);
+  }
+
+  @Test
+  public void testFilterLinks() {
+    // Run the entire pipeline to make sure links with insufficient support
+    // are properly filtered.
+
+    ArrayList<MatePairMappings> input = new ArrayList<MatePairMappings>();
+    ArrayList<MatePairMappings> expectedOutput = new ArrayList<MatePairMappings>();
+    // Mate pair to keep.
+    {
+      for (int i = 0; i < 2; ++i) {
+        MatePairMappings mappings = new MatePairMappings();
+        mappings.setLibraryId("");
+        mappings.setMateId("library.readId");
+        mappings.setLeftMappings(new ArrayList<BowtieMapping>());
+        mappings.setRightMappings(new ArrayList<BowtieMapping>());
+
+        BowtieMapping left = new BowtieMapping();
+        left.setNumMismatches(0);
+        left.setReadId(String.format("library.readId-%d/1", i));
+        left.setRead("");
+        left.setReadClearEnd(0);
+        left.setReadClearStart(0);
+        left.setContigStart(0);
+        left.setContigEnd(100);
+        left.setContigId("contig1");
+
+        BowtieMapping right = new BowtieMapping();
+        right.setNumMismatches(0);
+        right.setReadId(String.format("library.readId-%d/2", i));
+        right.setRead("");
+        right.setReadClearEnd(0);
+        right.setReadClearStart(0);
+        right.setContigStart(0);
+        right.setContigEnd(100);
+        right.setContigId("contig1");
+
+        mappings.getLeftMappings().add(left);
+        mappings.getRightMappings().add(right);
+
+        input.add(mappings);
+
+        expectedOutput.add(SpecificData.get().deepCopy(
+            mappings.getSchema(), mappings));
+      }
+    }
+
+    // Link to filter.
+    {
+      MatePairMappings mappings = new MatePairMappings();
+      mappings.setLibraryId("");
+      mappings.setMateId("library.readId");
+      mappings.setLeftMappings(new ArrayList<BowtieMapping>());
+      mappings.setRightMappings(new ArrayList<BowtieMapping>());
+
+      BowtieMapping left = new BowtieMapping();
+      left.setNumMismatches(0);
+      left.setReadId("library.readId-bad/1");
+      left.setRead("");
+      left.setReadClearEnd(0);
+      left.setReadClearStart(0);
+      left.setContigStart(0);
+      left.setContigEnd(100);
+      left.setContigId("contig2");
+
+      BowtieMapping right = new BowtieMapping();
+      right.setNumMismatches(0);
+      right.setReadId("library.readId-bad/2");
+      right.setRead("");
+      right.setReadClearEnd(0);
+      right.setReadClearStart(0);
+      right.setContigStart(0);
+      right.setContigEnd(100);
+      right.setContigId("contig2");
+
+      mappings.getLeftMappings().add(left);
+      mappings.getRightMappings().add(right);
+
+      input.add(mappings);
+    }
+
+    PCollection<MatePairMappings> inputCollection =
+        MemPipeline.typedCollectionOf(
+            Avros.specifics(MatePairMappings.class),
+                input);
+
+    PCollection<MatePairMappings> outputs =
+        FilterBowtieAlignments.filterLinks(inputCollection);
+
+    Iterable<MatePairMappings> materializedOutput = outputs.materialize();
+    ArrayList<MatePairMappings> actual = new ArrayList<MatePairMappings>();
+    for (MatePairMappings mapping : materializedOutput) {
+      actual.add(mapping);
+    }
+    assertEquals(expectedOutput, actual);
   }
 }
