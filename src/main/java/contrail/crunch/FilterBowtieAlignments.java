@@ -14,16 +14,19 @@
 // Author: Jeremy Lewi (jeremy@lewi.us)
 package contrail.crunch;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.avro.specific.SpecificData;
 import org.apache.crunch.DoFn;
 import org.apache.crunch.Emitter;
 import org.apache.crunch.PCollection;
 import org.apache.crunch.PGroupedTable;
+import org.apache.crunch.Pair;
 import org.apache.crunch.Pipeline;
 import org.apache.crunch.PipelineResult;
 import org.apache.crunch.Source;
@@ -37,6 +40,7 @@ import org.apache.hadoop.util.ToolRunner;
 
 import contrail.crunch.BowtieDoFns.BuildMatePairMappings;
 import contrail.crunch.MatePairGraph.KeyByMateIdDo;
+import contrail.graph.GraphUtil;
 import contrail.scaffolding.BowtieMapping;
 import contrail.scaffolding.MatePairMappings;
 import contrail.stages.ContrailParameters;
@@ -106,6 +110,61 @@ public class FilterBowtieAlignments extends CrunchStage {
   }
 
   /**
+   * Key edges by major minor id so we can combine them.
+   */
+  public static class KeyByContigLinkId
+      extends DoFn<MatePairMappings, Pair<String, MatePairMappings>> {
+    @Override
+    public void process(
+        MatePairMappings mappings,
+        Emitter<Pair<String, MatePairMappings>> emitter) {
+      for (BowtieMapping left : mappings.getLeftMappings()) {
+        for (BowtieMapping right : mappings.getRightMappings()) {
+          CharSequence majorId = GraphUtil.computeMajorID(
+              left.getContigId(), right.getContigId());
+          CharSequence minorId = GraphUtil.computeMinorID(
+              left.getContigId(), right.getContigId());
+          String key = majorId.toString() + "-"  + minorId.toString();
+
+          MatePairMappings output = new MatePairMappings();
+          output.setLibraryId(mappings.getLibraryId());
+          output.setMateId(mappings.getMateId());
+          output.setLeftMappings(new ArrayList<BowtieMapping>());
+          output.setRightMappings(new ArrayList<BowtieMapping>());
+          output.getLeftMappings().add(left);
+          output.getRightMappings().add(right);
+          emitter.emit(new Pair<String, MatePairMappings>(key, output));
+        }
+      }
+    }
+  }
+
+  /**
+   * Remove all links supported by a link mate pair.
+   */
+  public static class FilterContigLinks
+      extends DoFn<Pair<String, Iterable<MatePairMappings>>, MatePairMappings> {
+    @Override
+    public void process(Pair<String, Iterable<MatePairMappings>> links,
+        Emitter<MatePairMappings> emitter) {
+      ArrayList<MatePairMappings> mappings = new ArrayList<MatePairMappings>();
+      for (MatePairMappings m : links.second()) {
+        mappings.add(SpecificData.get().deepCopy(m.getSchema(), m));
+      }
+      if (mappings.size() <= 1) {
+        // Filter out these mappings.
+        return;
+      }
+
+      this.increment("contrail-FilterContigLinks", "good-links");
+      for (MatePairMappings m : mappings) {
+        this.increment("contrail-FilterContigLinks", "good-mate-pairs");
+        emitter.emit(m);
+      }
+    }
+  }
+
+  /**
    * Extract the bowtie mappings.
    */
   public static class ExtractMappings
@@ -127,9 +186,8 @@ public class FilterBowtieAlignments extends CrunchStage {
     }
   }
 
-  public static PCollection<BowtieMapping> buildFilterPipeline(
+  public static PCollection<MatePairMappings> buildMatePairs(
       PCollection<BowtieMapping> inputMappings) {
-
     PGroupedTable<String, BowtieMapping> alignments = inputMappings.parallelDo(
         new KeyByMateIdDo(), Avros.tableOf(
             Avros.strings(),
@@ -138,13 +196,29 @@ public class FilterBowtieAlignments extends CrunchStage {
     PCollection<MatePairMappings>  pairedMappings = alignments.parallelDo(
         new BuildMatePairMappings(), Avros.specifics(MatePairMappings.class));
 
+    return pairedMappings;
+  }
+
+
+  public static PCollection<MatePairMappings> filterMatePairs(
+      PCollection<MatePairMappings> pairedMappings) {
     PCollection<MatePairMappings> filtered = pairedMappings.parallelDo(
         new FilterMatePairMappings(), Avros.specifics(MatePairMappings.class));
 
-    PCollection<BowtieMapping> extracted = filtered.parallelDo(
-        new ExtractMappings(), Avros.specifics(BowtieMapping.class));
+    return filtered;
+  }
 
-    return extracted;
+  public static PCollection<MatePairMappings> filterLinks(
+      PCollection<MatePairMappings> mappings) {
+    PGroupedTable<String, MatePairMappings> groupedLinks = mappings.parallelDo(
+        new KeyByContigLinkId(), Avros.tableOf(
+            Avros.strings(), Avros.specifics(
+                MatePairMappings.class))).groupByKey();
+
+    PCollection<MatePairMappings> filteredMappings = groupedLinks.parallelDo(
+        new FilterContigLinks(), Avros.specifics(MatePairMappings.class));
+
+    return filteredMappings;
   }
 
   @Override
@@ -158,11 +232,16 @@ public class FilterBowtieAlignments extends CrunchStage {
     deleteExistingPath(new Path(outputPath));
 
     // Create an object to coordinate pipeline creation and execution.
-    Pipeline pipeline = new MRPipeline(MatePairGraph.class, getConf());
+    Pipeline pipeline = new MRPipeline(FilterBowtieAlignments.class, getConf());
 
     PCollection<BowtieMapping> raw = pipeline.read(source);
 
-    PCollection<BowtieMapping> outputs = buildFilterPipeline(raw);
+    PCollection<MatePairMappings> mappings = buildMatePairs(raw);
+    PCollection<MatePairMappings> filtered =
+        filterLinks(filterMatePairs(mappings));
+
+    PCollection<BowtieMapping> outputs = filtered.parallelDo(
+        new ExtractMappings(), Avros.specifics(BowtieMapping.class));
 
     outputs.write(To.avroFile(outputPath));
 

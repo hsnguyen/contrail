@@ -63,7 +63,7 @@ public abstract class CrunchStage extends NonMRStage {
       sLogger.info("Counters:");
 
       for (String group : stageResult.getCounterNames().keySet()) {
-        sLogger.info("\t" + group + ":");
+        sLogger.info(group + ":");
         ArrayList<String> counters = new ArrayList<String>();
         counters.addAll(stageResult.getCounterNames().get(group));
         Collections.sort(counters);
@@ -71,7 +71,7 @@ public abstract class CrunchStage extends NonMRStage {
           String displayName =
               stageResult.getCounterDisplayName(group, counter);
           long value = stageResult.getCounterValue(group,  counter);
-          sLogger.info(String.format("%s: %d", displayName, value));
+          sLogger.info(String.format("     %s: %d", displayName, value));
         }
       }
     }

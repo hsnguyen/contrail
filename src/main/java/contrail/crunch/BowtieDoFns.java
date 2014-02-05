@@ -61,6 +61,7 @@ public class BowtieDoFns {
         Emitter<MatePairMappings> emitter) {
       MatePairMappings mateData = new MatePairMappings();
       mateData.setMateId(pair.first());
+      mateData.setLibraryId("");
       mateData.setLeftMappings(new ArrayList<BowtieMapping>());
       mateData.setRightMappings(new ArrayList<BowtieMapping>());
 
@@ -78,7 +79,7 @@ public class BowtieDoFns {
           suffixContigs.put(suffix, new ArrayList<BowtieMapping>());
         }
 
-       suffixContigs.get(suffix).add(SpecificData.get().deepCopy(
+        suffixContigs.get(suffix).add(SpecificData.get().deepCopy(
            mapping.getSchema(), mapping));
       }
 
