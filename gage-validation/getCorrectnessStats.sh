@@ -50,7 +50,11 @@ java -cp $JAVA_PATH GetFastaStats -o -min ${MINLENGTH} -genomeSize $GENOMESIZE $
 #
 # The -p option sets the prefix for the output.
 # nucmer produces the file $CONFIG_FILE.delta.
-$MUMMER/nucmer --maxmatch -p $CONTIG_FILE -l 30 -banded -D 5 $REF $CONTIGS
+# -l minimum length of a match. The value of 50 was set based on our assembly for human chromosome14.
+#   a value of 30 was used for other assemblies
+#   TODO(jlewi): We should make this a parameter
+# -c minimum length for a set of clusters. The value of 100 was chosen for chromosome 14.  
+$MUMMER/nucmer --maxmatch -p $CONTIG_FILE -l 50 -c 100 -banded -D 5 $REF $CONTIGS
 
 # delta-filter filters the alignments produced by nucmer.
 $MUMMER/delta-filter -o 95 -i 95 $CONTIG_FILE.delta > $CONTIG_FILE.fdelta
