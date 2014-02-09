@@ -457,8 +457,7 @@ public class getScaffoldStats {
 
     bf.close();
 
-
-    // now we can compute all the stats
+    // now we can compute all the stats.
     System.out.println("Num inDels: " + numIndels);
     System.out.println("Num Inversions: " + numInversion);
     System.out.println("Num Translocation: " + numTranslocation);
