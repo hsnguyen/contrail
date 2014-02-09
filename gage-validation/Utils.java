@@ -27,6 +27,11 @@ public class Utils {
       this.identifier = third;
     }
 
+    /**
+     * Returns the length of the segment [first, second].
+     * 
+     * @return
+     */
     public int size() {
       return (Math.max(first, (int)second) - Math.min(first, (int)second) + 1);
     }

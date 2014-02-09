@@ -89,14 +89,20 @@ java -cp $JAVA_PATH:. GetFastaStats -o -min ${MINLENGTH} -genomeSize $GENOMESIZE
 echo ""
 echo "Scaffold Data"
 
+// Split the scaffolds at the gaps.
 java -cp $JAVA_PATH SplitFastaByLetter $SCAFFOLDS N > tmp_scf.fasta
+
+// Align the ungapped scaffolds to the reference.
 $MUMMER/nucmer --maxmatch -p $SCAFFOLD_FILE -l 30 -banded -D 5 $REF tmp_scf.fasta
 $MUMMER/delta-filter -o 95 -i 95 $SCAFFOLD_FILE.delta > $SCAFFOLD_FILE.fdelta
 $MUMMER/show-coords -lrcT $SCAFFOLD_FILE.fdelta | sort -k13 -k1n -k2n > $SCAFFOLD_FILE.coords
 $MUMMER/show-tiling -c -l 1 -i 0 -V 0 $SCAFFOLD_FILE.fdelta > $SCAFFOLD_FILE.tiling
 
 echo ""
-echo "Scaffold Stats"
+echo "Scaffold Stats (Uncorrected)"
+// Compute statistics about the original scaffolds. This includes gaps and errors.
 java -cp $JAVA_PATH GetFastaStats -o -min 200 -genomeSize $GENOMESIZE $SCAFFOLDS 2> /dev/null
+
+echo ""
 echo "Corrected Scaffold Stats"
 java -cp $JAVA_PATH getScaffoldStats $SCAFFOLDS $SCAFFOLD_FILE.tiling $GENOMESIZE $SCAFFOLD_FILE.coords 2> $SCAFFOLD_FILE.err
