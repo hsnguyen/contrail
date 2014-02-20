@@ -42,13 +42,11 @@ import contrail.stages.PipelineStage;
 import contrail.util.ShellUtil;
 
 /**
- * Assembly the scaffolds.
+ * Assembly the scaffolds by running bambus.
  *
- * Assembly uses bowtie to align the original reads to the contigs.
- * We convert the bowtie output, contigs, and reads into a format that
- * Bambus can use for scaffolding.
+ * Bambus takes as input 3 files which can be built using BuildBambusInput.
  *
- * Bambus takes as input 3 files. The first file is the contig file in
+ * The first file is the contig file in
  * TIGR/GDE format:
  * see http://sourceforge.net/apps/mediawiki/amos/index.php?title=Bank2contig
  *
@@ -64,6 +62,7 @@ import contrail.util.ShellUtil;
  * the original reads. The shortened reads are the subsequences
  * used with bowtie to align the reads to the contigs.
  *
+ * TODO(jlewi): We should probably rename this to RunBambus.
  */
 public class AssembleScaffolds extends PipelineStage {
   private static final Logger sLogger = Logger.getLogger(
@@ -97,7 +96,7 @@ public class AssembleScaffolds extends PipelineStage {
             "start_step",
             "Which step in the scaffolding pipeline to start at. By default " +
             "all steps are run. This option is mostly for debugging.",
-            String.class, "build_input");
+            String.class, "load_into_amos");
 
     ParameterDefinition stopStep =
         new ParameterDefinition(
@@ -166,10 +165,6 @@ public class AssembleScaffolds extends PipelineStage {
           StringUtils.join(ScaffoldingSteps.values(), ",")));
       invalid.add(parameter);
     }
-
-//    BuildBambusInput bambusInput = new BuildBambusInput();
-//    bambusInput.initializeAsChild(this);
-//    invalid.addAll(bambusInput.validateParameters());
 
     return invalid;
   }
@@ -299,7 +294,6 @@ public class AssembleScaffolds extends PipelineStage {
       FileWriter fileWriter = new FileWriter(reportFile);
       BufferedWriter writer = new BufferedWriter(fileWriter);
 
-      //writer.create(schema, outputStream);
       writer.append("<html><body>");
 
       writeSequenceSizes(writer, "Size of scaffolds", contigSizes);
@@ -588,7 +582,6 @@ public class AssembleScaffolds extends PipelineStage {
 
   // Different steps in scaffolding.
   private static enum ScaffoldingSteps {
-    BUILD_INPUT,
     LOAD_INTO_AMOS,
     RUN_AMOS,
     RUN_BAMBUS,
@@ -645,13 +638,8 @@ public class AssembleScaffolds extends PipelineStage {
 
     // Run all steps starting at start step.
     switch (startStep) {
-      case BUILD_INPUT:
-        deleteExistingDirs();
-//        bambusInputStage.execute();
-        if (stopStep == ScaffoldingSteps.BUILD_INPUT) {
-          break;
-        }
       case LOAD_INTO_AMOS:
+        deleteExistingDirs();
         runLoadIntoAmos(
             (String) stage_options.get("fasta_file"),
             (String) stage_options.get("mates_file"),

@@ -51,6 +51,10 @@ import contrail.stages.ParameterDefinition;
  * 1) Both reads align to the same mate pair.
  * 2) One of the reads in the pair doesn't align to a contig.
  *
+ * We also group all the alignments by the contigs they link. If a link
+ * is supported by a single mate pair we remove the bowtie alignments to remove
+ * the link.
+ *
  * We then group the mappings based on the contigs they link. We remove
  * all links that are supported by a single mate pair.
  */
