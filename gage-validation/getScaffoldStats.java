@@ -462,16 +462,14 @@ public class getScaffoldStats {
     System.out.println("Num Inversions: " + numInversion);
     System.out.println("Num Translocation: " + numTranslocation);
     System.out.println("Num BadGaps: " + numBadGaps);
-    System.out.println("Average bad gap size:" + (double)badGapSize / numGaps);
+    System.out.println("Average bad gap size: " + (double)badGapSize / numGaps);
 
     Collections.sort(lengths);
     Collections.reverse(lengths);
 
     int sum = 0;
+    System.out.println("Longest Scaffold: " + lengths.get(0));
     for (int i = 0; i < lengths.size(); i++) {
-      if (i == 0) {
-        System.out.print("," + (i+1) + "," + lengths.get(i));
-      }
       System.err.println("At index " + i + " I have length " + lengths.get(i));
       sum += lengths.get(i);
 
