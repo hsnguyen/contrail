@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 // Author: Jeremy Lewi (jeremy@lewi.us)
-package contrail.crunch;
+package contrail.scaffolding;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,12 +38,11 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
 
-import contrail.crunch.BowtieDoFns.BuildMatePairMappings;
-import contrail.crunch.MatePairGraph.KeyByMateIdDo;
 import contrail.graph.GraphUtil;
-import contrail.scaffolding.BowtieMapping;
-import contrail.scaffolding.MatePairMappings;
+import contrail.scaffolding.BowtieDoFns.BuildMatePairMappings;
+import contrail.scaffolding.MatePairGraph.KeyByMateIdDo;
 import contrail.stages.ContrailParameters;
+import contrail.stages.CrunchStage;
 import contrail.stages.ParameterDefinition;
 
 /**

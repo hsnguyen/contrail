@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 // Author: Jeremy Lewi (jeremy@lewi.us)
-package contrail.crunch;
+package contrail.scaffolding;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -23,8 +23,6 @@ import org.apache.crunch.DoFn;
 import org.apache.crunch.Emitter;
 import org.apache.crunch.Pair;
 
-import contrail.scaffolding.BowtieMapping;
-import contrail.scaffolding.MatePairMappings;
 import contrail.sequences.ReadIdUtil;
 
 /**

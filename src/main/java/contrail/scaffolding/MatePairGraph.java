@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 // Author: Jeremy Lewi (jeremy@lewi.us)
-package contrail.crunch;
+package contrail.scaffolding;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,11 +40,9 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
-import contrail.scaffolding.BowtieMapping;
-import contrail.scaffolding.ContigLink;
-import contrail.scaffolding.ContigNode;
 import contrail.sequences.ReadIdUtil;
 import contrail.stages.ContrailParameters;
+import contrail.stages.CrunchStage;
 import contrail.stages.ParameterDefinition;
 
 /**
