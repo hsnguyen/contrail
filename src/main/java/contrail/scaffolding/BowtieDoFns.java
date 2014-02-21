@@ -107,4 +107,19 @@ public class BowtieDoFns {
       emitter.emit(mateData);
     }
   }
+
+  /**
+   * Key the bowtie mappings by the read id.
+   */
+  public static class KeyByMateIdDo extends
+      DoFn<BowtieMapping, Pair<String, BowtieMapping>> {
+    @Override
+    public void process(
+        BowtieMapping mapping,
+        Emitter<Pair<String, BowtieMapping>> emitter) {
+      String mateId = ReadIdUtil.getMateId(mapping.getReadId().toString());
+      emitter.emit(new Pair<String, BowtieMapping>(mateId, mapping));
+    }
+  }
+
 }

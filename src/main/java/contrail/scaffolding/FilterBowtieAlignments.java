@@ -40,7 +40,7 @@ import org.apache.hadoop.util.ToolRunner;
 
 import contrail.graph.GraphUtil;
 import contrail.scaffolding.BowtieDoFns.BuildMatePairMappings;
-import contrail.scaffolding.MatePairGraph.KeyByMateIdDo;
+import contrail.scaffolding.BowtieDoFns.KeyByMateIdDo;
 import contrail.stages.ContrailParameters;
 import contrail.stages.CrunchStage;
 import contrail.stages.ParameterDefinition;

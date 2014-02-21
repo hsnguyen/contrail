@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 // Author: Jeremy Lewi (jeremy@lewi.us)
-package contrail.scaffolding;
+package contrail.crunch;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,6 +40,10 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
+import contrail.scaffolding.BowtieDoFns.KeyByMateIdDo;
+import contrail.scaffolding.BowtieMapping;
+import contrail.scaffolding.ContigLink;
+import contrail.scaffolding.ContigNode;
 import contrail.sequences.ReadIdUtil;
 import contrail.stages.ContrailParameters;
 import contrail.stages.CrunchStage;
@@ -66,20 +70,6 @@ public class MatePairGraph extends CrunchStage {
       defs.put(def.getName(), def);
     }
     return Collections.unmodifiableMap(defs);
-  }
-
-  /**
-   * Key the bowtie mappings by the read id.
-   */
-  public static class KeyByMateIdDo extends
-      DoFn<BowtieMapping, Pair<String, BowtieMapping>> {
-    @Override
-    public void process(
-        BowtieMapping mapping,
-        Emitter<Pair<String, BowtieMapping>> emitter) {
-      String mateId = ReadIdUtil.getMateId(mapping.getReadId().toString());
-      emitter.emit(new Pair<String, BowtieMapping>(mateId, mapping));
-    }
   }
 
   /**
