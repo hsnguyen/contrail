@@ -44,7 +44,11 @@ import contrail.util.FileHelper;
  * A binary useful for testing the code for building the bambus input.
  *
  * This class needs to be run manually because you need to specify the
- * paths for the various binaries (e.g bowtie, bowtie-build, goBambus2, etc...)
+ * paths for the bambus binary.
+ *
+ * TODO(jeremy@lewi.us): As of 2014/02/13 this test is outdated. This test
+ * used to be testing AssembleScaffolds but we've since renamed that stage
+ * to RunBambus and changed what it does to just running Bambus.
  *
  * TODO(jeremy@lewi.us): We could automate this test by using dependency
  * injection to inject a fake executor for shell commands. We could then
@@ -56,13 +60,13 @@ import contrail.util.FileHelper;
  * by searching the path for bowtie and bowtie-build and bambus so that the user
  * doesn't have to specify them manually.
  */
-public class TestAssembleScaffolds {
+public class TestRunBambus {
   private static final Logger sLogger = Logger.getLogger(
-      TestAssembleScaffolds.class);
+      TestRunBambus.class);
   private final ArrayList<File> dirsToDelete;
 
   private String testDir;
-  public TestAssembleScaffolds() {
+  public TestRunBambus() {
     dirsToDelete = new ArrayList<File>();
   }
 
@@ -412,7 +416,7 @@ public class TestAssembleScaffolds {
       throw new RuntimeException(
           "Missing arguments:" + StringUtils.join(missing, ","));
     }
-    TestAssembleScaffolds test = new TestAssembleScaffolds();
+    TestRunBambus test = new TestRunBambus();
     test.runTests(parameters);
   }
 }
