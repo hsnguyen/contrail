@@ -26,8 +26,10 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.io.FilenameUtils;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.util.ToolRunner;
 import org.apache.log4j.Logger;
 
 import contrail.sequences.FastQFileReader;
@@ -243,6 +245,15 @@ public class AlignReadsWithBowtie extends NonMRStage {
     String localPath = (String) stage_options.get("local_path");
     String shortenedDir = FilenameUtils.concat(localPath, "shortened-reads");
 
+    File shortenedDirFile = new File(shortenedDir);
+    if (!shortenedDirFile.exists()) {
+      sLogger.info("Creating directory: " + shortenedDir);
+      if (!shortenedDirFile.mkdirs()) {
+        sLogger.fatal("Failed to create directory: " + shortenedDir);
+        System.exit(-1);
+      }
+    }
+
     for (String fastaFile : readFiles) {
       String name = FilenameUtils.getName(fastaFile);
       String shortenedFile = FilenameUtils.concat(shortenedDir, name);
@@ -299,5 +310,11 @@ public class AlignReadsWithBowtie extends NonMRStage {
         readLength);
 
     convertBowtieToAvro(alignResult.outputs.values());
+  }
+
+  public static void main(String[] args) throws Exception {
+    int res = ToolRunner.run(
+        new Configuration(), new AlignReadsWithBowtie(), args);
+    System.exit(res);
   }
 }

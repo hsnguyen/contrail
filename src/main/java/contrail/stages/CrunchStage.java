@@ -13,7 +13,7 @@
  */
 // Author: Jeremy Lewi (jeremy@lewi.us)
 
-package contrail.crunch;
+package contrail.stages;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -24,8 +24,6 @@ import org.apache.crunch.PipelineResult.StageResult;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.log4j.Logger;
-
-import contrail.stages.NonMRStage;
 
 public abstract class CrunchStage extends NonMRStage {
   private static final Logger sLogger = Logger.getLogger(CrunchStage.class);

@@ -37,8 +37,9 @@ import org.apache.log4j.Logger;
 
 import contrail.sequences.FastaFileReader;
 import contrail.sequences.FastaRecord;
+import contrail.stages.NonMRStage;
 import contrail.stages.ParameterDefinition;
-import contrail.stages.PipelineStage;
+import contrail.stages.StageBase.InvalidParameter;
 import contrail.util.ShellUtil;
 
 /**
@@ -62,11 +63,10 @@ import contrail.util.ShellUtil;
  * the original reads. The shortened reads are the subsequences
  * used with bowtie to align the reads to the contigs.
  *
- * TODO(jlewi): We should probably rename this to RunBambus.
  */
-public class AssembleScaffolds extends PipelineStage {
+public class RunBambus extends NonMRStage {
   private static final Logger sLogger = Logger.getLogger(
-      AssembleScaffolds.class);
+      RunBambus.class);
   @Override
   protected Map<String, ParameterDefinition> createParameterDefinitions() {
     HashMap<String, ParameterDefinition> definitions =
@@ -628,14 +628,6 @@ public class AssembleScaffolds extends PipelineStage {
     String linearScaffoldFile = FilenameUtils.concat(
         outputPath, getOutputPrefix() + "scaffolds.linear.fasta");
 
-    BuildBambusInput bambusInputStage = new BuildBambusInput();
-    bambusInputStage.initializeAsChild(this);
-    // Set the directory for the bambus inputs to be a subdirectory
-    // of the output directory.
-    String bambusOutputDir = FilenameUtils.concat(
-        (String)stage_options.get("outputpath"), "bambus-input");
-    bambusInputStage.setParameter("outputpath", bambusOutputDir);
-
     // Run all steps starting at start step.
     switch (startStep) {
       case LOAD_INTO_AMOS:
@@ -707,7 +699,7 @@ public class AssembleScaffolds extends PipelineStage {
 
   public static void main(String[] args) throws Exception {
     int res = ToolRunner.run(
-        new Configuration(), new AssembleScaffolds(), args);
+        new Configuration(), new RunBambus(), args);
     System.exit(res);
   }
 }

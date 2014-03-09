@@ -89,7 +89,6 @@
     	<type>jar</type>
     	<scope>compile</scope>
 	</dependency>
-   <!--Should we add crunch to a profile.-->
   <dependency>
     <groupId>org.apache.crunch</groupId>
     <artifactId>crunch-core</artifactId>

@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 // Author: Jeremy Lewi (jeremy@lewi.us)
-package contrail.crunch;
+package contrail.scaffolding;
 
 import static org.junit.Assert.assertEquals;
 
@@ -25,9 +25,7 @@ import org.apache.crunch.impl.mem.MemPipeline;
 import org.apache.crunch.types.avro.Avros;
 import org.junit.Test;
 
-import contrail.crunch.FilterBowtieAlignments.ExtractMappings;
-import contrail.scaffolding.BowtieMapping;
-import contrail.scaffolding.MatePairMappings;
+import contrail.scaffolding.FilterBowtieAlignments.ExtractMappings;
 
 public class TestFilterBowtieAlignments {
   @Test

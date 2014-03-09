@@ -14,9 +14,7 @@
 // Author: Jeremy Lewi (jeremy@lewi.us), Serge Koren(sergekoren@gmail.com)
 package contrail.scaffolding;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
@@ -43,7 +41,7 @@ import contrail.sequences.FastaRecord;
 import contrail.sequences.ReadIdUtil;
 import contrail.stages.NonMRStage;
 import contrail.stages.ParameterDefinition;
-import contrail.util.FileHelper;
+import contrail.util.AvroFileUtil;
 
 /**
  * This class constructs the input needed to run Bambus for scaffolding.
@@ -63,153 +61,27 @@ import contrail.util.FileHelper;
 public class BuildBambusInput extends NonMRStage {
   private static final Logger sLogger =
       Logger.getLogger(BuildBambusInput.class);
-  /**
-   * This class stores a pair of files containing mate pairs.
-   */
-  protected static class MateFilePair implements Comparable {
-    public String leftFile;
-    public String rightFile;
-    public String libraryName;
-
-    public MateFilePair(
-        String libraryName, String leftFile, String rightFile) {
-      this.libraryName = libraryName;
-      this.leftFile = leftFile;
-      this.rightFile = rightFile;
-    }
-
-    @Override
-    public int compareTo(Object o) {
-      if (!(o instanceof MateFilePair)) {
-        throw new RuntimeException("Can only compare to other MateFilePair");
-      }
-
-      MateFilePair other = (MateFilePair) o;
-      return this.libraryName.compareTo(other.libraryName);
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (!(o instanceof MateFilePair)) {
-        throw new RuntimeException("o must be an instance of MateFilePair");
-      }
-
-      MateFilePair other = (MateFilePair) o;
-      if (!leftFile.equals(other.leftFile)) {
-        return false;
-      }
-      if (!rightFile.equals(other.rightFile)) {
-        return false;
-      }
-      if (!libraryName.equals(other.libraryName)) {
-        return false;
-      }
-      return true;
-    }
+  /** Generate a safe name for bambus. */
+  private static String safeLibraryName(String name) {
+      return name.replaceAll("_", "");
   }
-
-  /**
-   * Store the minimum and maximum size for inserts in a library.
-   */
-  private static class LibrarySize {
-    final public int minimum;
-    final public int maximum;
-    private final int libSize;
-
-    public LibrarySize(int first, int second) {
-      minimum = Math.min(first, second);
-      maximum = Math.max(first, second);
-      libSize = maximum - minimum + 1;
-    }
-
-    public int size() {
-      return libSize;
-    }
-  }
-
-  // libSizes stores the sizes for each read library. The key is the
-  // prefix of the FastQ files for that library. The value is a pair
-  // which stores the lower and upper bound for the library size.
-  private HashMap<String, LibrarySize> libSizes;
 
   /**
    * Parse the library file and extract the library sizes.
    */
-  protected void parseLibSizes(String libFile) {
-    try {
-      libSizes = new HashMap<String, LibrarySize>();
-      BufferedReader libSizeFile =
-          new BufferedReader(new FileReader(new File(libFile)));
-      String libLine = null;
-      while ((libLine = libSizeFile.readLine()) != null) {
-        String[] splitLine = libLine.trim().split("\\s+");
-        libSizes.put(
-            splitLine[0],
-            new LibrarySize(
-                Integer.parseInt(splitLine[1]),
-                Integer.parseInt(splitLine[2])));
-      }
-      libSizeFile.close();
-    } catch (Exception e) {
-      sLogger.fatal("Could not parse the library file.", e);
-      System.exit(-1);
+  protected List<Library> loadLibraries(String libFile) {
+    List<Library> libraries = AvroFileUtil.readJsonArray(
+        getConf(), new Path(libFile), Library.SCHEMA$);
+
+    for (Library lib : libraries) {
+      // Make the name safe for bambus.
+      lib.setName(safeLibraryName(lib.getName().toString()));
     }
+    return libraries;
   }
 
-  /**
-   * Given a set of read files, group them into mate pairs.
-   *
-   * @param readFiles
-   */
-  protected ArrayList<MateFilePair> buildMatePairs(
-      Collection<String> readFiles) {
-    HashMap<String, ArrayList<String>> libraryFiles =
-        new HashMap<String, ArrayList<String>>();
-
-    ArrayList<MateFilePair> matePairs = new ArrayList<MateFilePair>();
-    // Group the reads into mate pairs. Each mate pair belongs to a library.
-    // The library name is given by the prefix of the filename.
-    for (String filePath : readFiles) {
-      String name = FilenameUtils.getBaseName(filePath);
-      // We expect the filename to be something like "libraryName_1.fastq"
-      // or "libraryName_2.fastq".
-      if (!name.matches((".*_[012]"))) {
-        sLogger.fatal(
-            "File: " + filePath + " doesn't match the patern .*_[012] so we " +
-            "couldn't determine the library name",
-            new RuntimeException());
-      }
-      // We want to strip off the trailing _[12]
-      String libraryName = name.substring(0, name.length() - 2);
-
-      if (!libraryFiles.containsKey(libraryName)) {
-        libraryFiles.put(libraryName, new ArrayList<String>());
-      }
-      libraryFiles.get(libraryName).add(filePath);
-    }
-
-    for (String libraryName : libraryFiles.keySet()) {
-      ArrayList<String> files = libraryFiles.get(libraryName);
-      if (files.size() != 2) {
-        String message =
-            "There was a problem grouping the reads into mate pairs. Each " +
-            "library (filename prefix) should match two files. But for " +
-            "library:" + libraryName + " the number of matching files was:" +
-            files.size() + ".";
-        if (files.size() > 0) {
-          message =
-              "The files that matched were: " + StringUtils.join(files, ",");
-        }
-        sLogger.fatal(message, new RuntimeException(message));
-      }
-      Collections.sort(files);
-      MateFilePair pair = new MateFilePair(
-          libraryName, files.get(0), files.get(1));
-      matePairs.add(pair);
-
-      sLogger.info("Found mate pairs for library:" + libraryName);
-    }
-    return matePairs;
+  private int librarySize(Library lib) {
+    return lib.getMaxSize() - lib.getMinSize() + 1;
   }
 
   /**
@@ -233,10 +105,10 @@ public class BuildBambusInput extends NonMRStage {
    * @param libraryOutputFile: The file to write the library information to.
    */
   protected void createFastaAndLibraryFiles(
-      Collection<MateFilePair> matePairs, File fastaOutputFile,
+      Collection<Library> libraries, File fastaOutputFile,
       File libraryOutputFile) {
     LibraryFileWriter libWriter = null;
-    int readLength = (Integer) stage_options.get("readLength");
+    int readLength = (Integer) stage_options.get("read_length");
     try {
       libWriter = new LibraryFileWriter(libraryOutputFile);
     } catch (IOException e) {
@@ -253,12 +125,21 @@ public class BuildBambusInput extends NonMRStage {
       System.exit(-1);
     }
 
-    for (MateFilePair matePair : matePairs) {
-      libWriter.writeLibrary(
-          matePair.libraryName, getLibSize(matePair.libraryName));
+    for (Library lib : libraries) {
+      if (lib.getFiles().size() !=2 ) {
+        // We expect each library to have files with the mate pairs organized
+        // into the two files.
+        sLogger.fatal(String.format(
+            "Library %s has %d files but 2 files are expected for all " +
+            "libraries.", lib.getName(), lib.files.size()));
+        System.exit(-1);
+      }
+      libWriter.writeLibrary(lib);
 
-      FastQFileReader leftReader = new FastQFileReader(matePair.leftFile);
-      FastQFileReader rightReader = new FastQFileReader(matePair.rightFile);
+      FastQFileReader leftReader = new FastQFileReader(
+          lib.getFiles().get(0).toString(), getConf());
+      FastQFileReader rightReader = new FastQFileReader(
+          lib.getFiles().get(1).toString(), getConf());
 
       int counter = 0;
 
@@ -290,7 +171,7 @@ public class BuildBambusInput extends NonMRStage {
 
         libWriter.writeMateIds(
             left.getId().toString(), right.getId().toString(),
-            matePair.libraryName);
+            lib.getName().toString());
 
         for (FastQRecord fastq : new FastQRecord[] {left, right}) {
           fasta.setId(fastq.getId());
@@ -313,7 +194,7 @@ public class BuildBambusInput extends NonMRStage {
         sLogger.fatal(String.format(
             "The mait pair files %s and %s don't have the same number of " +
                 "reads this indicates the reads aren't properly paired as mate " +
-                "pairs.", matePair.leftFile, matePair.rightFile));
+                "pairs.", lib.getFiles().get(0), lib.getFiles().get(1)));
       }
       leftReader.close();
       rightReader.close();
@@ -344,11 +225,10 @@ public class BuildBambusInput extends NonMRStage {
     /**
      * Write the name of a library and its min and max insert size.
      */
-    public void writeLibrary(String name, LibrarySize libSize) {
-      String libName = name.replaceAll("_", "");
-
+    public void writeLibrary(Library lib) {
       outStream.println(
-          "library " + libName + " " + libSize.minimum + " " + libSize.maximum);
+          "library " + lib.getName() + " " + lib.getMinSize() + " " +
+          lib.getMaxSize());
     }
 
     /**
@@ -375,28 +255,6 @@ public class BuildBambusInput extends NonMRStage {
     public void close() {
       outStream.close();
     }
-  }
-
-  /**
-   * Return the size of the library.
-   */
-  private LibrarySize getLibSize(String lib) {
-    String libName = lib.replaceAll("_", "");
-    LibrarySize result = libSizes.get(libName);
-    if (result == null) {
-      String knownLibraries = "";
-      for (String library : libSizes.keySet()) {
-        knownLibraries += library + ",";
-      }
-      // Strip the last column.
-      knownLibraries = knownLibraries.substring(
-          0, knownLibraries.length() - 1);
-      sLogger.fatal(
-          "No library sizes are defined for libray:" + libName + " . Known " +
-          "libraries are: " + knownLibraries,
-          new RuntimeException("No library sizes for libray:" + libName));
-    }
-    return result;
   }
 
   /**
@@ -471,25 +329,9 @@ public class BuildBambusInput extends NonMRStage {
    */
   @Override
   protected void stageMain() {
-    String libFile = (String) this.stage_options.get("libsize");
-    parseLibSizes(libFile);
+    String libFile = (String) this.stage_options.get("library_file");
+    List<Library> libraries = loadLibraries(libFile);
 
-    String globs = (String) this.stage_options.get("reads_glob");
-    ArrayList<String> readFiles = FileHelper.matchListOfGlobs(globs);
-
-    if (readFiles.isEmpty()) {
-      sLogger.fatal(
-          "No read files matched:"  +
-          (String) this.stage_options.get("reads_glob"),
-          new RuntimeException("Missing inputs."));
-      System.exit(-1);
-    }
-
-    sLogger.info("Files containing reads to align are:");
-    for (String file : readFiles) {
-      sLogger.info("read file:" + file);
-    }
-    ArrayList<MateFilePair> matePairs = buildMatePairs(readFiles);
     String resultDir = (String) stage_options.get("outputpath");
 
     File resultDirFile = new File(resultDir);
@@ -511,7 +353,7 @@ public class BuildBambusInput extends NonMRStage {
     sLogger.info("Library file: " + libraryOutputFile.getName());
     sLogger.info("Contig Aligned file: " + contigOutputFile.getName());
 
-    createFastaAndLibraryFiles(matePairs, fastaOutputFile, libraryOutputFile);
+    createFastaAndLibraryFiles(libraries, fastaOutputFile, libraryOutputFile);
 
     String bowtieAvroPath = (String) stage_options.get("bowtie_alignments");
     createTigrFile(bowtieAvroPath);
@@ -534,11 +376,11 @@ public class BuildBambusInput extends NonMRStage {
             "produced by bowtie of the reads to the contigs.",
             String.class, null);
 
-    ParameterDefinition readsGlob =
+    ParameterDefinition libFile =
         new ParameterDefinition(
-            "reads_glob", "A glob expression matching the path to the fastq " +
-            "files containg the reads to align to the reference genome. " +
-            "Should be a local file system.",
+            "library_file", "A path to the json file describing the " +
+            "libraries. The json file should be an array of Library " +
+            "records. The paths of the reads should all be local files.",
             String.class, null);
 
     // Currently these need to be on the local filesystem.
@@ -560,16 +402,11 @@ public class BuildBambusInput extends NonMRStage {
             "alignments aren't consistent.",
             Integer.class, 25);
 
-    ParameterDefinition libsizePath =
-        new ParameterDefinition(
-            "libsize", "The path to the file containing the sizes for each " +
-            "library",
-            String.class, null);
-
     ParameterDefinition outputPath =
         new ParameterDefinition(
             "outputpath", "The directory to write the outputs which are " +
-            "the files to pass to bambus for scaffolding.",
+            "the files to pass to bambus for scaffolding. This should be " +
+            "a local filesystem so that bambus can read theam.",
             String.class, null);
 
     ParameterDefinition outputPrefix =
@@ -591,8 +428,8 @@ public class BuildBambusInput extends NonMRStage {
 
     for (ParameterDefinition def:
       new ParameterDefinition[] {
-        bowtieAlignments, readsGlob, contigsGlob, libsizePath,
-        outputPath, outputPrefix, hdfsPath, graphPath}) {
+        bowtieAlignments, contigsGlob, graphPath, hdfsPath, libFile,
+        outputPath, outputPrefix, readLength}) {
       definitions.put(def.getName(), def);
     }
 
@@ -606,14 +443,11 @@ public class BuildBambusInput extends NonMRStage {
     invalid.addAll(this.checkParameterIsNonEmptyString(Arrays.asList(
         "outputpath", "outprefix", "hdfs_path")));
 
-    invalid.addAll(this.checkParameterIsExistingLocalFile(Arrays.asList(
-        "libsize")));
-
     invalid.addAll(this.checkParameterMatchesLocalFiles(Arrays.asList(
-        "reference_glob", "reads_glob")));
+        "reference_glob")));
 
     invalid.addAll(this.checkParameterMatchesFiles(Arrays.asList(
-        "graph_glob")));
+        "graph_glob", "library_file")));
 
     return invalid;
   }
