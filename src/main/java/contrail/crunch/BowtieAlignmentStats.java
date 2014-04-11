@@ -20,19 +20,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.crunch.DoFn;
-import org.apache.crunch.Emitter;
-import org.apache.crunch.PCollection;
-import org.apache.crunch.PTable;
-import org.apache.crunch.Pair;
-import org.apache.crunch.Pipeline;
-import org.apache.crunch.PipelineResult;
-import org.apache.crunch.Source;
-import org.apache.crunch.impl.mr.MRPipeline;
-import org.apache.crunch.io.From;
-import org.apache.crunch.io.To;
-import org.apache.crunch.lib.Cogroup;
-import org.apache.crunch.types.avro.Avros;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.util.ToolRunner;
@@ -40,13 +27,15 @@ import org.apache.hadoop.util.ToolRunner;
 import contrail.graph.EdgeDirection;
 import contrail.graph.GraphNode;
 import contrail.graph.GraphNodeData;
+import contrail.scaffolding.BowtieDoFns;
 import contrail.scaffolding.BowtieMapping;
 import contrail.sequences.DNAStrand;
+import contrail.stages.CrunchStage;
 import contrail.stages.ParameterDefinition;
 
 /**
  * Join the contigs with the alignments produced by bowtie and compute basic
- * stats.
+ * stats such as how many reads aligned to a contig.
  */
 public class BowtieAlignmentStats extends CrunchStage {
   /**
