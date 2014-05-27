@@ -6,6 +6,7 @@ import java.io.Serializable;
 
 import org.apache.avro.io.DatumReader;
 import org.apache.avro.io.DatumWriter;
+import org.apache.avro.io.Decoder;
 import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.io.Encoder;
 import org.apache.avro.io.EncoderFactory;
@@ -33,7 +34,7 @@ public class SerializableGraphNodeData extends GraphNodeData implements Serializ
         DatumReader<GraphNodeData> reader =
                 new SpecificDatumReader<GraphNodeData>(GraphNodeData.class);
         Decoder decoder = DecoderFactory.get().binaryDecoder(in, null);
-        setValues(reader.read(null, decoder));
+        reader.read(this, decoder);
     }
 
     private void readObjectNoData()
