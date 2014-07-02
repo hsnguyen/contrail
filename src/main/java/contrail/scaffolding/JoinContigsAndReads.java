@@ -97,7 +97,7 @@ public class JoinContigsAndReads extends CrunchStage {
         Avros.tableOf(Avros.strings(), Avros.specifics(BowtieMapping.class)));
 
     PTable<String, Read> keyedReads = reads.parallelDo(
-        new ReadDoFns.KeyByIdDo(),
+        new ReadDoFns.KeyFastQByIdDo(),
         Avros.tableOf(Avros.strings(),  Avros.specifics(Read.class)));
 
 
