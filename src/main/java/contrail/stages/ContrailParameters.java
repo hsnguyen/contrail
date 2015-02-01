@@ -135,6 +135,17 @@ public class ContrailParameters {
   }
 
   /**
+   * Add a parameter to a map of parameters.
+   * @param map
+   * @param parameters
+   */
+  public static void add(
+      HashMap<String, ParameterDefinition> map,
+      ParameterDefinition param) {
+    map.put(param.getName(), param);
+  }
+
+  /**
    * Add a list of parameters to a map of parameters.
    * @param map
    * @param parameters
