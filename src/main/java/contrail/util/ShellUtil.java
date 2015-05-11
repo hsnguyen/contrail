@@ -28,6 +28,7 @@ import org.apache.log4j.Logger;
  * Some utilities for working with a shell.
  */
 public class ShellUtil {
+  private static final Logger sLogger = Logger.getLogger(ShellUtil.class);
   /**
    * Run the process.
    *
@@ -44,6 +45,10 @@ public class ShellUtil {
   private static int runProcess(
       ProcessBuilder builder, String prefix, String command, Logger logger,
       PrintStream outStream) {
+    if (logger == null) {
+      logger = sLogger;
+    }
+
     try{
       logger.info("Executing command:" + command);
       Process process = builder.start();
@@ -134,6 +139,9 @@ public class ShellUtil {
    */
   public static int execute(
     List<String> command, String directory, String prefix, Logger logger) {
+    if (logger == null) {
+      logger = sLogger;
+    }
 
     logger.info("Executing command: " + StringUtils.join(command, " "));
     ProcessBuilder builder = new ProcessBuilder(command);
