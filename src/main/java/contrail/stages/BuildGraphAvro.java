@@ -239,11 +239,11 @@ public class BuildGraphAvro extends MRStage {
    * Mapper for BuildGraph. Class is public to facilitate unit-testing.
    */
   public static class BuildGraphMapper extends
-      AvroMapper<Object, Pair<ByteBuffer, KMerEdge>> {
+  AvroMapper<Object, Pair<ByteBuffer, KMerEdge>> {
     private static int K = 0;
 
     private final Alphabet alphabet = DNAAlphabetFactory.create();
-    private Sequence seq = new Sequence(DNAAlphabetFactory.create());
+    private Sequence fullSequence = new Sequence(DNAAlphabetFactory.create());
     private SequencePreProcessor preprocessor;
 
     private final KMerEdge node = new KMerEdge();
@@ -283,26 +283,26 @@ public class BuildGraphAvro extends MRStage {
     @Override
     public void map(Object inputRecord,
         AvroCollector<Pair<ByteBuffer, KMerEdge>> output, Reporter reporter)
-        throws IOException {
+            throws IOException {
       if (inputRecord instanceof CompressedRead) {
         CompressedRead compressed_read = (CompressedRead) inputRecord;
-        seq.readPackedBytes(compressed_read.getDna().array(),
+        fullSequence.readPackedBytes(compressed_read.getDna().array(),
             compressed_read.getLength());
         readId = compressed_read.getId();
       } else if (inputRecord instanceof FastQRecord) {
         FastQRecord fastQRecord = (FastQRecord) inputRecord;
         readId = fastQRecord.getId();
-        seq.readCharSequence(fastQRecord.getRead());
+        fullSequence.readCharSequence(fastQRecord.getRead());
       } else if (inputRecord instanceof Read) {
         Read read = (Read) inputRecord;
         readId = read.getFastq().getId();
-        seq.readCharSequence(read.getFastq().getRead());
+        fullSequence.readCharSequence(read.getFastq().getRead());
       }
 
-      seq = preprocessor.PreProcess(seq);
+      fullSequence = preprocessor.PreProcess(fullSequence);
 
       // Check for short reads.
-      if (seq.size() <= K) {
+      if (fullSequence.size() <= K) {
         reporter.incrCounter("Contrail", "reads_short", 1);
         return;
       }
@@ -314,128 +314,132 @@ public class BuildGraphAvro extends MRStage {
 
       int chunk = 0;
 
-      int end = seq.size() - K;
+      String[] pieces = fullSequence.toString().split("[^ACTG]+");
+      for (String p : pieces) {
+        Sequence seq = new Sequence(p, DNAAlphabetFactory.create());
+        int end = p.length() - K;
 
-      // Now emit the edges of the de Bruijn Graph.
-      // Each successive kmer in the read is a node in the graph
-      // and the edge connecting them is the (k-1) of overlap.
-      // Since we don't know which strand the read came from, we need
-      // to consider both the read and its reverse complement when generating
-      // edges.
-      for (int i = 0; i < end; i++) {
-        // ukmer and vkmer are sequential KMers in the read.
-        Sequence ukmer = seq.subSequence(i, i + K);
-        Sequence vkmer = seq.subSequence(i + 1, i + 1 + K);
+        // Now emit the edges of the de Bruijn Graph.
+        // Each successive kmer in the read is a node in the graph
+        // and the edge connecting them is the (k-1) of overlap.
+        // Since we don't know which strand the read came from, we need
+        // to consider both the read and its reverse complement when generating
+        // edges.
+        for (int i = 0; i < end; i++) {
+          // ukmer and vkmer are sequential KMers in the read.
+          Sequence ukmer = seq.subSequence(i, i + K);
+          Sequence vkmer = seq.subSequence(i + 1, i + 1 + K);
 
-        // ukmer_start and vkmer_end are the base we need to add
-        // to the source kmer in order to generate the destination KMer.
-        Sequence ukmer_start = seq.subSequence(i, i + 1);
-        Sequence vkmer_end = seq.subSequence(i + K, i + K + 1);
-        ukmer_start = DNAUtil.reverseComplement(ukmer_start);
+          // ukmer_start and vkmer_end are the base we need to add
+          // to the source kmer in order to generate the destination KMer.
+          Sequence ukmer_start = seq.subSequence(i, i + 1);
+          Sequence vkmer_end = seq.subSequence(i + K, i + K + 1);
+          ukmer_start = DNAUtil.reverseComplement(ukmer_start);
 
-        // Construct the canonical representation of each kmer.
-        // This ensures that a kmer coming from the forward and reverse
-        // strand are both represented using the same node.
-        Sequence ukmer_canonical = DNAUtil.canonicalseq(ukmer);
-        Sequence vkmer_canonical = DNAUtil.canonicalseq(vkmer);
+          // Construct the canonical representation of each kmer.
+          // This ensures that a kmer coming from the forward and reverse
+          // strand are both represented using the same node.
+          Sequence ukmer_canonical = DNAUtil.canonicalseq(ukmer);
+          Sequence vkmer_canonical = DNAUtil.canonicalseq(vkmer);
 
-        // The canonical direction of the two kmers.
-        DNAStrand ukmer_strand;
-        DNAStrand vkmer_strand;
-        if (ukmer_canonical.equals(ukmer)) {
-          ukmer_strand = DNAStrand.FORWARD;
-        } else {
-          ukmer_strand = DNAStrand.REVERSE;
-        }
-        if (vkmer_canonical.equals(vkmer)) {
-          vkmer_strand = DNAStrand.FORWARD;
-        } else {
-          vkmer_strand = DNAStrand.REVERSE;
-        }
-
-        StrandsForEdge strands = StrandsUtil.form(ukmer_strand, vkmer_strand);
-        StrandsForEdge rc_strands = StrandsUtil.complement(strands);
-
-        // Determine the read state for each KMer.
-        if (i == 0) {
-          if (ukmer_strand == DNAStrand.FORWARD) {
-            ustate = ReadState.STARTFORWARD;
+          // The canonical direction of the two kmers.
+          DNAStrand ukmer_strand;
+          DNAStrand vkmer_strand;
+          if (ukmer_canonical.equals(ukmer)) {
+            ukmer_strand = DNAStrand.FORWARD;
           } else {
-            ustate = ReadState.STARTREVERSE;
+            ukmer_strand = DNAStrand.REVERSE;
           }
-        } else {
+          if (vkmer_canonical.equals(vkmer)) {
+            vkmer_strand = DNAStrand.FORWARD;
+          } else {
+            vkmer_strand = DNAStrand.REVERSE;
+          }
+
+          StrandsForEdge strands = StrandsUtil.form(ukmer_strand, vkmer_strand);
+          StrandsForEdge rc_strands = StrandsUtil.complement(strands);
+
+          // Determine the read state for each KMer.
+          if (i == 0) {
+            if (ukmer_strand == DNAStrand.FORWARD) {
+              ustate = ReadState.STARTFORWARD;
+            } else {
+              ustate = ReadState.STARTREVERSE;
+            }
+          } else {
+            ustate = ReadState.MIDDLE;
+          }
+
+          if (i + 1 == end) {
+            vstate = ReadState.END;
+          } else {
+            vstate = ReadState.MIDDLE;
+          }
+
+          // TODO(jlewi): It would probably be more efficient not to use a string
+          // representation of the Kmers in seen.
+          // If the strand and its reverse complement are the same then we want
+          // seen to be true because we want to assign the edges from the two
+          // strands to different chunk segments.
+          boolean seen = (seenmers.contains(ukmer.toString())
+              || seenmers.contains(vkmer.toString()) || ukmer.equals(vkmer));
+          seenmers.add(ukmer.toString());
+          if (seen) {
+            // We use the chunk to segment the nodes based on repeat KMers.
+            // We use this segmentation at several stages.
+            chunk++;
+          }
+
+          // Output an edge assuming we are reading the forward strand.
+          {
+            // TODO(jlewi): Should we verify that all unset bits in node.kmer are
+            // 0?
+            node.setStrands(strands);
+            node.setLastBase(ByteBuffer.wrap(vkmer_end.toPackedBytes(), 0,
+                vkmer_end.numPackedBytes()));
+            node.setTag(readId);
+            node.setState(ustate);
+            node.setChunk(chunk);
+            outPair.key(ByteBuffer.wrap(ukmer_canonical.toPackedBytes(), 0,
+                ukmer_canonical.numPackedBytes()));
+            outPair.value(node);
+            output.collect(outPair);
+          }
+          if (seen) {
+            chunk++;
+          }
+
+          {
+            // Output an edge assuming we are reading the reverse strand.
+            // TODO(jlewi): Should we verify that all unset bits in node.kmer are
+            // 0?
+            node.setStrands(rc_strands);
+            node.setLastBase(ByteBuffer.wrap(ukmer_start.toPackedBytes(), 0,
+                ukmer_start.numPackedBytes()));
+            node.setTag(readId);
+            node.setState(vstate);
+            node.setChunk(chunk);
+            outPair.key(ByteBuffer.wrap(vkmer_canonical.toPackedBytes(), 0,
+                vkmer_canonical.numPackedBytes()));
+            outPair.value(node);
+            output.collect(outPair);
+          }
           ustate = ReadState.MIDDLE;
         }
 
-        if (i + 1 == end) {
-          vstate = ReadState.END;
+        // Add some counters to keep track of how many edges this read produces.
+        if (end == 1) {
+          reporter.incrCounter("Contrail", "reads-num-edges-1", 1);
+        } else if (end>1 && end <= 5) {
+          reporter.incrCounter("Contrail", "reads-num-edges-(1,5]", 1);
+        } else if (end >5 && end <= 10) {
+          reporter.incrCounter("Contrail", "reads-num-edges-(5,10]", 1);
         } else {
-          vstate = ReadState.MIDDLE;
+          reporter.incrCounter("Contrail", "reads-num-edges-(10,...]", 1);
         }
-
-        // TODO(jlewi): It would probably be more efficient not to use a string
-        // representation of the Kmers in seen.
-        // If the strand and its reverse complement are the same then we want
-        // seen to be true because we want to assign the edges from the two
-        // strands to different chunk segments.
-        boolean seen = (seenmers.contains(ukmer.toString())
-            || seenmers.contains(vkmer.toString()) || ukmer.equals(vkmer));
-        seenmers.add(ukmer.toString());
-        if (seen) {
-          // We use the chunk to segment the nodes based on repeat KMers.
-          // We use this segmentation at several stages.
-          chunk++;
-        }
-
-        // Output an edge assuming we are reading the forward strand.
-        {
-          // TODO(jlewi): Should we verify that all unset bits in node.kmer are
-          // 0?
-          node.setStrands(strands);
-          node.setLastBase(ByteBuffer.wrap(vkmer_end.toPackedBytes(), 0,
-              vkmer_end.numPackedBytes()));
-          node.setTag(readId);
-          node.setState(ustate);
-          node.setChunk(chunk);
-          outPair.key(ByteBuffer.wrap(ukmer_canonical.toPackedBytes(), 0,
-              ukmer_canonical.numPackedBytes()));
-          outPair.value(node);
-          output.collect(outPair);
-        }
-        if (seen) {
-          chunk++;
-        }
-
-        {
-          // Output an edge assuming we are reading the reverse strand.
-          // TODO(jlewi): Should we verify that all unset bits in node.kmer are
-          // 0?
-          node.setStrands(rc_strands);
-          node.setLastBase(ByteBuffer.wrap(ukmer_start.toPackedBytes(), 0,
-              ukmer_start.numPackedBytes()));
-          node.setTag(readId);
-          node.setState(vstate);
-          node.setChunk(chunk);
-          outPair.key(ByteBuffer.wrap(vkmer_canonical.toPackedBytes(), 0,
-              vkmer_canonical.numPackedBytes()));
-          outPair.value(node);
-          output.collect(outPair);
-        }
-        ustate = ReadState.MIDDLE;
+        reporter.incrCounter("Contrail", "reads-good", 1);
+        reporter.incrCounter("Contrail", "reads-goodbp", seq.size());
       }
-
-      // Add some counters to keep track of how many edges this read produces.
-      if (end == 1) {
-        reporter.incrCounter("Contrail", "reads-num-edges-1", 1);
-      } else if (end>1 && end <= 5) {
-        reporter.incrCounter("Contrail", "reads-num-edges-(1,5]", 1);
-      } else if (end >5 && end <= 10) {
-        reporter.incrCounter("Contrail", "reads-num-edges-(5,10]", 1);
-      } else {
-        reporter.incrCounter("Contrail", "reads-num-edges-(10,...]", 1);
-      }
-      reporter.incrCounter("Contrail", "reads-good", 1);
-      reporter.incrCounter("Contrail", "reads-goodbp", seq.size());
     }
   }
 
@@ -450,7 +454,7 @@ public class BuildGraphAvro extends MRStage {
    * This class is public to facilitate unit-testing.
    */
   public static class BuildGraphReducer extends
-      AvroReducer<ByteBuffer, KMerEdge, GraphNodeData> {
+  AvroReducer<ByteBuffer, KMerEdge, GraphNodeData> {
     private int K = 0;
     private int MAXTHREADREADS = 0;
     private int MAXR5 = 0;
@@ -573,7 +577,7 @@ public class BuildGraphAvro extends MRStage {
       InvalidParameter item = new InvalidParameter(
           "K",
           "K should be odd. If K is even then there exist Kmers for which " +
-          "the KMer and its reverse complement are the same. This can cause " +
+              "the KMer and its reverse complement are the same. This can cause " +
           "problems for graph construction.");
       items.add(item);
     }
